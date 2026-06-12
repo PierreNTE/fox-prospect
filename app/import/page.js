@@ -46,6 +46,36 @@ export default function ImportPage() {
   const [csv, setCsv] = useState("");
   const [preview, setPreview] = useState([]);
   const [message, setMessage] = useState(null);
+  const [liUrl, setLiUrl] = useState("");
+  const [liBusy, setLiBusy] = useState(false);
+  const [liResult, setLiResult] = useState(null);
+
+  const lookupLinkedin = async () => {
+    setLiBusy(true);
+    setMessage(null);
+    setLiResult(null);
+    try {
+      const res = await fetch("/api/import-linkedin", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ linkedinUrl: liUrl }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || d.error) setMessage({ type: "err", text: d.error || `Erreur ${res.status}.` });
+      else {
+        setManual({ ...EMPTY, ...d.prospect });
+        setLiResult(d);
+        setMessage({
+          type: "ok",
+          text: `Profil identifié (confiance ${d.confidence}). Vérifie les champs ci-dessous, complète si besoin, puis ajoute à la piste.`,
+        });
+      }
+    } catch (e) {
+      setMessage({ type: "err", text: e.message });
+    } finally {
+      setLiBusy(false);
+    }
+  };
 
   const send = async (rows) => {
     const res = await fetch("/api/prospects", {
@@ -67,6 +97,29 @@ export default function ImportPage() {
       <p className="sub">À la main pour un contact repéré, ou en collant un CSV (export Sales Navigator, SIRENE, fichier maison).</p>
 
       {message && <div className={`alert alert-${message.type}`}>{message.text}</div>}
+
+      <div className="card">
+        <h2>Depuis un profil LinkedIn</h2>
+        <p className="sub small">
+          Colle l'URL du profil : l'app identifie la personne via le web public (pas de scraping LinkedIn)
+          et pré-remplit le formulaire. Tu pourras ensuite enrichir l'email depuis sa fiche.
+        </p>
+        <div className="row">
+          <input
+            type="url"
+            placeholder="https://www.linkedin.com/in/…"
+            value={liUrl}
+            onChange={(e) => setLiUrl(e.target.value)}
+            style={{ flex: 1, minWidth: 220 }}
+          />
+          <button className="btn-fox" disabled={liBusy || !liUrl.trim()} onClick={lookupLinkedin}>
+            {liBusy && <span className="spin" />}
+            {liBusy ? "Identification…" : "Identifier"}
+          </button>
+        </div>
+        {liBusy && <p className="sub small" style={{ marginTop: 8 }}>Recherche web en cours, 20-60 secondes…</p>}
+        {liResult?.notes && <p className="sub small" style={{ marginTop: 8 }}>{liResult.notes}</p>}
+      </div>
 
       <div className="card">
         <h2>Ajout manuel</h2>

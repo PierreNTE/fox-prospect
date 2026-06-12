@@ -168,10 +168,7 @@ export default function ProspectPage() {
         </div>
       )}
 
-      <div className="card">
-        <h2>Contact</h2>
-        <EmailEditor prospect={prospect} onSaved={load} />
-      </div>
+      <ContactCard prospect={prospect} onSaved={load} />
 
       <div className="card">
         <h2>Notes</h2>
@@ -181,43 +178,123 @@ export default function ProspectPage() {
   );
 }
 
-function EmailEditor({ prospect, onSaved }) {
+function ContactCard({ prospect, onSaved }) {
   const [email, setEmail] = useState(prospect.email || "");
+  const [phone, setPhone] = useState(prospect.phone || "");
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [enrichment, setEnrichment] = useState(null);
+
+  const save = async (fields) => {
+    setErr("");
+    const res = await fetch(`/api/prospects/${prospect.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(fields),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) {
+      setErr(d.error || `Erreur ${res.status} lors de l'enregistrement.`);
+      return false;
+    }
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1600);
+    onSaved && onSaved();
+    return true;
+  };
+
+  const enrich = async () => {
+    setBusy(true);
+    setErr("");
+    setEnrichment(null);
+    try {
+      const res = await fetch("/api/enrich", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prospectId: prospect.id }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || d.error) setErr(d.error || `Erreur ${res.status} pendant l'enrichissement.`);
+      else {
+        setEnrichment(d.enrichment);
+        if (d.prospect?.email) setEmail(d.prospect.email);
+        if (d.prospect?.phone) setPhone(d.prospect.phone);
+        onSaved && onSaved();
+      }
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const suggestionDiffers =
+    enrichment?.email && prospect.email && enrichment.email.toLowerCase() !== prospect.email.toLowerCase();
+
   return (
-    <>
-      {err && <div className="alert alert-err">{err}</div>}
-      <div className="row" style={{ marginTop: 10 }}>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="prenom.nom@entreprise.fr"
-          style={{ flex: 1 }}
-        />
-        <button
-          onClick={async () => {
-            setErr("");
-            const res = await fetch(`/api/prospects/${prospect.id}`, {
-              method: "PATCH",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ email: email.trim() || null }),
-            });
-            const d = await res.json().catch(() => ({}));
-            if (!res.ok || d.error) {
-              setErr(d.error || `Erreur ${res.status} lors de l'enregistrement.`);
-              return;
-            }
-            setSaved(true);
-            setTimeout(() => setSaved(false), 1600);
-            onSaved && onSaved();
-          }}
-        >
-          {saved ? "Enregistré ✓" : "Enregistrer l'email"}
+    <div className="card">
+      <div className="row spread">
+        <h2>Coordonnées</h2>
+        <button disabled={busy} onClick={enrich}>
+          {busy && <span className="spin spin-dark" />}
+          {busy ? "Recherche en cours…" : "🔍 Enrichir automatiquement"}
         </button>
       </div>
-    </>
+      {busy && <p className="sub small">Recherche web du pattern d'email et du standard, 20-60 secondes…</p>}
+
+      {err && <div className="alert alert-err">{err}</div>}
+
+      {enrichment && (
+        <div className={`alert ${enrichment.email || enrichment.phone ? "alert-ok" : "alert-err"}`}>
+          {enrichment.email ? (
+            <>Email proposé : <strong>{enrichment.email}</strong> (confiance {enrichment.email_confidence || "?"})
+              {enrichment.email_source && <span className="small"> — {enrichment.email_source}</span>}</>
+          ) : (
+            <>Aucun email trouvé avec certitude. {enrichment.notes}</>
+          )}
+          {enrichment.phone && <><br />Standard : <strong>{enrichment.phone}</strong></>}
+          {suggestionDiffers && (
+            <div style={{ marginTop: 8 }}>
+              <button onClick={() => { setEmail(enrichment.email); save({ email: enrichment.email }); }}>
+                Remplacer par l'email proposé
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="grid2">
+        <div>
+          <label>Email pro</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="prenom.nom@entreprise.fr"
+          />
+          {prospect.email_confidence && (
+            <p className="sub small" style={{ marginTop: 4 }}>
+              Confiance : {prospect.email_confidence}{prospect.email_source ? ` — ${prospect.email_source}` : ""}
+            </p>
+          )}
+        </div>
+        <div>
+          <label>Téléphone (standard)</label>
+          <input
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="+33 1 23 45 67 89"
+          />
+        </div>
+      </div>
+      <div className="row" style={{ marginTop: 12 }}>
+        <button onClick={() => save({ email: email.trim() || null, phone: phone.trim() || "" })}>
+          {saved ? "Enregistré ✓" : "Enregistrer les coordonnées"}
+        </button>
+      </div>
+    </div>
   );
 }
 
