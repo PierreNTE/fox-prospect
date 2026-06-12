@@ -73,11 +73,25 @@ L'app est conçue pour le régime B2B opt-out : emails professionnels uniquement
 
 Aucun scraping LinkedIn : la recherche s'appuie sur des sources web publiques via l'API.
 
+## Sprint 2 — import LinkedIn, enrichissement, PWA
+
+- **Import par URL LinkedIn** (page Importer) : colle l'URL d'un profil, l'app identifie la
+  personne via le web public (pas de scraping LinkedIn) et pré-remplit le formulaire.
+- **Enrichissement des coordonnées** (fiche prospect → Coordonnées → « Enrichir
+  automatiquement ») : recherche du domaine email de l'entreprise, déduction du pattern
+  public (prenom.nom@…), email candidat avec niveau de confiance et source, téléphone du
+  standard. Jamais de mobile personnel, jamais d'écrasement d'un email saisi à la main.
+- **PWA** : sur mobile, ouvre l'app dans le navigateur → menu → « Ajouter à l'écran
+  d'accueil » (iPhone/Safari) ou « Installer l'application » (Android/Chrome). Interface
+  Fluent Design avec barre d'onglets en bas sur mobile.
+- Migration base nécessaire (une fois) : exécuter `supabase/migration-sprint2.sql` dans le
+  SQL Editor. Icônes regénérables avec `node scripts/generate-icons.mjs`.
+
 ## Roadmap
 
-- **Sprint 1 (ce repo)** : import, recherche/qualification, score de fit, accroches, brouillons multi-canal, pipeline, opt-out.
-- **Sprint 2** : sourcing automatique via l'API SIRENE (ciblage NAF/effectif/région), cascade d'enrichissement email (pattern + vérification), file de qualification en lot.
-- **Sprint 3** : envoi email réel (domaine dédié, SPF/DKIM/DMARC, warm-up, plafond/jour), séquences, tracking réponses — uniquement quand la qualité des messages est prouvée.
+- **Sprint 1** : import, recherche/qualification, score de fit, accroches, brouillons multi-canal, pipeline, opt-out.
+- **Sprint 2 (ce repo)** : import par URL LinkedIn, enrichissement email/téléphone par recherche web, interface Fluent Design, PWA mobile.
+- **Sprint 3** : sourcing automatique via l'API SIRENE (ciblage NAF/effectif/région), file de qualification en lot, envoi email réel (domaine dédié, SPF/DKIM/DMARC, warm-up, plafond/jour), séquences, tracking réponses — uniquement quand la qualité des messages est prouvée.
 
 ## Itérer sur la qualité
 
