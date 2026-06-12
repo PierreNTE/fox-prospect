@@ -169,8 +169,53 @@ export default function ProspectPage() {
       )}
 
       <div className="card">
+        <h2>Contact</h2>
+        <EmailEditor prospect={prospect} onSaved={load} />
+      </div>
+
+      <div className="card">
         <h2>Notes</h2>
         <NotesEditor prospect={prospect} />
+      </div>
+    </>
+  );
+}
+
+function EmailEditor({ prospect, onSaved }) {
+  const [email, setEmail] = useState(prospect.email || "");
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState("");
+  return (
+    <>
+      {err && <div className="alert alert-err">{err}</div>}
+      <div className="row" style={{ marginTop: 10 }}>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="prenom.nom@entreprise.fr"
+          style={{ flex: 1 }}
+        />
+        <button
+          onClick={async () => {
+            setErr("");
+            const res = await fetch(`/api/prospects/${prospect.id}`, {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ email: email.trim() || null }),
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok || d.error) {
+              setErr(d.error || `Erreur ${res.status} lors de l'enregistrement.`);
+              return;
+            }
+            setSaved(true);
+            setTimeout(() => setSaved(false), 1600);
+            onSaved && onSaved();
+          }}
+        >
+          {saved ? "Enregistré ✓" : "Enregistrer l'email"}
+        </button>
       </div>
     </>
   );

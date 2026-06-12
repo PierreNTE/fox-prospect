@@ -27,11 +27,14 @@ export default function Dashboard() {
 
   const setStatus = async (id, status) => {
     if (status === "opt-out" && !confirm("Inscrire ce contact en opposition permanente ? Il ne pourra plus jamais être importé.")) return;
-    await fetch(`/api/prospects/${id}`, {
+    setError("");
+    const res = await fetch(`/api/prospects/${id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ status }),
     });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) setError(data.error || `Erreur ${res.status} lors du changement de statut.`);
     load();
   };
 

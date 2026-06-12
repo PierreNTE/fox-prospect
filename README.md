@@ -34,6 +34,8 @@ Copie `.env.example` vers `.env.local` et remplis :
 | `SUPABASE_SERVICE_ROLE_KEY` | idem (clé service_role) |
 | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) → API Keys |
 | `APP_USER` / `APP_PASSWORD` | à choisir — protège l'app par Basic Auth |
+| `RESEARCH_MAX_SEARCHES` | optionnel (défaut : 4) — nb max de recherches web par qualification |
+| `DAILY_RESEARCH_CAP` | optionnel (défaut : 50) — plafond de recherches par 24 h (sécurité budget) |
 
 ⚠️ **`APP_PASSWORD` est obligatoire en production** : sans lui, n'importe qui trouvant l'URL consomme ta clé API Anthropic.
 
@@ -49,10 +51,10 @@ npm run dev
 
 1. Pousse le dossier sur un repo GitHub (privé).
 2. Sur [vercel.com](https://vercel.com) → **Add New Project** → importe le repo (framework détecté : Next.js, rien à configurer).
-3. Dans **Settings → Environment Variables**, ajoute les 5 variables ci-dessus.
+3. Dans **Settings → Environment Variables**, ajoute les variables ci-dessus (les 5 obligatoires, plus `RESEARCH_MAX_SEARCHES` et `DAILY_RESEARCH_CAP` recommandées).
 4. Deploy. Au premier accès, le navigateur demande utilisateur/mot de passe (Basic Auth).
 
-Note : la recherche peut prendre 20-40 s. Les routes sont configurées avec `maxDuration = 60`, dans la limite du plan Hobby de Vercel.
+Note : la recherche peut prendre 20-40 s. Les routes sont configurées avec `maxDuration = 60`, dans la limite du plan Hobby de Vercel. Le nombre de recherches web par qualification est plafonné par `RESEARCH_MAX_SEARCHES` (défaut : 4) ; **si des recherches tombent en 504, baisser à 3**. `DAILY_RESEARCH_CAP` (défaut : 50) limite le nombre de recherches par 24 h pour protéger le budget API.
 
 ## Utilisation type (la boucle quotidienne)
 
@@ -79,4 +81,4 @@ Aucun scraping LinkedIn : la recherche s'appuie sur des sources web publiques vi
 
 ## Itérer sur la qualité
 
-Toute la valeur est dans `lib/prompts.js`. Si les accroches sont trop génériques : ajoute des exemples de bons/mauvais messages dans le prompt de génération, précise ton offre dans les Réglages, ou augmente `maxSearches` dans `app/api/research/route.js`.
+Toute la valeur est dans `lib/prompts.js`. Si les accroches sont trop génériques : ajoute des exemples de bons/mauvais messages dans le prompt de génération, précise ton offre dans les Réglages, ou augmente `RESEARCH_MAX_SEARCHES` (attention au timeout de 60 s sur Vercel Hobby).

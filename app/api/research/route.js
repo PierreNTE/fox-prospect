@@ -19,6 +19,20 @@ export async function POST(request) {
     return NextResponse.json({ error: "Prospect introuvable." }, { status: 404 });
   }
 
+  // Garde-fou budget : plafond quotidien de recherches.
+  const dailyCap = Number(process.env.DAILY_RESEARCH_CAP) || 50;
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { count: dailyCount } = await supabase
+    .from("research")
+    .select("*", { count: "exact", head: true })
+    .gte("created_at", since);
+  if ((dailyCount ?? 0) >= dailyCap) {
+    return NextResponse.json(
+      { error: "Plafond quotidien de recherches atteint (sécurité budget). Modifiable via DAILY_RESEARCH_CAP." },
+      { status: 429 }
+    );
+  }
+
   const { data: settings } = await supabase.from("settings").select("*").eq("id", 1).single();
 
   try {
@@ -27,7 +41,7 @@ export async function POST(request) {
       user: researchUserPrompt({ prospect, offer: settings?.offer }),
       maxTokens: 3000,
       webSearch: true,
-      maxSearches: 5,
+      maxSearches: Number(process.env.RESEARCH_MAX_SEARCHES) || 4,
     });
 
 

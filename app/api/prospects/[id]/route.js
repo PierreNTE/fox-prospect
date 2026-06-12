@@ -44,9 +44,14 @@ export async function PATCH(request, { params }) {
   // Passage en opt-out : on inscrit l'email dans la liste d'opposition permanente.
   if (update.status === "opt-out") {
     const { data: p } = await supabase.from("prospects").select("email").eq("id", id).single();
-    if (p?.email) {
-      await supabase.from("optout").upsert({ email: p.email.toLowerCase(), reason: "demande du contact" });
+    const email = update.email || p?.email;
+    if (!email) {
+      return NextResponse.json(
+        { error: "Renseigne d'abord l'email du contact : l'opposition est enregistrée par email." },
+        { status: 400 }
+      );
     }
+    await supabase.from("optout").upsert({ email: email.toLowerCase(), reason: "demande du contact" });
   }
 
   const { data, error } = await supabase.from("prospects").update(update).eq("id", id).select().single();
