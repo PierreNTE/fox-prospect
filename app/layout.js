@@ -1,23 +1,25 @@
 import "./globals.css";
 import Link from "next/link";
+import SwRegister from "./sw-register";
 
 export const metadata = {
   title: "Fox Prospect",
   description: "Copilote de prospection B2B IT — qualification et points d'accroche",
+  appleWebApp: { capable: true, title: "Fox Prospect", statusBarStyle: "default" },
+  icons: { apple: "/apple-touch-icon.png" },
+};
+
+export const viewport = {
+  themeColor: "#d4571d",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }) {
   return (
     <html lang="fr">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Instrument+Sans:wght@400;500;600&display=swap"
-          rel="stylesheet"
-        />
-      </head>
       <body>
+        <SwRegister />
         <header className="topbar">
           <Link href="/" className="brand">
             <span className="brand-mark" aria-hidden="true">
