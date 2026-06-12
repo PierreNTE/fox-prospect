@@ -80,10 +80,19 @@ a { color: inherit; }
   align-items: center;
   justify-content: space-between;
   padding: 10px 28px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Acrylique porté par un pseudo-élément : backdrop-filter sur .topbar
+   piégerait le position:fixed de la nav mobile (containing block). */
+.topbar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   background: var(--acrylic);
   -webkit-backdrop-filter: blur(22px) saturate(170%);
   backdrop-filter: blur(22px) saturate(170%);
-  border-bottom: 1px solid var(--line);
 }
 
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
