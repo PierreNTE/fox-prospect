@@ -4,7 +4,7 @@ import { callClaudeJson } from "@/lib/anthropic";
 import { researchSystemPrompt, researchUserPrompt } from "@/lib/prompts";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60; // la recherche web prend du temps
+export const maxDuration = 120; // la recherche web prend du temps (Fluid Compute : jusqu'à 300 s même en Hobby)
 
 export async function POST(request) {
   const supabase = getSupabase();
