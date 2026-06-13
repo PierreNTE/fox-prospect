@@ -33,11 +33,13 @@ Copie `.env.example` vers `.env.local` et remplis :
 | `SUPABASE_URL` | Supabase → Project Settings → API |
 | `SUPABASE_SERVICE_ROLE_KEY` | idem (clé service_role) |
 | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) → API Keys |
-| `APP_USER` / `APP_PASSWORD` | à choisir — protège l'app par Basic Auth |
+| `APP_USER` / `APP_PASSWORD` | à choisir — protègent l'app (page de connexion + Basic Auth) |
 | `RESEARCH_MAX_SEARCHES` | optionnel (défaut : 4) — nb max de recherches web par qualification |
 | `DAILY_RESEARCH_CAP` | optionnel (défaut : 50) — plafond de recherches par 24 h (sécurité budget) |
 
 ⚠️ **`APP_PASSWORD` est obligatoire en production** : sans lui, n'importe qui trouvant l'URL consomme ta clé API Anthropic.
+
+**Connexion** : au premier accès, l'app affiche une page `/login` (champs identifiant / mot de passe — remplissables par un gestionnaire de mots de passe type Bitwarden) et conserve la session 30 jours via un cookie sécurisé. L'authentification Basic (en-tête `Authorization`) reste acceptée en parallèle pour l'outillage (`curl`, scripts). Si tu changes `APP_PASSWORD`, toutes les sessions ouvertes sont invalidées.
 
 ### 3. En local
 
