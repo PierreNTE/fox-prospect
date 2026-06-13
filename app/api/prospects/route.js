@@ -83,6 +83,24 @@ export async function POST(request) {
   const { data, error } = await supabase.from("prospects").insert(clean).select();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  // Rattachement automatique à un compte (créé si absent) pour la vue par entreprise.
+  for (const p of data) {
+    const company = (p.company || "").trim();
+    if (!company) continue;
+    let accountId = null;
+    const { data: acc } = await supabase.from("accounts").select("id").ilike("name", company).limit(1);
+    if (acc && acc.length) accountId = acc[0].id;
+    else {
+      const { data: created } = await supabase
+        .from("accounts")
+        .insert({ name: company, website: p.company_website || "" })
+        .select("id")
+        .single();
+      accountId = created?.id || null;
+    }
+    if (accountId) await supabase.from("prospects").update({ account_id: accountId }).eq("id", p.id);
+  }
+
   return NextResponse.json({
     inserted: data.length,
     skipped: rows.length - clean.length,

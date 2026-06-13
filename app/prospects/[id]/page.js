@@ -71,6 +71,7 @@ export default function ProspectPage() {
             {prospect.role || "Poste inconnu"} · {prospect.company}
             {prospect.linkedin_url && <> · <a href={prospect.linkedin_url} target="_blank" rel="noreferrer">LinkedIn ↗</a></>}
             {prospect.company_website && <> · <a href={prospect.company_website} target="_blank" rel="noreferrer">Site ↗</a></>}
+            {prospect.account_id && <> · <a href={`/accounts/${prospect.account_id}`}>Fiche compte ↗</a></>}
           </p>
         </div>
         <ScoreBadge score={prospect.fit_score} />

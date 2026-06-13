@@ -19,6 +19,9 @@ export async function middleware(request) {
   // La page de connexion et sa route restent accessibles.
   if (pathname === "/login" || pathname === "/api/login") return NextResponse.next();
 
+  // Les tâches planifiées (cron Vercel) s'authentifient via CRON_SECRET dans leur route.
+  if (pathname.startsWith("/api/cron/")) return NextResponse.next();
+
   // 1. Cookie de session
   const cookie = request.cookies.get(SESSION_COOKIE)?.value;
   if (cookie && cookie === (await sessionToken(user, password))) {

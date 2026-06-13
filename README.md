@@ -35,7 +35,9 @@ Copie `.env.example` vers `.env.local` et remplis :
 | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) → API Keys |
 | `APP_USER` / `APP_PASSWORD` | à choisir — protègent l'app (page de connexion + Basic Auth) |
 | `RESEARCH_MAX_SEARCHES` | optionnel (défaut : 4) — nb max de recherches web par qualification |
-| `DAILY_RESEARCH_CAP` | optionnel (défaut : 50) — plafond de recherches par 24 h (sécurité budget) |
+| `DAILY_RESEARCH_CAP` | optionnel (défaut : 50) — plafond de recherches/analyses par 24 h (sécurité budget) |
+| `CRON_SECRET` | requis pour la veille auto — chaîne aléatoire protégeant la route cron |
+| `WATCH_BATCH` | optionnel (défaut : 2) — nb de comptes rafraîchis par passage de veille |
 
 ⚠️ **`APP_PASSWORD` est obligatoire en production** : sans lui, n'importe qui trouvant l'URL consomme ta clé API Anthropic.
 
@@ -89,11 +91,31 @@ Aucun scraping LinkedIn : la recherche s'appuie sur des sources web publiques vi
 - Migration base nécessaire (une fois) : exécuter `supabase/migration-sprint2.sql` dans le
   SQL Editor. Icônes regénérables avec `node scripts/generate-icons.mjs`.
 
+## Sprint 3 — base de grands comptes & cartographie DSI
+
+- **Comptes** (onglet *Comptes*) : une fiche par entreprise. Un compte se crée à la main
+  ou automatiquement à l'import d'un prospect (son entreprise).
+- **Analyse de compte** (bouton *Analyser ce compte*) : recherche web → synthèse, actualités
+  **générales et par direction** (datées/sourcées), **signaux stratégiques** (projets,
+  recrutements, investissements, partenariats, réorganisations, réglementaire), et
+  **cartographie IT** des décideurs identifiables publiquement.
+- **Organigramme** : arbre hiérarchique. L'IA **propose** les personnes à partir des seules
+  sources publiques ; chaque fiche porte un niveau de **fiabilité** (Vérifié / Partiellement
+  vérifié / Non vérifié), une **confiance** sur le poste et une **date de fraîcheur**. Tu
+  **valides**, édites, supprimes ou ajoutes manuellement. Règle stricte : rien n'est inventé
+  — la cartographie peut être volontairement courte.
+- **Veille automatique** : un cron Vercel (1×/jour) rafraîchit les comptes les plus anciens
+  marqués *Veille auto*, dans la limite de `DAILY_RESEARCH_CAP` et de `WATCH_BATCH` comptes
+  par passage. Désactivable compte par compte (interrupteur *Veille auto* sur la fiche).
+  Nécessite la variable `CRON_SECRET` sur Vercel (chaîne aléatoire) et l'exécution de
+  `supabase/migration-sprint3.sql`.
+
 ## Roadmap
 
 - **Sprint 1** : import, recherche/qualification, score de fit, accroches, brouillons multi-canal, pipeline, opt-out.
-- **Sprint 2 (ce repo)** : import par URL LinkedIn, enrichissement email/téléphone par recherche web, interface Fluent Design, PWA mobile.
-- **Sprint 3** : sourcing automatique via l'API SIRENE (ciblage NAF/effectif/région), file de qualification en lot, envoi email réel (domaine dédié, SPF/DKIM/DMARC, warm-up, plafond/jour), séquences, tracking réponses — uniquement quand la qualité des messages est prouvée.
+- **Sprint 2** : import par URL LinkedIn, enrichissement email/téléphone par recherche web, interface Fluent Design, PWA mobile.
+- **Sprint 3 (ce repo)** : base de grands comptes, cartographie DSI sourcée et validée, actualités/signaux par compte, veille automatique encadrée.
+- **Sprint 4 (idées)** : sourcing automatique via l'API SIRENE (ciblage NAF/effectif/région), file de qualification en lot, envoi email réel (domaine dédié, SPF/DKIM/DMARC, warm-up), séquences, tracking réponses.
 
 ## Itérer sur la qualité
 
