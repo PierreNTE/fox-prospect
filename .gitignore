@@ -4,3 +4,7 @@ node_modules
 .env.local
 .vercel
 .claude/
+
+# Donnees personnelles (carnet d adresses) — ne jamais committer
+All Contacts.vcf
+*.vcf
