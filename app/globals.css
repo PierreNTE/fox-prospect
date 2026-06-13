@@ -295,6 +295,15 @@ tr.clickable:hover td { background: var(--fox-soft); }
 }
 .signal .meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
 
+/* Actualités compactes : une à deux lignes, source en lien court. */
+.newsline {
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+.newsline:last-child { border-bottom: none; padding-bottom: 0; }
+.newsline:first-child { padding-top: 0; }
+.newsline .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
 .hook {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -330,6 +339,18 @@ tr.clickable:hover td { background: var(--fox-soft); }
 .alert-ok { background: var(--ok-soft); color: var(--ok); border-color: rgba(14, 110, 74, 0.25); }
 
 .empty { text-align: center; color: var(--muted); padding: 46px 20px; }
+
+/* Recherche en lot : ligne d'avancement. */
+.batch-current {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: var(--fox-soft);
+  border: 1px solid rgba(212, 87, 29, 0.25);
+  border-radius: var(--radius-ctl);
+}
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 

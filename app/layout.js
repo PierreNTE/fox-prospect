@@ -45,10 +45,6 @@ export default function RootLayout({ children }) {
           </nav>
         </header>
         <main className="container">{children}</main>
-        <footer className="footer">
-          Prospection B2B au sens RGPD : emails pro uniquement, lien avec la fonction, opposition
-          respectée en permanence. Envoi : toujours validé par un humain.
-        </footer>
       </body>
     </html>
   );

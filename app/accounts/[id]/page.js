@@ -155,7 +155,7 @@ export default function AccountPage() {
             <div key={i} className="signal">
               <div><strong>{s.type}</strong> — {s.detail}</div>
               <div className="meta">
-                {s.date} {s.source && <>· {s.source}</>}
+                {s.date}<SourceLink source={s.source} />
                 {s.confidence && <> · confiance : {CONFIDENCE[s.confidence] || s.confidence}</>}
               </div>
             </div>
@@ -186,11 +186,21 @@ export default function AccountPage() {
   );
 }
 
+// Affiche la source en lien court (domaine) plutôt qu'une URL à rallonge.
+function SourceLink({ source }) {
+  if (!source) return null;
+  const isUrl = /^https?:\/\//i.test(source);
+  if (!isUrl) return <span className="sub small">· {source}</span>;
+  let domain = source;
+  try { domain = new URL(source).hostname.replace(/^www\./, ""); } catch {}
+  return <> · <a href={source} target="_blank" rel="noreferrer">{domain} ↗</a></>;
+}
+
 function NewsItem({ n }) {
   return (
-    <div className="signal">
+    <div className="newsline">
       <div><strong>{n.title || n.category}</strong>{n.detail && <> — {n.detail}</>}</div>
-      <div className="meta">{n.date} {n.source && <>· {n.source}</>} {n.scope && n.scope !== "groupe" && <>· {n.scope}</>}</div>
+      <div className="meta">{n.date}<SourceLink source={n.source} />{n.scope && n.scope !== "groupe" && <> · {n.scope}</>}</div>
     </div>
   );
 }
@@ -317,7 +327,7 @@ function ContactCard({ contact, contacts, onChange }) {
               {contact.linkedin_url && <>· <a href={contact.linkedin_url} target="_blank" rel="noreferrer">LinkedIn ↗</a></>}
             </div>
           )}
-          {contact.source && <div className="sub small" style={{ marginTop: 2 }}>Source : {contact.source}</div>}
+          {contact.source && <div className="sub small" style={{ marginTop: 2 }}>Source<SourceLink source={contact.source} /></div>}
         </div>
       </div>
       <div className="row" style={{ marginTop: 8, gap: 8 }}>
