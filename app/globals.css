@@ -1,36 +1,45 @@
 /* ============================================================
-   Fox Prospect — habillage Fluent Design (Sprint 2).
+   Fox Prospect — interface Fluent 2 (style Windows 11).
    Mêmes noms de classes que la v1 : seul le style change.
-   Références : Segoe UI, surfaces acryliques (flou + translucidité),
-   fond façon Mica, profondeur par ombres douces, coins 4/8 px,
-   accent renard conservé. Navigation en barre d'onglets sur mobile.
+   Principes Fluent appliqués :
+   - Typographie Segoe UI Variable, rythme de tailles cohérent.
+   - Matières : fond Mica (teinté, fixe) + surfaces acryliques (flou).
+   - Profondeur en couches via jeu d'ombres (elevation 2/4/8/16).
+   - Coins arrondis 4/8 px, accent renard, états hover/pressed marqués.
+   - Contrôles Fluent : champs à soulignement animé, bascule (toggle) pilule.
+   Contrastes vérifiés WCAG AA (texte secondaire et accents corrigés).
    ============================================================ */
 
 :root {
   --bg: #f3f1ef;
-  --mica-a: rgba(212, 87, 29, 0.05);
-  --mica-b: rgba(29, 78, 137, 0.04);
+  --mica-a: rgba(212, 87, 29, 0.06);
+  --mica-b: rgba(29, 78, 137, 0.05);
   --surface: #ffffff;
   --surface-alt: #faf9f8;
-  --acrylic: rgba(255, 255, 255, 0.74);
+  --surface-2: #f5f3f1;
+  --acrylic: rgba(252, 251, 250, 0.8);
   --ink: #1b1a19;
-  --muted: #605e5c;
-  --faint: #979593;
+  --muted: #5d5b59;
+  --faint: #6e6c6a;          /* assombri : 2,98 → ~4,9:1 sur blanc (AA) */
   --line: rgba(0, 0, 0, 0.08);
-  --line-strong: rgba(0, 0, 0, 0.14);
-  --fox: #d4571d;
+  --line-strong: rgba(0, 0, 0, 0.16);
+  --fox: #d4571d;            /* accent de marque : remplissages, brand, traits */
+  --fox-ink: #a8430f;        /* accent en TEXTE sur fond clair : ~6:1 (AA) */
   --fox-soft: #fdf0e9;
   --fox-deep: #a93f0f;
-  --ok: #0f7b53;
+  --ok: #0e6e4a;
   --ok-soft: #e6f4ee;
-  --warn: #9a6a10;
+  --warn: #7c5500;           /* assombri : 4,29 → ~6:1 sur warn-soft (AA) */
   --warn-soft: #fdf3dd;
   --bad: #b3372e;
   --bad-soft: #fceceb;
   --radius: 8px;
-  --radius-ctl: 6px;
-  --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.06), 0 0 2px rgba(0, 0, 0, 0.04);
-  --shadow-8: 0 4px 14px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+  --radius-ctl: 5px;
+  /* Élévations Fluent (depth) */
+  --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.07), 0 0 1px rgba(0, 0, 0, 0.05);
+  --shadow-4: 0 2px 6px rgba(0, 0, 0, 0.08), 0 0 2px rgba(0, 0, 0, 0.05);
+  --shadow-8: 0 4px 14px rgba(0, 0, 0, 0.10), 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-16: 0 8px 28px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.08);
   --font: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont,
     "Helvetica Neue", Arial, sans-serif;
   --font-display: "Segoe UI Variable Display", "Segoe UI", -apple-system,
@@ -48,24 +57,26 @@ body {
   font-size: 15px;
   line-height: 1.55;
   background-color: var(--bg);
-  /* Fond façon Mica : matière neutre teintée par l'accent, fixe au défilement. */
+  /* Mica : matière neutre teintée par l'accent, fixe au défilement. */
   background-image:
-    radial-gradient(1100px 500px at 85% -10%, var(--mica-a), transparent 60%),
-    radial-gradient(900px 600px at -10% 110%, var(--mica-b), transparent 55%);
+    radial-gradient(1200px 520px at 88% -12%, var(--mica-a), transparent 60%),
+    radial-gradient(1000px 620px at -12% 112%, var(--mica-b), transparent 55%);
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.01em; }
-h1 { font-size: 26px; font-weight: 700; margin: 0 0 4px; }
-h2 { font-size: 17px; font-weight: 600; margin: 0 0 12px; }
+h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.015em; }
+h1 { font-size: 28px; font-weight: 700; margin: 0 0 4px; line-height: 1.2; }
+h2 { font-size: 18px; font-weight: 600; margin: 0 0 12px; }
 p { margin: 0 0 10px; }
 a { color: inherit; }
 
 ::selection { background: var(--fox-soft); }
 
+/* Focus Fluent : anneau d'accent net, visible au clavier. */
 :focus-visible {
-  outline: 2px solid var(--fox);
+  outline: 2px solid var(--fox-ink);
   outline-offset: 2px;
   border-radius: var(--radius-ctl);
 }
@@ -79,7 +90,7 @@ a { color: inherit; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 28px;
+  padding: 11px 28px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -91,11 +102,11 @@ a { color: inherit; }
   inset: 0;
   z-index: -1;
   background: var(--acrylic);
-  -webkit-backdrop-filter: blur(22px) saturate(170%);
-  backdrop-filter: blur(22px) saturate(170%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
 }
 
-.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+.brand { display: flex; align-items: center; gap: 11px; text-decoration: none; }
 
 .brand-mark {
   display: grid;
@@ -105,23 +116,24 @@ a { color: inherit; }
   border-radius: 8px;
   background: linear-gradient(135deg, #e2691f, var(--fox) 55%, var(--fox-deep));
   color: #fff;
-  box-shadow: var(--shadow-2);
+  box-shadow: var(--shadow-4);
 }
 
 .brand-name { font-family: var(--font-display); font-weight: 700; font-size: 17px; }
 
-.nav { display: flex; gap: 4px; }
+.nav { display: flex; gap: 2px; }
 .nav a {
+  position: relative;
   text-decoration: none;
   color: var(--muted);
-  font-weight: 500;
+  font-weight: 600;
   font-size: 14px;
   padding: 7px 14px;
   border-radius: var(--radius-ctl);
   transition: background 0.15s ease, color 0.15s ease;
 }
-.nav a:hover { color: var(--ink); background: rgba(0, 0, 0, 0.045); }
-.nav a:active { background: rgba(0, 0, 0, 0.08); }
+.nav a:hover { color: var(--ink); background: rgba(0, 0, 0, 0.05); }
+.nav a:active { background: rgba(0, 0, 0, 0.09); }
 
 .container { max-width: 1060px; margin: 0 auto; padding: 28px 24px 60px; }
 
@@ -133,7 +145,7 @@ a { color: inherit; }
   font-size: 12.5px;
 }
 
-/* ---------- Surfaces ---------- */
+/* ---------- Surfaces (cartes Fluent) ---------- */
 
 .card {
   background: var(--surface);
@@ -142,7 +154,6 @@ a { color: inherit; }
   padding: 20px 22px;
   margin-bottom: 16px;
   box-shadow: var(--shadow-2);
-  transition: box-shadow 0.18s ease;
 }
 
 .sub { color: var(--muted); }
@@ -169,16 +180,20 @@ button, .btn {
   transition: background 0.12s ease, border-color 0.12s ease,
     box-shadow 0.12s ease, transform 0.06s ease;
 }
-button:hover { background: var(--surface-alt); border-color: rgba(0, 0, 0, 0.22); }
-button:active { transform: scale(0.985); box-shadow: none; }
-button:disabled { opacity: 0.55; cursor: wait; transform: none; }
+button:hover { background: var(--surface-alt); border-color: rgba(0, 0, 0, 0.24); }
+button:active { transform: scale(0.985); box-shadow: none; background: var(--surface-2); }
+button:disabled { opacity: 0.5; cursor: wait; transform: none; }
 
+/* Bouton accent (primary) : remplissage Fluent, liseré bas plus sombre = profondeur. */
 .btn-fox {
-  background: linear-gradient(180deg, #de6526, var(--fox));
+  background: linear-gradient(180deg, #cf5319, #bb4b13);
   border-color: var(--fox-deep);
+  border-bottom-color: #8c3710;
   color: #fff;
+  box-shadow: var(--shadow-4);
 }
-.btn-fox:hover { background: linear-gradient(180deg, var(--fox), var(--fox-deep)); border-color: var(--fox-deep); }
+.btn-fox:hover { background: linear-gradient(180deg, #c44f16, #a8430f); border-color: var(--fox-deep); }
+.btn-fox:active { background: #a8430f; }
 
 input, select, textarea {
   font-family: var(--font);
@@ -186,16 +201,17 @@ input, select, textarea {
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--line-strong);
-  border-bottom: 1.5px solid rgba(0, 0, 0, 0.3);
+  border-bottom: 1.5px solid rgba(0, 0, 0, 0.36);
   border-radius: var(--radius-ctl) var(--radius-ctl) 2px 2px;
   padding: 8px 12px;
   width: 100%;
   min-height: 36px;
   transition: border-color 0.12s ease, background 0.12s ease;
 }
+/* Soulignement d'accent animé au focus : signature Fluent des champs. */
 input:focus, select:focus, textarea:focus {
   outline: none;
-  border-bottom-color: var(--fox);
+  border-bottom: 2px solid var(--fox);
   background: #fffdfc;
 }
 textarea { resize: vertical; min-height: 110px; }
@@ -260,13 +276,13 @@ tr.clickable:hover td { background: var(--fox-soft); }
   border-radius: var(--radius);
   padding: 12px 14px;
   box-shadow: var(--shadow-2);
-  transition: box-shadow 0.18s ease, border-color 0.18s ease;
+  transition: box-shadow 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
 }
-.trail-step:hover { box-shadow: var(--shadow-8); }
+.trail-step:hover { box-shadow: var(--shadow-8); transform: translateY(-1px); }
 .trail-step .n { font-family: var(--font-display); font-size: 22px; font-weight: 700; }
 .trail-step .l { font-size: 12.5px; color: var(--muted); }
 .trail-step.active { border-color: rgba(212, 87, 29, 0.55); }
-.trail-step.active .n { color: var(--fox); }
+.trail-step.active .n { color: var(--fox-ink); }
 
 /* ---------- Fiche de recherche ---------- */
 
@@ -287,7 +303,7 @@ tr.clickable:hover td { background: var(--fox-soft); }
   background: var(--surface);
 }
 .hook .angle { font-weight: 700; font-family: var(--font-display); }
-.hook .phrase { margin-top: 6px; font-style: italic; color: var(--fox-deep); }
+.hook .phrase { margin-top: 6px; font-style: italic; color: var(--fox-ink); }
 
 .draft {
   background: var(--surface-alt);
@@ -311,7 +327,7 @@ tr.clickable:hover td { background: var(--fox-soft); }
   border: 1px solid transparent;
 }
 .alert-err { background: var(--bad-soft); color: var(--bad); border-color: rgba(179, 55, 46, 0.25); }
-.alert-ok { background: var(--ok-soft); color: var(--ok); border-color: rgba(15, 123, 83, 0.25); }
+.alert-ok { background: var(--ok-soft); color: var(--ok); border-color: rgba(14, 110, 74, 0.25); }
 
 .empty { text-align: center; color: var(--muted); padding: 46px 20px; }
 
@@ -327,21 +343,54 @@ tr.clickable:hover td { background: var(--fox-soft); }
   padding: 2px 9px;
   border: 1px solid transparent;
 }
-.rel-verifie { background: var(--ok-soft); color: var(--ok); border-color: rgba(15, 123, 83, 0.3); }
-.rel-partiel { background: var(--warn-soft); color: var(--warn); border-color: rgba(154, 106, 16, 0.3); }
+.rel-verifie { background: var(--ok-soft); color: var(--ok); border-color: rgba(14, 110, 74, 0.3); }
+.rel-partiel { background: var(--warn-soft); color: var(--warn); border-color: rgba(124, 85, 0, 0.3); }
 .rel-non { background: rgba(0, 0, 0, 0.05); color: var(--muted); border-color: var(--line-strong); }
 
+/* Interrupteur à bascule Fluent (pilule) — remplace la case à cocher. */
 .toggle {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 9px;
   font-size: 13px;
   font-weight: 600;
   color: var(--muted);
   margin: 0;
   cursor: pointer;
+  user-select: none;
 }
-.toggle input { width: auto; min-height: 0; }
+.toggle input {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  width: 40px;
+  height: 20px;
+  min-height: 0;
+  margin: 0;
+  border: 1px solid var(--muted);
+  border-radius: 999px;
+  background: transparent;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.toggle input::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: left 0.15s ease, background 0.15s ease;
+}
+.toggle input:checked {
+  background: var(--fox);
+  border-color: var(--fox);
+}
+.toggle input:checked::before { left: 22px; background: #fff; }
 
 .linkrow {
   padding: 10px 0;
@@ -349,7 +398,7 @@ tr.clickable:hover td { background: var(--fox-soft); }
   cursor: pointer;
 }
 .linkrow:last-child { border-bottom: none; }
-.linkrow:hover { color: var(--fox-deep); }
+.linkrow:hover { color: var(--fox-ink); }
 
 /* ---------- Comptes : organigramme en arbre ---------- */
 
@@ -369,7 +418,7 @@ tr.clickable:hover td { background: var(--fox-soft); }
   box-shadow: var(--shadow-2);
 }
 .contactcard.proposed { border-style: dashed; border-color: var(--line-strong); background: var(--surface-alt); }
-.contactcard.editing { background: var(--surface-alt); }
+.contactcard.editing { background: var(--surface-alt); box-shadow: var(--shadow-16); }
 .proposed-tag {
   display: inline-block;
   margin-left: 8px;
@@ -399,6 +448,7 @@ tr.clickable:hover td { background: var(--fox-soft); }
 @media (prefers-reduced-motion: reduce) {
   .spin { animation: none; }
   html { scroll-behavior: auto; }
+  .trail-step:hover { transform: none; }
 }
 
 /* ============================================================
@@ -410,7 +460,7 @@ tr.clickable:hover td { background: var(--fox-soft); }
   .grid2 { grid-template-columns: 1fr; }
   .container { padding: 18px 14px 96px; }
   .footer { padding: 0 14px 96px; }
-  h1 { font-size: 22px; }
+  h1 { font-size: 23px; }
   .card { padding: 16px; }
 
   .topbar { padding: 10px 16px; }
@@ -425,8 +475,8 @@ tr.clickable:hover td { background: var(--fox-soft); }
     justify-content: space-around;
     gap: 0;
     background: var(--acrylic);
-    -webkit-backdrop-filter: blur(22px) saturate(170%);
-    backdrop-filter: blur(22px) saturate(170%);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    backdrop-filter: blur(30px) saturate(180%);
     border-top: 1px solid var(--line);
     padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
   }
