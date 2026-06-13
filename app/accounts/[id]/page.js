@@ -46,6 +46,18 @@ export default function AccountPage() {
     finally { setBusy(""); }
   };
 
+  const deduceOrg = async () => {
+    setBusy("org");
+    setError("");
+    try {
+      const res = await fetch(`/api/accounts/${id}/org-structure`, { method: "POST" });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || d.error) setError(d.error || `Erreur ${res.status}.`);
+      await load();
+    } catch (e) { setError(e.message); }
+    finally { setBusy(""); }
+  };
+
   const toggleWatch = async () => {
     await fetch(`/api/accounts/${id}`, {
       method: "PATCH",
@@ -108,7 +120,15 @@ export default function AccountPage() {
       <div className="card">
         <div className="row spread">
           <h2>Organigramme IT</h2>
-          <AddContact accountId={id} contacts={contacts} onAdded={load} />
+          <div className="row" style={{ gap: 8 }}>
+            {contacts.length >= 2 && (
+              <button disabled={!!busy} onClick={deduceOrg}>
+                {busy === "org" && <span className="spin spin-dark" />}
+                Déduire l'organigramme
+              </button>
+            )}
+            <AddContact accountId={id} contacts={contacts} onAdded={load} />
+          </div>
         </div>
         {contacts.length === 0 ? (
           <p className="sub small">
