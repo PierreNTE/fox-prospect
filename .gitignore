@@ -8,3 +8,14 @@ node_modules
 # Donnees personnelles (carnet d adresses) — ne jamais committer
 All Contacts.vcf
 *.vcf
+
+# Scripts jetables contenant des secrets en clair — ne jamais committer
+batch-research.mjs
+
+# POC Scrapling : environnement Python local
+scripts/scrapling-careers/.venv/
+__pycache__/
+*.pyc
+
+# Résultats d'eval (générés localement)
+eval-results/

@@ -1,0 +1,5 @@
+# POC Scrapling — collecteur de signaux "recrutement" depuis les pages carrières.
+# Python 3.10+ requis.
+scrapling[fetchers]>=0.2
+supabase>=2.4
+python-dotenv>=1.0

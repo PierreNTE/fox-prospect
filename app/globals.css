@@ -520,3 +520,70 @@ tr.clickable:hover td { background: var(--fox-soft); }
   button, .btn { min-height: 42px; }
   input, select, textarea { min-height: 42px; font-size: 16px; } /* 16px : évite le zoom iOS */
 }
+
+/* ============================================================
+   Mode sombre automatique (prefers-color-scheme: dark).
+   Palette Fluent 2 dark — même structure de variables, teintes inversées.
+   Mica : même teinture d'accent, plus saturée sur fond noir.
+   ============================================================ */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1917;
+    --mica-a: rgba(212, 87, 29, 0.12);
+    --mica-b: rgba(29, 78, 137, 0.10);
+    --surface: #272523;
+    --surface-alt: #2d2b29;
+    --surface-2: #333130;
+    --acrylic: rgba(28, 25, 23, 0.88);
+    --ink: #faf9f8;
+    --muted: #b3b0ad;
+    --faint: #8a8784;
+    --line: rgba(255, 255, 255, 0.08);
+    --line-strong: rgba(255, 255, 255, 0.14);
+    --fox: #e8742e;
+    --fox-ink: #f59055;
+    --fox-soft: #3d2115;
+    --fox-deep: #d4571d;
+    --ok: #3dd68c;
+    --ok-soft: #0f3024;
+    --warn: #f5c542;
+    --warn-soft: #3a2900;
+    --bad: #f87171;
+    --bad-soft: #3d1515;
+    --shadow-2: 0 1px 2px rgba(0, 0, 0, 0.30), 0 0 1px rgba(0, 0, 0, 0.20);
+    --shadow-4: 0 2px 6px rgba(0, 0, 0, 0.36), 0 0 2px rgba(0, 0, 0, 0.22);
+    --shadow-8: 0 4px 14px rgba(0, 0, 0, 0.42), 0 1px 3px rgba(0, 0, 0, 0.24);
+    --shadow-16: 0 8px 28px rgba(0, 0, 0, 0.52), 0 2px 6px rgba(0, 0, 0, 0.28);
+  }
+
+  /* Input : focus-soft sur fond sombre (évite le blanc aveuglant). */
+  input:focus, select:focus, textarea:focus {
+    background: #302c29;
+    border-bottom-color: var(--fox);
+  }
+
+  /* Hover nav : adapté au fond sombre. */
+  .nav a:hover { background: rgba(255, 255, 255, 0.07); }
+  .nav a:active { background: rgba(255, 255, 255, 0.12); }
+
+  /* Tableau : hover ligne adapté. */
+  tr.clickable:hover td { background: var(--fox-soft); }
+
+  /* Badges score : déjà pilotés par --ok/--warn/--bad, pas besoin d'override. */
+
+  /* Pills contacté (bleu) : adapté au fond sombre. */
+  .pill-contacte { background: #1a2d4a; color: #82b4f0; }
+
+  /* Bouton accent : idem (gradient sombre déjà correct sur fond sombre). */
+  .btn-fox { border-bottom-color: #6b2a09; }
+
+  /* Score-none badge */
+  .score-none { background: rgba(255, 255, 255, 0.07); }
+
+  /* Pill nouveau */
+  .pill-nouveau { background: rgba(255, 255, 255, 0.07); }
+
+  /* rel-non badge */
+  .rel-non { background: rgba(255, 255, 255, 0.07); border-color: var(--line-strong); }
+}

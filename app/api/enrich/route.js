@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { callClaudeJson } from "@/lib/anthropic";
 import { enrichSystemPrompt, enrichUserPrompt } from "@/lib/prompts-enrich";
+import { validateEnrich } from "@/lib/schemas";
+import { logAiRun } from "@/lib/ai-runs";
+import { getEnvConfig, MODEL_HAIKU } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120; // recherche web (Fluid Compute : jusqu'à 300 s même en Hobby)
+export const maxDuration = 300; // recherche web (Fluid Compute : jusqu'à 300 s même en Hobby)
 
 export async function POST(request) {
   const supabase = getSupabase();
@@ -19,20 +22,25 @@ export async function POST(request) {
     return NextResponse.json({ error: "Prospect introuvable." }, { status: 404 });
   }
 
+  const { maxSearches } = getEnvConfig();
+
   try {
-    const { json: result } = await callClaudeJson({
+    const { json: raw, usage, webSearchCount } = await callClaudeJson({
       system: enrichSystemPrompt(),
       user: enrichUserPrompt({ prospect }),
       maxTokens: 1500,
       webSearch: true,
-      maxSearches: Number(process.env.RESEARCH_MAX_SEARCHES) || 4,
+      maxSearches,
+      model: MODEL_HAIKU,
     });
+
+    const result = validateEnrich(raw);
 
     // On ne remplace jamais un email saisi à la main : s'il existe déjà et
     // diffère du candidat, l'UI propose la suggestion sans écraser.
     const update = {
-      email_confidence: result.email_confidence || "",
-      email_source: result.email_source || "",
+      email_confidence: result.email_confidence,
+      email_source: result.email_source,
     };
     if (result.email && !prospect.email) update.email = result.email;
     if (result.phone && !prospect.phone) update.phone = result.phone;
@@ -44,6 +52,8 @@ export async function POST(request) {
       .select()
       .single();
     if (updateError) throw new Error(updateError.message);
+
+    logAiRun({ route: "enrich", prospectId, usage, webSearchCount, model: MODEL_HAIKU });
 
     return NextResponse.json({ prospect: saved, enrichment: result });
   } catch (e) {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
+import { logEvent } from "@/lib/events";
 
 export const dynamic = "force-dynamic";
 
@@ -41,21 +42,30 @@ export async function PATCH(request, { params }) {
   const update = {};
   for (const key of allowed) if (key in body) update[key] = body[key];
 
-  // Passage en opt-out : on inscrit l'email dans la liste d'opposition permanente.
-  if (update.status === "opt-out") {
-    const { data: p } = await supabase.from("prospects").select("email").eq("id", id).single();
-    const email = update.email || p?.email;
-    if (!email) {
-      return NextResponse.json(
-        { error: "Renseigne d'abord l'email du contact : l'opposition est enregistrée par email." },
-        { status: 400 }
-      );
+  // Passage en opt-out ou changement de statut : fetch le prospect courant.
+  let prevStatus = null;
+  if (update.status) {
+    const { data: p } = await supabase.from("prospects").select("email, status").eq("id", id).single();
+    prevStatus = p?.status ?? null;
+    if (update.status === "opt-out") {
+      const email = update.email || p?.email;
+      if (!email) {
+        return NextResponse.json(
+          { error: "Renseigne d'abord l'email du contact : l'opposition est enregistrée par email." },
+          { status: 400 }
+        );
+      }
+      await supabase.from("optout").upsert({ email: email.toLowerCase(), reason: "demande du contact" });
     }
-    await supabase.from("optout").upsert({ email: email.toLowerCase(), reason: "demande du contact" });
   }
 
   const { data, error } = await supabase.from("prospects").update(update).eq("id", id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  if (update.status && prevStatus !== update.status) {
+    logEvent({ kind: "status_change", prospectId: id, fromStatus: prevStatus, toStatus: update.status });
+  }
+
   return NextResponse.json({ prospect: data });
 }
 

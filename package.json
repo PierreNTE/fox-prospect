@@ -5,7 +5,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "eval": "node --env-file=.env.local scripts/eval.mjs",
+    "eval:baseline": "node --env-file=.env.local scripts/eval.mjs --single-pass",
+    "eval:night": "node --env-file=.env.local scripts/eval-night.mjs",
+    "eval:compare": "node scripts/eval-compare.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

@@ -2,13 +2,16 @@ import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { callClaudeJson } from "@/lib/anthropic";
 import { generateSystemPrompt, generateUserPrompt } from "@/lib/prompts";
+import { validateGenerate } from "@/lib/schemas";
+import { logAiRun } from "@/lib/ai-runs";
+import { logEvent } from "@/lib/events";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(request) {
   const supabase = getSupabase();
-  const { prospectId } = await request.json();
+  const { prospectId, triggerSignal } = await request.json();
 
   const [{ data: prospect }, { data: researchRows }, { data: settings }] = await Promise.all([
     supabase.from("prospects").select("*").eq("id", prospectId).single(),
@@ -32,31 +35,30 @@ export async function POST(request) {
   }
 
   try {
-    const { json: result } = await callClaudeJson({
+    const { json: raw, usage, webSearchCount } = await callClaudeJson({
       system: generateSystemPrompt(),
-      user: generateUserPrompt({
-        prospect,
-        research,
-        offer: settings?.offer,
-        sender: settings || {},
-      }),
+      user: generateUserPrompt({ prospect, research, offer: settings?.offer, sender: settings || {}, triggerSignal: triggerSignal || null }),
       maxTokens: 1500,
       webSearch: false,
     });
 
+    const result = validateGenerate(raw);
 
     const { data: saved, error } = await supabase
       .from("drafts")
       .insert({
         prospect_id: prospectId,
-        email_subject: result.email_subject || "",
-        email_body: result.email_body || "",
-        linkedin_message: result.linkedin_message || "",
-        call_points: result.call_points || [],
+        email_subject: result.email_subject,
+        email_body: result.email_body,
+        linkedin_message: result.linkedin_message,
+        call_points: result.call_points,
       })
       .select()
       .single();
     if (error) throw new Error(error.message);
+
+    logAiRun({ route: "generate", prospectId, usage, webSearchCount });
+    logEvent({ kind: "draft_generated", prospectId });
 
     return NextResponse.json({ drafts: saved });
   } catch (e) {

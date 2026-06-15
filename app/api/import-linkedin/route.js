@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { callClaudeJson } from "@/lib/anthropic";
 import { linkedinImportSystemPrompt, linkedinImportUserPrompt } from "@/lib/prompts-enrich";
+import { validateLinkedinImport } from "@/lib/schemas";
+import { logAiRun } from "@/lib/ai-runs";
+import { getEnvConfig, MODEL_HAIKU } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120; // recherche web (Fluid Compute : jusqu'à 300 s même en Hobby)
+export const maxDuration = 300; // recherche web (Fluid Compute : jusqu'à 300 s même en Hobby)
 
 export async function POST(request) {
   const { linkedinUrl } = await request.json();
@@ -16,28 +19,35 @@ export async function POST(request) {
     );
   }
 
+  const { maxSearches } = getEnvConfig();
+
   try {
-    const { json: result } = await callClaudeJson({
+    const { json: raw, usage, webSearchCount } = await callClaudeJson({
       system: linkedinImportSystemPrompt(),
       user: linkedinImportUserPrompt({ linkedinUrl: url }),
       maxTokens: 1200,
       webSearch: true,
-      maxSearches: Number(process.env.RESEARCH_MAX_SEARCHES) || 4,
+      maxSearches,
+      model: MODEL_HAIKU,
     });
+
+    const result = validateLinkedinImport(raw);
+
+    logAiRun({ route: "import-linkedin", usage, webSearchCount, model: MODEL_HAIKU });
 
     return NextResponse.json({
       prospect: {
-        first_name: result.first_name || "",
-        last_name: result.last_name || "",
-        role: result.role || "",
-        company: result.company || "",
-        company_website: result.company_website || "",
+        first_name: result.first_name,
+        last_name: result.last_name,
+        role: result.role,
+        company: result.company,
+        company_website: result.company_website,
         linkedin_url: url,
         email: "",
       },
-      confidence: result.confidence || "basse",
-      notes: result.notes || "",
-      sources: result.sources || [],
+      confidence: result.confidence,
+      notes: result.notes,
+      sources: result.sources,
     });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });

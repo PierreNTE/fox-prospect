@@ -41,6 +41,7 @@ export default function RootLayout({ children }) {
             <Link href="/">Piste</Link>
             <Link href="/accounts">Comptes</Link>
             <Link href="/import">Importer</Link>
+            <Link href="/analytics">Analyse</Link>
             <Link href="/settings">Réglages</Link>
           </nav>
         </header>

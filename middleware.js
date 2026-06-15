@@ -5,13 +5,30 @@ import { SESSION_COOKIE, sessionToken } from "@/lib/auth";
 // Anthropic. Sans APP_PASSWORD défini, l'app reste ouverte (pratique en local),
 // mais ne déploie jamais sur Vercel sans le définir.
 //
+// QW6 — En production (VERCEL=1), APP_PASSWORD est obligatoire : absence = 503
+// plutôt que l'ancienne ouverture silencieuse qui exposait la clé Anthropic.
+//
 // Deux modes d'accès acceptés :
 // 1. Cookie de session posé par la page /login (formulaire classique :
 //    compatible Bitwarden et autres gestionnaires de mots de passe).
 // 2. Basic Auth (en-tête Authorization) : conservé pour curl et l'outillage.
 export async function middleware(request) {
   const password = process.env.APP_PASSWORD;
-  if (!password) return NextResponse.next();
+  const isProduction = process.env.VERCEL === "1" || process.env.NODE_ENV === "production";
+
+  if (!password) {
+    // En production sans mot de passe : bloquer plutôt qu'exposer la clé Anthropic.
+    if (isProduction) {
+      const { pathname } = request.nextUrl;
+      if (pathname.startsWith("/api/cron/")) return NextResponse.next();
+      return new NextResponse(
+        "APP_PASSWORD est requis en production. Définissez cette variable d'environnement dans Vercel.",
+        { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } }
+      );
+    }
+    // En développement local, on laisse passer (confort DX).
+    return NextResponse.next();
+  }
 
   const user = process.env.APP_USER || "pierre";
   const { pathname } = request.nextUrl;

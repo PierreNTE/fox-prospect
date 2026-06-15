@@ -58,7 +58,9 @@ npm run dev
 3. Dans **Settings → Environment Variables**, ajoute les variables ci-dessus (les 5 obligatoires, plus `RESEARCH_MAX_SEARCHES` et `DAILY_RESEARCH_CAP` recommandées).
 4. Deploy. Au premier accès, le navigateur demande utilisateur/mot de passe (Basic Auth).
 
-Note : la recherche peut prendre 20-40 s. Les routes sont configurées avec `maxDuration = 60`, dans la limite du plan Hobby de Vercel. Le nombre de recherches web par qualification est plafonné par `RESEARCH_MAX_SEARCHES` (défaut : 4) ; **si des recherches tombent en 504, baisser à 3**. `DAILY_RESEARCH_CAP` (défaut : 50) limite le nombre de recherches par 24 h pour protéger le budget API.
+Note : la recherche peut prendre 20-40 s (parfois plus avec les réessais). Les routes de recherche web sont configurées avec `maxDuration = 300` (Fluid Compute : jusqu'à 300 s même en Hobby). Le nombre de recherches web par qualification est plafonné par `RESEARCH_MAX_SEARCHES` (défaut : 4) ; **si des recherches tombent en 504, baisser à 3**. `DAILY_RESEARCH_CAP` (défaut : 50) limite le nombre de recherches par 24 h pour protéger le budget API.
+
+Les appels à l'API Anthropic **réessaient automatiquement** (jusqu'à 5 tentatives, back-off progressif respectant l'en-tête `retry-after`) en cas de limite de débit (429) ou de surcharge (529) — utile sur les comptes API récents plafonnés en tokens/minute. Une qualification peut donc patienter plutôt qu'échouer.
 
 ## Utilisation type (la boucle quotidienne)
 
