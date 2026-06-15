@@ -1,6 +1,7 @@
 # Fox Prospect 🦊
 
-Copilote de prospection B2B IT — **Sprint 1 : qualification + points d'accroche**.
+Copilote de prospection B2B IT — **qualification, cartographie de comptes,
+points d'accroche et pilotage de la prospection**.
 
 Pour chaque prospect (DSI, RSSI, responsable infra…), l'app :
 1. cherche sur le web l'actualité de l'entreprise et du contact (signaux d'achat : recrutements IT, levées, projets SI, nominations, NIS2/DORA…),
@@ -12,113 +13,229 @@ Pour chaque prospect (DSI, RSSI, responsable infra…), l'app :
 
 ## Stack
 
-Next.js 14 (App Router, JavaScript) · Supabase (base de données) · API Anthropic (`claude-sonnet-4-6` + web search) · Vercel (hébergement).
+Next.js 14 (App Router, JavaScript) · Supabase (Postgres, RLS) · API Anthropic
+(`claude-sonnet-4-6` + `claude-haiku-4-5` + web search) · Vercel (hébergement, free tier).
 
-Coût de fonctionnement : ~0,02-0,05 € par prospect qualifié (recherche web + génération). Vercel et Supabase en free tier.
+Coût de fonctionnement : ~0,06-0,16 € par prospect qualifié (recherche web 2 passes +
+génération). Vercel et Supabase en free tier. Tous les appels LLM sont journalisés
+(table `ai_runs`) et visibles dans la page **Analyse**.
+
+---
 
 ## Installation
 
-### 1. Supabase (5 min)
+### 1. Supabase
 
 1. Crée un projet sur [supabase.com](https://supabase.com) (free tier).
-2. Ouvre **SQL Editor** → colle le contenu de `supabase/schema.sql` → Run.
-3. Récupère dans **Project Settings → API** : l'URL du projet et la clé `service_role` (pas l'anon key — elle reste côté serveur uniquement).
+2. Ouvre **SQL Editor** et exécute les migrations **dans l'ordre** (chacune est
+   idempotente, `if not exists` partout) :
+
+   | Fichier | Apporte |
+   |---|---|
+   | `supabase/schema.sql` | base : prospects, research, drafts, settings, optout |
+   | `supabase/migration-sprint2.sql` | import LinkedIn, champs enrichissement |
+   | `supabase/migration-sprint3.sql` | accounts, account_contacts (organigramme), `prospects.account_id` |
+   | `supabase/migration-quickwins.sql` | `ai_runs` (journal des coûts LLM) |
+   | `supabase/migration-v1.sql` | companies (SIREN), company_signals (signaux d'achat datés) |
+   | `supabase/migration-v2.sql` | `settings.icp`, `prospects.email_confidence/email_source` |
+   | `supabase/migration-v3.sql` | `events` (timeline commerciale), `push_subscriptions` |
+
+3. Récupère dans **Project Settings → API** : l'URL du projet et la clé `service_role`
+   (jamais l'anon key — la clé reste côté serveur uniquement).
 
 ### 2. Variables d'environnement
 
 Copie `.env.example` vers `.env.local` et remplis :
 
-| Variable | Où la trouver |
-|---|---|
-| `SUPABASE_URL` | Supabase → Project Settings → API |
-| `SUPABASE_SERVICE_ROLE_KEY` | idem (clé service_role) |
-| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) → API Keys |
-| `APP_USER` / `APP_PASSWORD` | à choisir — protègent l'app (page de connexion + Basic Auth) |
-| `RESEARCH_MAX_SEARCHES` | optionnel (défaut : 4) — nb max de recherches web par qualification |
-| `DAILY_RESEARCH_CAP` | optionnel (défaut : 50) — plafond de recherches/analyses par 24 h (sécurité budget) |
-| `CRON_SECRET` | requis pour la veille auto — chaîne aléatoire protégeant la route cron |
-| `WATCH_BATCH` | optionnel (défaut : 2) — nb de comptes rafraîchis par passage de veille |
+| Variable | Rôle | Défaut |
+|---|---|---|
+| `SUPABASE_URL` | Supabase → Project Settings → API | requis |
+| `SUPABASE_SERVICE_ROLE_KEY` | clé `service_role` | requis |
+| `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) → API Keys | requis |
+| `APP_USER` / `APP_PASSWORD` | protègent l'app (page de connexion + Basic Auth) | requis en prod |
+| `RESEARCH_EXTRACT_MODEL` | modèle de la passe d'extraction : `haiku` (défaut) ou `sonnet` | `haiku` |
+| `RESEARCH_MAX_SEARCHES` | nb max de recherches web par qualification | `4` |
+| `DAILY_RESEARCH_CAP` | plafond de recherches/analyses par 24 h (sécurité budget) | `50` |
+| `FRESHNESS_TTL_DAYS` | durée de validité du cache de recherche | `14` |
+| `CRON_SECRET` | protège les routes cron (veille auto) | requis pour la veille |
+| `WATCH_BATCH` | nb de comptes rafraîchis par passage de veille | `2` |
+| `FRANCE_TRAVAIL_CLIENT_ID` / `_SECRET` | collecte des offres IT (signaux recrutement) | optionnel |
 
 ⚠️ **`APP_PASSWORD` est obligatoire en production** : sans lui, n'importe qui trouvant l'URL consomme ta clé API Anthropic.
 
-**Connexion** : au premier accès, l'app affiche une page `/login` (champs identifiant / mot de passe — remplissables par un gestionnaire de mots de passe type Bitwarden) et conserve la session 30 jours via un cookie sécurisé. L'authentification Basic (en-tête `Authorization`) reste acceptée en parallèle pour l'outillage (`curl`, scripts). Si tu changes `APP_PASSWORD`, toutes les sessions ouvertes sont invalidées.
+**Connexion** : au premier accès, l'app affiche `/login` (identifiant / mot de passe,
+compatible gestionnaires de mots de passe) et conserve la session 30 jours via un
+cookie sécurisé. Le formulaire de login est protégé par un **rate-limiting**
+(10 tentatives / 15 min par IP). Basic Auth reste accepté en parallèle pour l'outillage.
 
 ### 3. En local
 
 ```bash
 npm install
-npm run dev
-# → http://localhost:3000
+npm run dev    # → http://localhost:3000
 ```
 
 ### 4. Déploiement Vercel
 
-1. Pousse le dossier sur un repo GitHub (privé).
-2. Sur [vercel.com](https://vercel.com) → **Add New Project** → importe le repo (framework détecté : Next.js, rien à configurer).
-3. Dans **Settings → Environment Variables**, ajoute les variables ci-dessus (les 5 obligatoires, plus `RESEARCH_MAX_SEARCHES` et `DAILY_RESEARCH_CAP` recommandées).
-4. Deploy. Au premier accès, le navigateur demande utilisateur/mot de passe (Basic Auth).
+1. Pousse le repo sur GitHub (privé).
+2. Sur [vercel.com](https://vercel.com) → **Add New Project** → importe le repo (Next.js détecté).
+3. **Settings → Environment Variables** : ajoute les variables ci-dessus.
+4. Deploy.
 
-Note : la recherche peut prendre 20-40 s (parfois plus avec les réessais). Les routes de recherche web sont configurées avec `maxDuration = 300` (Fluid Compute : jusqu'à 300 s même en Hobby). Le nombre de recherches web par qualification est plafonné par `RESEARCH_MAX_SEARCHES` (défaut : 4) ; **si des recherches tombent en 504, baisser à 3**. `DAILY_RESEARCH_CAP` (défaut : 50) limite le nombre de recherches par 24 h pour protéger le budget API.
+Note : la recherche peut prendre 30-60 s. Les routes web sont en `maxDuration = 300`
+(Fluid Compute). Les appels Anthropic **réessaient automatiquement** (jusqu'à 3 tentatives,
+back-off respectant `retry-after`) sur 429/529. Vercel **Hobby** = 2 crons max,
+1 exécution/jour par cron (voir `vercel.json`).
 
-Les appels à l'API Anthropic **réessaient automatiquement** (jusqu'à 5 tentatives, back-off progressif respectant l'en-tête `retry-after`) en cas de limite de débit (429) ou de surcharge (529) — utile sur les comptes API récents plafonnés en tokens/minute. Une qualification peut donc patienter plutôt qu'échouer.
+---
 
-## Utilisation type (la boucle quotidienne)
+## Fonctionnalités
 
-1. **Importer** : un contact à la main, ou un CSV collé (export Sales Navigator, liste SIRENE, fichier maison). Colonnes reconnues en FR/EN.
-2. Ouvrir la fiche → **Lancer la recherche** → lire les signaux, le score, les angles.
-3. **Générer les brouillons** → copier → personnaliser la dernière touche → envoyer depuis ta boîte / ton LinkedIn.
-4. Mettre à jour le **statut** sur la piste (contacté → répondu → rdv) et noter les comptes-rendus.
+### Qualification — recherche en 2 passes (anti-hallucination)
 
-Discipline qui fait le > 20 % de réponse : ne contacte que les fits ≥ 60, et seulement quand il y a au moins un signal daté de moins de 6 mois.
+La recherche se fait en deux temps, pour ancrer l'analyse dans des faits vérifiés :
+
+1. **Extraction** (`claude-haiku-4-5` par défaut, **web search activé**) : sort des
+   faits sourcés et datés. Haiku = ~10× moins cher que Sonnet pour cette tâche simple.
+2. **Jugement** (`claude-sonnet-4-6`, **sans web search**) : analyse *uniquement* les
+   faits extraits → signaux, score de fit, angles d'accroche. Interdiction de compléter
+   par la connaissance générale du modèle.
+
+Bascule possible sans redéploiement : `RESEARCH_EXTRACT_MODEL=sonnet` repasse la passe 1
+sur Sonnet. Si l'extraction échoue, repli automatique sur une passe unique (comportement
+historique). Le coût est journalisé **par passe** (modèles distincts) dans `ai_runs`.
+
+### Comptes & cartographie DSI
+
+- **Comptes** : une fiche par entreprise (créée à la main, à l'import d'un prospect, ou via SIRENE).
+- **Analyse de compte** : recherche web → synthèse, actualités datées/sourcées, **signaux
+  stratégiques**, et **organigramme** des décideurs identifiables publiquement (avec niveau
+  de fiabilité, confiance sur le poste, fraîcheur). Rien n'est inventé ; tu valides/édites.
+- **Comptes chauds** : score de chaleur dérivé des signaux (décroissance temporelle par type).
+- **Import SIRENE** : ajoute des ETI/GE depuis l'API officielle (NAF, effectif, région) pour le scoring firmographique.
+
+### Pilotage & analyse
+
+- **Priorités du jour** (page d'accueil) : moteur *Next Best Action* — classe les prospects
+  par action prioritaire (relancer, qualifier une réponse, préparer un RDV…).
+- **Analyse** (`/analytics`) : coûts IA par jour/route, répartition du pipeline, activité
+  commerciale (events), score de fit moyen. Graphiques CSS purs, sans librairie.
+- **Export CRM** : CSV / JSON de tous les prospects (avec dernier score et résumé).
+- **Timeline `events`** : chaque changement de statut, recherche, génération de brouillon
+  est journalisé (base des KPIs commerciaux).
+
+### Veille automatique
+
+Deux crons Vercel quotidiens (`vercel.json`) : `refresh-accounts` (réanalyse les comptes
+les plus anciens en *Veille auto*, dans la limite de `DAILY_RESEARCH_CAP`/`WATCH_BATCH`)
+et `collect-signals` (offres IT France Travail + marchés publics BOAMP).
+
+### Confort
+
+Interface **Fluent 2** avec **mode sombre automatique** (`prefers-color-scheme`), PWA
+mobile (barre d'onglets, « Ajouter à l'écran d'accueil »).
+
+---
+
+## Banc d'essai qualité (eval)
+
+Le harnais `scripts/eval.mjs` mesure la qualité des sorties LLM sur un jeu de cas de
+référence (grands comptes FR), sans toucher la base — appels Anthropic directs en `fetch`.
+
+```bash
+npm run eval            # 2 passes (extraction Haiku)
+npm run eval:baseline   # mono-passe (comparaison)
+npm run eval:night      # extraction Sonnet vs Haiku, sauvegarde dans eval-results/
+npm run eval:compare    # compare les 2 derniers résultats
+
+# options : --limit N (smoke test), --pass1-only, --single-pass, --haiku-extract
+```
+
+Chaque cas est noté sur 7 critères (signaux présents, score borné/non nul, hooks, résumé,
+sources). Les résultats sont écrits dans `eval-results/` (gitignoré).
+
+> Note technique : le web_search d'Anthropic est un **outil serveur** — son nombre d'appels
+> se lit dans `usage.server_tool_use.web_search_requests`, pas dans les blocs `tool_use`
+> (sinon le coût est compté à 0). Corrigé dans `lib/anthropic.js`.
+
+---
+
+## Outillage d'acquisition de contacts (local, hors app)
+
+Des outils **Python locaux** (hors Vercel) pour trouver des prospects et leurs coordonnées,
+en privilégiant le **100% gratuit par scraping** (Scrapling). Voir leurs README dédiés :
+
+- **`scripts/contact-sources/`** — pipeline découverte → extraction → enrichissement.
+  - `discover_free.py` : scrape DuckDuckGo (`site:linkedin.com/in`) → extrait nom/poste/société
+    depuis les profils LinkedIn publics (sans login). `--from-db N` lit les comptes Supabase,
+    `--save` exporte en CSV/JSON. **Gratuit, prouvé**, mais à débit lent (rate limits).
+  - `waterfall.py` : enrichissement email gratuit multi-sources (motif + MX + scraping).
+    Reproduit la structure de FullEnrich, pas sa couverture (téléphone direct = pas gratuit).
+  - `compare.py` / `discover.py` : comparaison de sources à clé (Pappers, Dropcontact, Brave).
+  - → [README détaillé](scripts/contact-sources/README.md)
+- **`scripts/scrapling-careers/`** — installation du venv Scrapling (réutilisé par les outils
+  ci-dessus) ; POC de scraping de pages carrières (abandonné, conservé pour référence).
+  - → [README détaillé](scripts/scrapling-careers/README.md)
+
+Ces outils ne sont **pas** déployés : ils tournent sur ta machine, écrivent au plus dans le
+même Supabase, et produisent des fichiers gitignorés (données personnelles).
+
+---
+
+## Scraping automatisé via GitHub Actions
+
+Pour que la découverte/enrichissement tourne **sans ta machine** et **gratuitement**, un
+worker GitHub Actions exécute les scripts `contact-sources/` sur cron et écrit dans Supabase.
+L'app (page **Scraping**) lit la progression en direct (polling 5 s) et peut déclencher un
+run à la demande. La **qualification 2 passes** reste dans l'app (appels Anthropic, OK en
+serverless) ; le worker respecte l'**opt-out** et déduplique (`linkedin_url` / `email`).
+
+**Architecture** (le scraping Python ne peut pas tourner sur Vercel) :
+- File de jobs Supabase : `scrape_jobs` + `scrape_results` (migration `supabase/migration-scraping.sql`).
+- Worker : `.github/workflows/scrape-worker.yml` → `scripts/contact-sources/worker.py`.
+- App : page `app/scraping/page.js` + routes `app/api/scrape/{enqueue,jobs,jobs/[id],promote}`.
+
+**Mise en service** (une fois) :
+1. Supabase → SQL Editor → exécuter `supabase/migration-scraping.sql`.
+2. GitHub → repo → **Settings → Secrets and variables → Actions** → secrets `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
+3. Créer un **PAT fine-grained** (Settings → Developer settings → Fine-grained tokens) : accès au repo `fox-prospect`, permission **Contents : Read and write** (exigée par l'API `repository_dispatch`).
+4. Vercel → Environment Variables : `GITHUB_DISPATCH_TOKEN` (le PAT) + `GITHUB_REPO` (`owner/fox-prospect`) → Redeploy.
+5. Test : GitHub → **Actions → scrape-worker → Run workflow** (doit finir vert même sans job en file). Puis dans l'app : **Scraping → Lancer**.
+
+**Déclenchement** : à la demande (bouton *Lancer* → `repository_dispatch`, ~secondes) ou
+automatique (cron `0 */6 * * *`). Sans PAT, seul le cron prend le relais (dégradation gracieuse).
+
+**Limites à connaître** :
+- Cron en **UTC**, déclenchement réel possible 10-30 min après l'heure ; **désactivé après 60 j d'inactivité** du repo (un push ou un *Run workflow* le réactive).
+- Runners en **IP datacenter** → DuckDuckGo/LinkedIn bloquent plus qu'en local : des jobs finissent `done` avec `stats.blocked` élevé. Le worker ne plante jamais.
+- Un échec d'**infrastructure** (pas un simple blocage de source) **ouvre une issue GitHub** automatiquement.
+- Tout reste dans le **free tier** (GitHub Actions ~2000 min/mois en repo privé).
+
+---
 
 ## Conformité (prospection B2B France)
 
-L'app est conçue pour le régime B2B opt-out : emails professionnels uniquement, message en lien avec la fonction du contact, possibilité d'opposition dans chaque email (intégrée aux brouillons), **liste d'opposition permanente** (statut « opt-out » → l'email est bloqué à tout import futur).
+Régime B2B opt-out : emails professionnels uniquement, message en lien avec la fonction du
+contact, possibilité d'opposition dans chaque email, **liste d'opposition permanente**
+(statut « opt-out » → email bloqué à tout import futur). À faire de ton côté : documenter
+une LIA (analyse d'intérêt légitime) et traiter toute opposition sous 72 h.
 
-À faire de ton côté : documenter une LIA (analyse d'intérêt légitime) simple, et traiter toute demande d'opposition sous 72 h via le statut opt-out.
+L'app elle-même ne scrape pas LinkedIn (recherche via API/sources publiques). Les outils
+locaux `contact-sources/` peuvent scraper des profils publics — usage en connaissance des
+CGU LinkedIn, sur donnée professionnelle uniquement, source conservée pour chaque donnée.
 
-Aucun scraping LinkedIn : la recherche s'appuie sur des sources web publiques via l'API.
-
-## Sprint 2 — import LinkedIn, enrichissement, PWA
-
-- **Import par URL LinkedIn** (page Importer) : colle l'URL d'un profil, l'app identifie la
-  personne via le web public (pas de scraping LinkedIn) et pré-remplit le formulaire.
-- **Enrichissement des coordonnées** (fiche prospect → Coordonnées → « Enrichir
-  automatiquement ») : recherche du domaine email de l'entreprise, déduction du pattern
-  public (prenom.nom@…), email candidat avec niveau de confiance et source, téléphone du
-  standard. Jamais de mobile personnel, jamais d'écrasement d'un email saisi à la main.
-- **PWA** : sur mobile, ouvre l'app dans le navigateur → menu → « Ajouter à l'écran
-  d'accueil » (iPhone/Safari) ou « Installer l'application » (Android/Chrome). Interface
-  Fluent Design avec barre d'onglets en bas sur mobile.
-- Migration base nécessaire (une fois) : exécuter `supabase/migration-sprint2.sql` dans le
-  SQL Editor. Icônes regénérables avec `node scripts/generate-icons.mjs`.
-
-## Sprint 3 — base de grands comptes & cartographie DSI
-
-- **Comptes** (onglet *Comptes*) : une fiche par entreprise. Un compte se crée à la main
-  ou automatiquement à l'import d'un prospect (son entreprise).
-- **Analyse de compte** (bouton *Analyser ce compte*) : recherche web → synthèse, actualités
-  **générales et par direction** (datées/sourcées), **signaux stratégiques** (projets,
-  recrutements, investissements, partenariats, réorganisations, réglementaire), et
-  **cartographie IT** des décideurs identifiables publiquement.
-- **Organigramme** : arbre hiérarchique. L'IA **propose** les personnes à partir des seules
-  sources publiques ; chaque fiche porte un niveau de **fiabilité** (Vérifié / Partiellement
-  vérifié / Non vérifié), une **confiance** sur le poste et une **date de fraîcheur**. Tu
-  **valides**, édites, supprimes ou ajoutes manuellement. Règle stricte : rien n'est inventé
-  — la cartographie peut être volontairement courte.
-- **Veille automatique** : un cron Vercel (1×/jour) rafraîchit les comptes les plus anciens
-  marqués *Veille auto*, dans la limite de `DAILY_RESEARCH_CAP` et de `WATCH_BATCH` comptes
-  par passage. Désactivable compte par compte (interrupteur *Veille auto* sur la fiche).
-  Nécessite la variable `CRON_SECRET` sur Vercel (chaîne aléatoire) et l'exécution de
-  `supabase/migration-sprint3.sql`.
-
-## Roadmap
-
-- **Sprint 1** : import, recherche/qualification, score de fit, accroches, brouillons multi-canal, pipeline, opt-out.
-- **Sprint 2** : import par URL LinkedIn, enrichissement email/téléphone par recherche web, interface Fluent Design, PWA mobile.
-- **Sprint 3 (ce repo)** : base de grands comptes, cartographie DSI sourcée et validée, actualités/signaux par compte, veille automatique encadrée.
-- **Sprint 4 (idées)** : sourcing automatique via l'API SIRENE (ciblage NAF/effectif/région), file de qualification en lot, envoi email réel (domaine dédié, SPF/DKIM/DMARC, warm-up), séquences, tracking réponses.
+---
 
 ## Itérer sur la qualité
 
-Toute la valeur est dans `lib/prompts.js`. Si les accroches sont trop génériques : ajoute des exemples de bons/mauvais messages dans le prompt de génération, précise ton offre dans les Réglages, ou augmente `RESEARCH_MAX_SEARCHES` (attention au timeout de 60 s sur Vercel Hobby).
+L'essentiel se joue dans `lib/prompts.js` (prompts d'extraction, de jugement et de
+génération). Si les accroches sont trop génériques : ajoute des exemples bons/mauvais au
+prompt de génération, précise ton offre dans **Réglages**, ou ajuste `RESEARCH_MAX_SEARCHES`.
+Mesure l'effet avec le banc d'essai (`npm run eval`).
+
+## Roadmap
+
+- **V1** : import, recherche/qualification, score de fit, accroches, brouillons multi-canal, pipeline, opt-out.
+- **V2** : import LinkedIn, enrichissement email/téléphone, Fluent Design, PWA, ICP, scoring déterministe.
+- **V3** : comptes & cartographie DSI, signaux d'achat (SIREN/BOAMP/France Travail), veille auto, recherche 2 passes, analytics & events, export CRM, mode sombre, harnais d'eval.
+- **Pistes** : rotation multi-moteurs pour l'acquisition gratuite, intégration providers (Dropcontact/Pappers), séquences d'envoi, tracking réponses.

@@ -19,3 +19,6 @@ __pycache__/
 
 # Résultats d'eval (générés localement)
 eval-results/
+
+# Contacts scrapés (données personnelles) — ne jamais committer
+scripts/contact-sources/contacts_*

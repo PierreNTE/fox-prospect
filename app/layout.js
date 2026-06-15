@@ -40,6 +40,7 @@ export default function RootLayout({ children }) {
           <nav className="nav">
             <Link href="/">Piste</Link>
             <Link href="/accounts">Comptes</Link>
+            <Link href="/scraping">Scraping</Link>
             <Link href="/import">Importer</Link>
             <Link href="/analytics">Analyse</Link>
             <Link href="/settings">Réglages</Link>

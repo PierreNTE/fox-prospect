@@ -1,0 +1,4 @@
+# Dépendances du worker de scraping (installées par GitHub Actions).
+# Le worker n'utilise que Scrapling (fetch) + urllib (REST Supabase, stdlib).
+scrapling[fetchers]>=0.2
+python-dotenv>=1.0

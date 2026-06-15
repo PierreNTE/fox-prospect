@@ -6,9 +6,9 @@ Objectif : tester si Scrapling surface des offres d'emploi IT/cyber que la
 collecte actuelle (France Travail + web_search de Claude) rate — notamment sur
 les portails carrières en JavaScript / derrière anti-bot (Workday, etc.).
 
-Tourne EN LOCAL sur ta machine (pas sur Vercel). Écrit dans le même Supabase
-que l'app, table `company_signals` (type='recrutement'), comme le collecteur
-France Travail.
+Tourne EN LOCAL sur ta machine (pas sur Vercel). Fusionne les signaux trouvés
+dans accounts.signals (JSONB) — le champ lu par le dashboard « Comptes chauds »,
+avec un marqueur origin='scrapling:careers' pour les distinguer des signaux LLM.
 
 Sécurité : aucun secret en dur. Les clés sont lues depuis ../../.env.local
 (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) — le même fichier que l'app Next.js.
@@ -226,37 +226,21 @@ def scan_account(account, args):
                 continue
             seen_titles.add(key)
             signals.append({
-                "company_id": account["company_id"],
                 "type": "recrutement",
-                "detail": f"Offre carrière : {title}"[:300],
-                "observed_at": TODAY,
-                "source_url": url,
-                "source_verified": False,
-                "confidence": 0.8,   # scrapé, non vérifié par un humain
+                "detail": f"Offre IT : {title}"[:300],
+                "date": TODAY,
+                "source": url,
+                "confidence": 0.8,            # scrapé, non vérifié par un humain
                 "base_weight": weight_for(title),
-                "status": "nouveau",
+                "origin": "scrapling:careers",  # marqueur pour distinguer des signaux LLM
             })
         if signals:
             break  # une page carrières exploitable suffit pour le POC
 
     print(f"      {pages_ok} page(s) lue(s) · {len(signals)} signal(s) IT")
+    for s in signals[:12]:
+        print(f"        – {s['detail']}")
     return signals
-
-
-def already_exists(sb, sig):
-    """Évite les doublons : même company_id + même detail déjà en base."""
-    try:
-        res = (
-            sb.table("company_signals")
-            .select("id", count="exact")
-            .eq("company_id", sig["company_id"])
-            .eq("detail", sig["detail"])
-            .limit(1)
-            .execute()
-        )
-        return (res.count or 0) > 0
-    except Exception:  # noqa: BLE001
-        return False
 
 
 def main():
@@ -269,26 +253,22 @@ def main():
 
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    # On ne traite que les comptes avec un company_id résolu : company_signals
-    # exige un company_id NOT NULL (clé vers la table companies / SIREN).
-    q = (
-        sb.table("accounts")
-        .select("id, name, website, domain, company_id, auto_watch")
-        .not_.is_("company_id", "null")
-        .eq("auto_watch", True)
-    )
+    # Cible : les comptes suivis ayant un site web. Les signaux scrapés sont
+    # fusionnés dans accounts.signals (JSONB), lu directement par le dashboard
+    # « Comptes chauds » — pas besoin de company_id / SIRENE.
+    q = sb.table("accounts").select("id, name, website, domain, signals, auto_watch").eq("auto_watch", True)
     if args.account:
         q = q.ilike("name", f"%{args.account}%")
-    res = q.limit(args.limit).execute()
-    accounts = res.data or []
+    res = q.execute()
+    accounts = [a for a in (res.data or []) if (a.get("website") or a.get("domain"))][: args.limit]
 
     mode = "COMMIT" if args.commit else "DRY-RUN"
     print(f"\n=== POC Scrapling carrières — {mode} ===")
-    print(f"{len(accounts)} compte(s) à scanner (company_id résolu, auto_watch)\n")
+    print(f"{len(accounts)} compte(s) avec site web à scanner\n")
 
     if not accounts:
-        print("Aucun compte éligible. Importe d'abord des entreprises via SIRENE")
-        print("(page Comptes) pour résoudre leur company_id.")
+        print("Aucun compte avec site web. Renseigne le champ 'website' de tes")
+        print("comptes (page Comptes) pour activer le scraping des pages carrières.")
         return
 
     total_found = 0
@@ -299,31 +279,35 @@ def main():
         signals = scan_account(account, args)
         total_found += len(signals)
 
-        for sig in signals:
-            if not args.commit:
-                continue
-            if already_exists(sb, sig):
-                total_skipped += 1
-                continue
-            try:
-                sb.table("company_signals").insert(sig).execute()
-                total_inserted += 1
-            except Exception as e:  # noqa: BLE001
-                print(f"      ⚠  insert échoué : {e}")
-                total_skipped += 1
+        # Fusion dans accounts.signals : on dédoublonne par 'detail' contre
+        # les signaux déjà présents (LLM ou scrapés), puis on ajoute les nouveaux.
+        if args.commit and signals:
+            existing = account.get("signals") or []
+            existing_details = {s.get("detail") for s in existing if isinstance(s, dict)}
+            fresh = [s for s in signals if s["detail"] not in existing_details]
+            total_skipped += len(signals) - len(fresh)
+            if fresh:
+                merged = existing + fresh
+                try:
+                    sb.table("accounts").update({"signals": merged}).eq("id", account["id"]).execute()
+                    total_inserted += len(fresh)
+                    print(f"      ✓ {len(fresh)} signal(s) fusionné(s) dans le compte")
+                except Exception as e:  # noqa: BLE001
+                    print(f"      ⚠  mise à jour échouée : {e}")
+                    total_skipped += len(fresh)
 
         time.sleep(REQUEST_DELAY_S)
 
     print("\n" + "─" * 50)
     print(f"Signaux IT trouvés   : {total_found}")
     if args.commit:
-        print(f"Insérés dans Supabase: {total_inserted}")
+        print(f"Ajoutés aux comptes  : {total_inserted}")
         print(f"Ignorés (doublons)   : {total_skipped}")
     else:
-        print("(DRY-RUN — rien écrit. Relance avec --commit pour insérer.)")
+        print("(DRY-RUN — rien écrit. Relance avec --commit pour fusionner.)")
     print("─" * 50)
     print("\nCompare ensuite ces signaux à ceux de France Travail / web_search :")
-    print("→ page Comptes (chaleur) et table company_signals dans Supabase.\n")
+    print("→ page Comptes : les signaux scrapés remontent dans la chaleur.\n")
 
 
 if __name__ == "__main__":
