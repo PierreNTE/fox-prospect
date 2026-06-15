@@ -31,8 +31,18 @@ SB_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 if not (SB_URL and SB_KEY):
     sys.exit("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY requis (secrets GitHub Actions).")
 
-JOB_BATCH = int(os.environ.get("SCRAPE_JOB_BATCH", "5"))   # jobs traités par run
-DEFAULT_LIMIT = int(os.environ.get("SCRAPE_PROFILE_LIMIT", "8"))  # profils/société
+def _int_env(name, default):
+    """int d'une variable d'env, tolérant aux valeurs absentes OU vides.
+    (GitHub Actions transmet une Variable non définie comme chaîne vide ''.)"""
+    v = (os.environ.get(name) or "").strip()
+    try:
+        return int(v) if v else default
+    except ValueError:
+        return default
+
+
+JOB_BATCH = _int_env("SCRAPE_JOB_BATCH", 5)        # jobs traités par run
+DEFAULT_LIMIT = _int_env("SCRAPE_PROFILE_LIMIT", 8)  # profils/société
 
 
 def now_iso():
