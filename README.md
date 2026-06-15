@@ -199,7 +199,7 @@ serverless) ; le worker respecte l'**opt-out** et déduplique (`linkedin_url` / 
 1. Supabase → SQL Editor → exécuter `supabase/migration-scraping.sql`.
 2. GitHub → repo → **Settings → Secrets and variables → Actions** → secrets `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
 3. Créer un **PAT fine-grained** (Settings → Developer settings → Fine-grained tokens) : accès au repo `fox-prospect`, permission **Contents : Read and write** (exigée par l'API `repository_dispatch`).
-4. Vercel → Environment Variables : `GITHUB_DISPATCH_TOKEN` (le PAT) + `GITHUB_REPO` (`owner/fox-prospect`) → Redeploy.
+4. Vercel → Environment Variables : `GITHUB_DISPATCH_TOKEN` (le PAT) + `GITHUB_REPO` (`PierreNTE/fox-prospect`) → Redeploy.
 5. Test : GitHub → **Actions → scrape-worker → Run workflow** (doit finir vert même sans job en file). Puis dans l'app : **Scraping → Lancer**.
 
 **Déclenchement** : à la demande (bouton *Lancer* → `repository_dispatch`, ~secondes) ou
