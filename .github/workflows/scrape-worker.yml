@@ -49,6 +49,9 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Proxy résidentiel (franchit le blocage des IP datacenter) — sans lui,
+          # DuckDuckGo/LinkedIn bloquent le runner. Format http://user:pass@host:port
+          SCRAPE_PROXY: ${{ secrets.SCRAPE_PROXY }}
           FRANCE_TRAVAIL_CLIENT_ID: ${{ secrets.FRANCE_TRAVAIL_CLIENT_ID }}
           FRANCE_TRAVAIL_CLIENT_SECRET: ${{ secrets.FRANCE_TRAVAIL_CLIENT_SECRET }}
           # Plafonds (optionnels) — sinon défauts du worker (5 jobs / 8 profils).

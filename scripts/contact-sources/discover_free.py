@@ -41,6 +41,18 @@ except ImportError:
 
 StealthyFetcher.adaptive = True
 
+# Proxy résidentiel optionnel (env SCRAPE_PROXY) — franchit le blocage des IP
+# datacenter (GitHub Actions, VPS). Format : http://user:pass@host:port
+PROXY = os.environ.get("SCRAPE_PROXY") or None
+
+
+def _sfetch(url, timeout=30000):
+    """Fetch Scrapling avec proxy résidentiel si SCRAPE_PROXY est défini."""
+    kw = {"headless": True, "timeout": timeout}
+    if PROXY:
+        kw["proxy"] = PROXY
+    return StealthyFetcher.fetch(url, **kw)
+
 
 def load_targets_from_db(limit):
     """Charge les noms de comptes depuis Supabase (table accounts), via REST."""
@@ -81,7 +93,7 @@ def ddg_links(query):
     # kl=fr-fr : résultats France — sinon DDG remonte des profils étrangers non pertinents.
     url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": query, "kl": "fr-fr"})
     try:
-        p = StealthyFetcher.fetch(url, headless=True, timeout=30000)
+        p = _sfetch(url, timeout=30000)
     except Exception as e:  # noqa: BLE001
         print(f"      ⚠  DDG fetch échoué : {str(e)[:120]}")
         return [], True
@@ -113,7 +125,7 @@ def ddg_links(query):
 def extract_profile(url):
     """Extrait nom/poste/société/lieu d'un profil LinkedIn public (sans login)."""
     try:
-        p = StealthyFetcher.fetch(url, headless=True, timeout=30000)
+        p = _sfetch(url, timeout=30000)
     except Exception as e:  # noqa: BLE001
         return {"linkedin_url": url, "error": str(e)[:100]}
 

@@ -25,6 +25,7 @@ Usage :
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -37,6 +38,16 @@ try:
     StealthyFetcher.adaptive = True
 except ImportError:
     StealthyFetcher = None
+
+# Proxy résidentiel optionnel (env SCRAPE_PROXY) — voir discover_free.py.
+PROXY = os.environ.get("SCRAPE_PROXY") or None
+
+
+def _sfetch(url, timeout=25000):
+    kw = {"headless": True, "timeout": timeout}
+    if PROXY:
+        kw["proxy"] = PROXY
+    return StealthyFetcher.fetch(url, **kw)
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 
@@ -82,7 +93,7 @@ def site_emails(domain):
     found = set()
     for path in CONTACT_PATHS[:5]:
         try:
-            p = StealthyFetcher.fetch(base + path, headless=True, timeout=20000)
+            p = _sfetch(base + path, timeout=20000)
             text = " ".join(p.css("body ::text").getall())
             for m in EMAIL_RE.findall(text):
                 if m.lower().endswith("@" + domain):
@@ -115,7 +126,7 @@ def search_emails(first, last, domain):
     q = f'"{first} {last}" "@{domain}"'
     url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": q, "kl": "fr-fr"})
     try:
-        p = StealthyFetcher.fetch(url, headless=True, timeout=25000)
+        p = _sfetch(url, timeout=25000)
         text = " ".join(p.css("body ::text").getall())
     except Exception:  # noqa: BLE001
         return []

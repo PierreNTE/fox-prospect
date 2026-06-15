@@ -205,9 +205,19 @@ serverless) ; le worker respecte l'**opt-out** et déduplique (`linkedin_url` / 
 **Déclenchement** : à la demande (bouton *Lancer* → `repository_dispatch`, ~secondes) ou
 automatique (cron `0 */6 * * *`). Sans PAT, seul le cron prend le relais (dégradation gracieuse).
 
+**Proxy résidentiel (indispensable pour le scraping LinkedIn depuis GitHub)** :
+les runners ont une **IP datacenter** que DuckDuckGo/LinkedIn bloquent → sans proxy,
+les jobs finissent `done` mais avec `stats.blocked` élevé et **0 contact** (vérifié).
+Pour franchir le mur : ajoute un **proxy résidentiel** (≈10-12 €/mois en faible volume)
+dans le secret GitHub **`SCRAPE_PROXY`** (`http://user:pass@host:port`). Scrapling route
+alors toutes ses requêtes via ce proxy. Sans `SCRAPE_PROXY`, le worker tourne quand même
+(utile pour les collecteurs API non bloqués) mais le LinkedIn ne donnera rien.
+> ⚠️ Un VPS (OVH…) **ne résout pas** le blocage : c'est aussi une IP datacenter. Seul un
+> proxy résidentiel change la donne — pas l'endroit où tourne le worker.
+
 **Limites à connaître** :
 - Cron en **UTC**, déclenchement réel possible 10-30 min après l'heure ; **désactivé après 60 j d'inactivité** du repo (un push ou un *Run workflow* le réactive).
-- Runners en **IP datacenter** → DuckDuckGo/LinkedIn bloquent plus qu'en local : des jobs finissent `done` avec `stats.blocked` élevé. Le worker ne plante jamais.
+- Runners en **IP datacenter** → sans proxy résidentiel, DuckDuckGo/LinkedIn bloquent (voir ci-dessus). Le worker ne plante jamais.
 - Un échec d'**infrastructure** (pas un simple blocage de source) **ouvre une issue GitHub** automatiquement.
 - Tout reste dans le **free tier** (GitHub Actions ~2000 min/mois en repo privé).
 
