@@ -50,8 +50,11 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           # Proxy résidentiel (franchit le blocage des IP datacenter) — sans lui,
-          # DuckDuckGo/LinkedIn bloquent le runner. Format http://user:pass@host:port
+          # LinkedIn bloque le runner. Format http://user:pass@host:port
           SCRAPE_PROXY: ${{ secrets.SCRAPE_PROXY }}
+          # Brave Search API (gratuit 2000/mois) : découverte fiable des URLs
+          # LinkedIn sans scraper DuckDuckGo. Sans clé → repli DDG (fragile).
+          BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
           FRANCE_TRAVAIL_CLIENT_ID: ${{ secrets.FRANCE_TRAVAIL_CLIENT_ID }}
           FRANCE_TRAVAIL_CLIENT_SECRET: ${{ secrets.FRANCE_TRAVAIL_CLIENT_SECRET }}
           # Plafonds (optionnels) — sinon défauts du worker (5 jobs / 8 profils).

@@ -44,6 +44,10 @@ StealthyFetcher.adaptive = True
 # Proxy résidentiel optionnel (env SCRAPE_PROXY) — franchit le blocage des IP
 # datacenter (GitHub Actions, VPS). Format : http://user:pass@host:port
 PROXY = os.environ.get("SCRAPE_PROXY") or None
+# Clé API Brave Search (gratuite, 2000 req/mois) : découverte fiable des URLs
+# LinkedIn sans scraper DuckDuckGo (qui bloque même via proxy). Si absente,
+# repli sur le scraping DDG (fragile depuis une IP datacenter/proxy).
+BRAVE_KEY = os.environ.get("BRAVE_API_KEY") or None
 
 
 def _sfetch(url, timeout=30000):
@@ -122,6 +126,30 @@ def ddg_links(query):
     return list(dict.fromkeys(out)), blocked
 
 
+def brave_links(query):
+    """Découverte via l'API Brave Search (clé BRAVE_API_KEY, pas de proxy requis).
+    Renvoie (urls LinkedIn, blocked: bool)."""
+    if not BRAVE_KEY:
+        return [], True
+    url = "https://api.search.brave.com/res/v1/web/search?" + urllib.parse.urlencode(
+        {"q": query, "count": 20, "country": "fr"})
+    req = urllib.request.Request(url, headers={
+        "Accept": "application/json", "X-Subscription-Token": BRAVE_KEY})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            data = json.loads(r.read().decode())
+    except Exception as e:  # noqa: BLE001
+        print(f"      ⚠  Brave API échouée : {str(e)[:120]}")
+        return [], True
+    results = ((data.get("web") or {}).get("results")) or []
+    out = []
+    for res in results:
+        link = res.get("url", "")
+        if "linkedin.com/in/" in link:
+            out.append(link.split("?")[0])
+    return list(dict.fromkeys(out)), False
+
+
 def extract_profile(url):
     """Extrait nom/poste/société/lieu d'un profil LinkedIn public (sans login)."""
     try:
@@ -163,14 +191,17 @@ def discover_company(company, roles=None, max_profiles=4, extract=True,
     Ne lève jamais : en cas de blocage, renvoie ce qui a été collecté.
     """
     roles = roles or ROLE_QUERIES
+    # Brave API si clé dispo (fiable, gratuite), sinon scraping DDG (fragile).
+    search_fn = brave_links if BRAVE_KEY else ddg_links
+    delay = 1.2 if BRAVE_KEY else ddg_delay
     all_urls, blocked = [], 0
     for rq in roles:
         q = f'{company} {rq} site:linkedin.com/in'
-        links, is_blocked = ddg_links(q)
+        links, is_blocked = search_fn(q)
         if is_blocked:
             blocked += 1
         all_urls.extend(links)
-        time.sleep(ddg_delay)
+        time.sleep(delay)
     urls = list(dict.fromkeys(all_urls))
     log(f"   {len(urls)} profil(s) LinkedIn distinct(s)")
 
