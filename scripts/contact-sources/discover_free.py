@@ -150,8 +150,8 @@ def brave_links(query):
     return list(dict.fromkeys(out)), False
 
 
-def extract_profile(url):
-    """Extrait nom/poste/société/lieu d'un profil LinkedIn public (sans login)."""
+def _extract_once(url):
+    """Une tentative d'extraction d'un profil LinkedIn public."""
     try:
         p = _sfetch(url, timeout=30000)
     except Exception as e:  # noqa: BLE001
@@ -185,6 +185,20 @@ def extract_profile(url):
         "lieu": field("Lieu"),
         "linkedin_url": url,
     }
+
+
+def extract_profile(url, retries=2):
+    """Extrait un profil LinkedIn ; réessaie sur mur d'auth. Le proxy rotatif tire
+    une nouvelle IP à chaque tentative → augmente nettement le taux de succès.
+    (Coût : jusqu'à 3 fetchs sur un profil récalcitrant — Go proxy en plus.)"""
+    last = {"linkedin_url": url, "error": "non tenté"}
+    for attempt in range(retries + 1):
+        last = _extract_once(url)
+        if not last.get("error"):
+            return last
+        if attempt < retries:
+            time.sleep(2)
+    return last
 
 
 def discover_company(company, roles=None, max_profiles=4, extract=True,
