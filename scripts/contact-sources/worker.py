@@ -166,7 +166,7 @@ def insert_result(job_id, account_id, company, contact, email_info):
         "title": contact.get("headline") or "",
         "company": company,
         "linkedin_url": contact.get("linkedin_url") or "",
-        "source": "scrapling:duckduckgo+linkedin",
+        "source": contact.get("source") or "scrapling:duckduckgo+linkedin",
         "raw": contact,
     }
     if email_info and email_info.get("best"):

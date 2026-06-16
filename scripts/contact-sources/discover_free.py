@@ -126,11 +126,13 @@ def ddg_links(query):
     return list(dict.fromkeys(out)), blocked
 
 
-def brave_links(query):
-    """Découverte via l'API Brave Search (clé BRAVE_API_KEY, pas de proxy requis).
-    Renvoie (urls LinkedIn, blocked: bool)."""
+def brave_contacts(query, company):
+    """Recherche Brave → contacts {company, name, headline, linkedin_url, source}
+    lus DIRECTEMENT dans les snippets (titre + description), SANS fetch LinkedIn.
+    Le titre LinkedIn est de la forme "Prénom Nom - Poste - Société | LinkedIn".
+    Renvoie (contacts, blocked)."""
     if not BRAVE_KEY:
-        return [], True
+        return [], 1
     url = "https://api.search.brave.com/res/v1/web/search?" + urllib.parse.urlencode(
         {"q": query, "count": 20, "country": "fr"})
     req = urllib.request.Request(url, headers={
@@ -140,14 +142,27 @@ def brave_links(query):
             data = json.loads(r.read().decode())
     except Exception as e:  # noqa: BLE001
         print(f"      ⚠  Brave API échouée : {str(e)[:120]}")
-        return [], True
+        return [], 1
     results = ((data.get("web") or {}).get("results")) or []
     out = []
     for res in results:
         link = res.get("url", "")
-        if "linkedin.com/in/" in link:
-            out.append(link.split("?")[0])
-    return list(dict.fromkeys(out)), False
+        if "linkedin.com/in/" not in link:
+            continue
+        title = re.sub(r"\s*[-–|]\s*LinkedIn\s*$", "", (res.get("title") or "")).strip()
+        parts = re.split(r"\s[-–|]\s", title)
+        name = parts[0].strip()
+        role = parts[1].strip() if len(parts) > 1 else (res.get("description") or "")[:120].strip()
+        if not name:
+            continue
+        out.append({
+            "company": company,
+            "name": name,
+            "headline": role,
+            "linkedin_url": link.split("?")[0],
+            "source": "brave:linkedin-snippet",
+        })
+    return out, 0
 
 
 def _extract_once(url):
@@ -212,32 +227,47 @@ def discover_company(company, roles=None, max_profiles=4, extract=True,
     Ne lève jamais : en cas de blocage, renvoie ce qui a été collecté.
     """
     roles = roles or ROLE_QUERIES
-    # Brave API si clé dispo (fiable, gratuite), sinon scraping DDG (fragile).
-    search_fn = brave_links if BRAVE_KEY else ddg_links
-    delay = 1.2 if BRAVE_KEY else ddg_delay
+
+    # ── Voie fiable : données lues dans les snippets Brave, SANS fetch LinkedIn ──
+    # Évite le mur d'auth LinkedIn (qui bloque même via proxy) et ne consomme quasi
+    # pas de proxy. Nom + poste + URL viennent du titre/description du résultat Brave.
+    if BRAVE_KEY:
+        seen, contacts, blocked = set(), [], 0
+        for rq in roles:
+            q = f'{company} {rq} site:linkedin.com/in'
+            rows, blk = brave_contacts(q, company)
+            blocked += blk
+            for c in rows:
+                if c["linkedin_url"] in seen:
+                    continue
+                seen.add(c["linkedin_url"])
+                contacts.append(c)
+            time.sleep(1.2)  # Brave free tier : ~1 req/s
+        contacts = contacts[:max_profiles]
+        for c in contacts:
+            log(f"      • {c['name']} — {c['headline']}")
+        log(f"   {len(contacts)} contact(s) via Brave")
+        return contacts, blocked
+
+    # ── Repli : scraping DDG + fetch profil (fragile, via proxy) ────────────────
     all_urls, blocked = [], 0
     for rq in roles:
         q = f'{company} {rq} site:linkedin.com/in'
-        links, is_blocked = search_fn(q)
+        links, is_blocked = ddg_links(q)
         if is_blocked:
             blocked += 1
         all_urls.extend(links)
-        time.sleep(delay)
+        time.sleep(ddg_delay)
     urls = list(dict.fromkeys(all_urls))
-    log(f"   {len(urls)} profil(s) LinkedIn distinct(s)")
-
     if not extract:
         return [{"company": company, "linkedin_url": u} for u in urls[:max_profiles]], blocked
-
     contacts = []
     for u in urls[:max_profiles]:
         prof = extract_profile(u)
         if prof.get("error"):
             blocked += 1
-            log(f"      ⚠  {u} — {prof['error']}")
         else:
             contacts.append({"company": company, **prof})
-            log(f"      • {prof['name']} — {prof['headline']} [{prof['entreprise']} · {prof['lieu']}]")
         time.sleep(extract_delay)
     return contacts, blocked
 
