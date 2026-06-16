@@ -182,44 +182,63 @@ même Supabase, et produisent des fichiers gitignorés (données personnelles).
 
 ---
 
-## Scraping automatisé via GitHub Actions
+## Scraping automatisé via GitHub Actions (alimentation du CRM)
 
-Pour que la découverte/enrichissement tourne **sans ta machine** et **gratuitement**, un
-worker GitHub Actions exécute les scripts `contact-sources/` sur cron et écrit dans Supabase.
-L'app (page **Scraping**) lit la progression en direct (polling 5 s) et peut déclencher un
-run à la demande. La **qualification 2 passes** reste dans l'app (appels Anthropic, OK en
-serverless) ; le worker respecte l'**opt-out** et déduplique (`linkedin_url` / `email`).
+Objectif : **cartographier chaque compte** (décideurs IT) et récupérer leurs **coordonnées**,
+automatiquement et en continu, pour alimenter le CRM maison. Un worker GitHub Actions exécute
+la découverte sur cron, écrit dans Supabase ; l'app (page **Scraping**) affiche la progression
+en direct (polling 5 s) et déclenche un run à la demande. La **qualification 2 passes** reste
+dans l'app ; le worker respecte l'**opt-out** et déduplique (`linkedin_url` / `email`).
 
-**Architecture** (le scraping Python ne peut pas tourner sur Vercel) :
-- File de jobs Supabase : `scrape_jobs` + `scrape_results` (migration `supabase/migration-scraping.sql`).
-- Worker : `.github/workflows/scrape-worker.yml` → `scripts/contact-sources/worker.py`.
+**Pipeline (validé en production)** :
+```
+Brave Search API (gratuit) → nom + poste + URL LinkedIn      (lus dans les snippets,
+                                                              PAS de fetch LinkedIn)
+   → email « motif » (prénom.nom@domaine) + check MX
+   → bouton Qualifier → recherche 2 passes (vrai rôle, signaux, score)
+```
+
+**Architecture** (le scraping Python ne tourne pas sur Vercel) :
+- File Supabase : `scrape_jobs` + `scrape_results` (`supabase/migration-scraping.sql`).
+- Worker : `.github/workflows/scrape-worker.yml` → `scripts/contact-sources/worker.py`
+  (importe `discover_company` de `discover_free.py` + `enrich_email` de `waterfall.py`).
 - App : page `app/scraping/page.js` + routes `app/api/scrape/{enqueue,jobs,jobs/[id],promote}`.
 
+**Variables / secrets** :
+
+| Clé | Emplacement | Rôle | Requis ? |
+|---|---|---|---|
+| `BRAVE_API_KEY` | secret GitHub | découverte (Brave Search, gratuit 2000/mois) | **oui** |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | secret GitHub | écriture en base | oui |
+| `GITHUB_DISPATCH_TOKEN`, `GITHUB_REPO` | env Vercel | déclenchement instantané (`repository_dispatch`) | recommandé |
+| `SCRAPE_PROXY` | secret GitHub | proxy résidentiel — **marginal** depuis le passage à Brave | optionnel |
+
 **Mise en service** (une fois) :
-1. Supabase → SQL Editor → exécuter `supabase/migration-scraping.sql`.
-2. GitHub → repo → **Settings → Secrets and variables → Actions** → secrets `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
-3. Créer un **PAT fine-grained** (Settings → Developer settings → Fine-grained tokens) : accès au repo `fox-prospect`, permission **Contents : Read and write** (exigée par l'API `repository_dispatch`).
-4. Vercel → Environment Variables : `GITHUB_DISPATCH_TOKEN` (le PAT) + `GITHUB_REPO` (`PierreNTE/fox-prospect`) → Redeploy.
-5. Test : GitHub → **Actions → scrape-worker → Run workflow** (doit finir vert même sans job en file). Puis dans l'app : **Scraping → Lancer**.
+1. Supabase → SQL Editor → `supabase/migration-scraping.sql`.
+2. Clé **Brave Search API** gratuite ([brave.com/search/api](https://brave.com/search/api)) → secret GitHub `BRAVE_API_KEY`.
+3. Secrets GitHub `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
+4. (recommandé) PAT fine-grained *Contents: Read and write* → Vercel `GITHUB_DISPATCH_TOKEN` + `GITHUB_REPO=PierreNTE/fox-prospect` → Redeploy.
+5. Test : GitHub → **Actions → scrape-worker → Run workflow**, puis app → **Scraping → Lancer**.
 
-**Déclenchement** : à la demande (bouton *Lancer* → `repository_dispatch`, ~secondes) ou
-automatique (cron `0 */6 * * *`). Sans PAT, seul le cron prend le relais (dégradation gracieuse).
+**Ce qu'on capte — et ce qui n'est PAS faisable en gratuit** :
 
-**Proxy résidentiel (indispensable pour le scraping LinkedIn depuis GitHub)** :
-les runners ont une **IP datacenter** que DuckDuckGo/LinkedIn bloquent → sans proxy,
-les jobs finissent `done` mais avec `stats.blocked` élevé et **0 contact** (vérifié).
-Pour franchir le mur : ajoute un **proxy résidentiel** (≈10-12 €/mois en faible volume)
-dans le secret GitHub **`SCRAPE_PROXY`** (`http://user:pass@host:port`). Scrapling route
-alors toutes ses requêtes via ce proxy. Sans `SCRAPE_PROXY`, le worker tourne quand même
-(utile pour les collecteurs API non bloqués) mais le LinkedIn ne donnera rien.
-> ⚠️ Un VPS (OVH…) **ne résout pas** le blocage : c'est aussi une IP datacenter. Seul un
-> proxy résidentiel change la donne — pas l'endroit où tourne le worker.
+| Donnée | Statut | Source |
+|---|---|---|
+| Nom + entreprise + URL LinkedIn | ✅ fiable | snippets Brave |
+| Poste | 🟡 best-effort (parfois société/formation) — le vrai rôle vient de la qualif 2 passes | Brave + LLM |
+| **Email** | 🟡 **motif** `prénom.nom@` (confiance basse, non vérifié) | déduction + MX |
+| **Téléphone direct / mobile** | ❌ **aucune source gratuite fiable** | réservé aux plateformes payantes |
 
-**Limites à connaître** :
-- Cron en **UTC**, déclenchement réel possible 10-30 min après l'heure ; **désactivé après 60 j d'inactivité** du repo (un push ou un *Run workflow* le réactive).
-- Runners en **IP datacenter** → sans proxy résidentiel, DuckDuckGo/LinkedIn bloquent (voir ci-dessus). Le worker ne plante jamais.
+**Pourquoi cette archi (leçons apprises, à ne pas refaire)** :
+- DuckDuckGo renvoie un 202 (soft-block) **même via proxy résidentiel** → on ne scrape pas DDG, on utilise l'**API Brave**.
+- Le fetch de profils LinkedIn déconnectés renvoie le **mur d'auth ~100 % via proxy** → on ne fetch **pas** LinkedIn ; nom/poste/URL sont lus dans les **snippets Brave**. Le proxy en devient quasi inutile.
+- Un VPS (OVH…) **ne résout rien** : c'est aussi une IP datacenter.
+
+**Limites** :
+- Cron **UTC**, +10-30 min possible ; **désactivé après 60 j d'inactivité** (un push/*Run* le réactive).
+- Volume : Brave gratuit = 2000 req/mois ≈ 660 entreprises/mois → **~100-300 contacts/mois** (régime qualité). Les **milliers/mois** exigent une plateforme payante (Apollo/Cognism…), pas ce montage.
 - Un échec d'**infrastructure** (pas un simple blocage de source) **ouvre une issue GitHub** automatiquement.
-- Tout reste dans le **free tier** (GitHub Actions ~2000 min/mois en repo privé).
+- Tout reste dans le **free tier** (Brave 2000/mois, GitHub Actions ~2000 min/mois en repo privé).
 
 ---
 
@@ -248,4 +267,20 @@ Mesure l'effet avec le banc d'essai (`npm run eval`).
 - **V1** : import, recherche/qualification, score de fit, accroches, brouillons multi-canal, pipeline, opt-out.
 - **V2** : import LinkedIn, enrichissement email/téléphone, Fluent Design, PWA, ICP, scoring déterministe.
 - **V3** : comptes & cartographie DSI, signaux d'achat (SIREN/BOAMP/France Travail), veille auto, recherche 2 passes, analytics & events, export CRM, mode sombre, harnais d'eval.
-- **Pistes** : rotation multi-moteurs pour l'acquisition gratuite, intégration providers (Dropcontact/Pappers), séquences d'envoi, tracking réponses.
+- **V4 (en cours)** : scraping automatisé (worker GitHub Actions + Brave) → découverte continue des décideurs et de leurs coordonnées, alimentation du **CRM maison**.
+
+### Vision CRM maison
+
+L'objectif est un **mapping complet et tenu à jour de chaque compte** : pour chaque entreprise
+cible, l'organigramme des décideurs IT + leurs moyens de contact (email, LinkedIn, téléphone),
+avec la **source et la fraîcheur** de chaque donnée. Le système y tend par couches :
+
+- **Comptes & organigramme** : fiche par entreprise + `account_contacts` (cartographie validée).
+- **Découverte continue** : scraping Brave → nom/poste/LinkedIn (V4), promus en prospects.
+- **Coordonnées** : email par motif (gratuit, confiance basse) ; **téléphone direct = payant** (non couvert en gratuit — cf. section Scraping).
+- **Mise à jour** : veille auto (cron) + ré-analyse des comptes ; `events` trace l'historique.
+- **Pistes pour aller plus loin** : enrichissement email vérifié (Dropcontact/Pappers), téléphone via provider (Kaspr/Cognism), séquences d'envoi, tracking réponses.
+
+Honnêteté : un mapping **« parfait »** avec **tous** les téléphones directs n'est pas atteignable
+gratuitement — c'est le cœur de l'offre des plateformes payantes. Le montage actuel vise un
+mapping **riche et fiable sur le nom/poste/LinkedIn/email**, complété à la demande.
