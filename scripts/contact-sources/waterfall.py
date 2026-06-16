@@ -59,8 +59,13 @@ def deburr(s):
 
 # ── Source A : motifs + check MX ──────────────────────────────────────────────
 
+def _clean(s):
+    """Nettoie un prénom/nom pour un email : sans accent, sans espace ni ponctuation."""
+    return re.sub(r"[^a-z0-9]", "", deburr(s))
+
+
 def gen_patterns(first, last, domain):
-    f, l = deburr(first), deburr(last)
+    f, l = _clean(first), _clean(last)
     fi, li = (f[:1] or ""), (l[:1] or "")
     locals_ = [
         f"{f}.{l}", f"{f}{l}", f"{fi}{l}", f"{f}{li}", f"{f}_{l}",

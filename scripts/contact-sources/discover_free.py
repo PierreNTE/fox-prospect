@@ -167,6 +167,13 @@ def extract_profile(url):
     ogtitle = meta("property", "og:title")
     name = re.split(r"\s[-–]\s", ogtitle)[0].replace("| LinkedIn", "").strip() if ogtitle else ""
 
+    # Mur d'authentification LinkedIn : la page renvoie "Sign Up"/générique au lieu
+    # du profil. On le détecte et on traite comme un échec (compté en blocked).
+    WALL = {"sign up", "join linkedin", "linkedin", "s'inscrire", "inscrivez-vous", ""}
+    dlow = desc.lower()
+    if name.strip().lower() in WALL or "million+ members" in dlow or "millions de membres" in dlow:
+        return {"linkedin_url": url, "error": "mur d'authentification LinkedIn"}
+
     def field(label):
         m = re.search(label + r"\s*:\s*([^·]+)", desc)
         return m.group(1).strip() if m else ""
