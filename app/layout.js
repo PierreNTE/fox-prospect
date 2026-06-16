@@ -1,6 +1,8 @@
 import "./globals.css";
 import Link from "next/link";
 import SwRegister from "./sw-register";
+import FluentRoot from "./fluent-root";
+import { FoxLogo } from "@/components/FoxLogo";
 
 export const metadata = {
   title: "Fox Prospect",
@@ -10,7 +12,7 @@ export const metadata = {
 };
 
 export const viewport = {
-  themeColor: "#d4571d",
+  themeColor: "#5B53E6",
   width: "device-width",
   initialScale: 1,
 };
@@ -20,33 +22,22 @@ export default function RootLayout({ children }) {
     <html lang="fr">
       <body>
         <SwRegister />
-        <header className="topbar">
-          <Link href="/" className="brand">
-            <span className="brand-mark" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
-                <path
-                  d="M3 4l4 5h10l4-5v7c0 5-4 9-9 9s-9-4-9-9V4z"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinejoin="round"
-                />
-                <circle cx="9" cy="12" r="1.1" fill="currentColor" />
-                <circle cx="15" cy="12" r="1.1" fill="currentColor" />
-                <path d="M12 15.5l-1.3 1.5h2.6L12 15.5z" fill="currentColor" />
-              </svg>
-            </span>
-            <span className="brand-name">Fox Prospect</span>
-          </Link>
-          <nav className="nav">
-            <Link href="/">Piste</Link>
-            <Link href="/accounts">Comptes</Link>
-            <Link href="/scraping">Scraping</Link>
-            <Link href="/import">Importer</Link>
-            <Link href="/analytics">Analyse</Link>
-            <Link href="/settings">Réglages</Link>
-          </nav>
-        </header>
-        <main className="container">{children}</main>
+        <FluentRoot>
+          <header className="topbar">
+            <Link href="/" className="brand">
+              <FoxLogo />
+            </Link>
+            <nav className="nav">
+              <Link href="/">Piste</Link>
+              <Link href="/accounts">Comptes</Link>
+              <Link href="/scraping">Scraping</Link>
+              <Link href="/import">Importer</Link>
+              <Link href="/analytics">Analyse</Link>
+              <Link href="/settings">Réglages</Link>
+            </nav>
+          </header>
+          <main className="container">{children}</main>
+        </FluentRoot>
       </body>
     </html>
   );
