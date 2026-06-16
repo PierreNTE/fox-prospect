@@ -1,8 +1,8 @@
 import "./globals.css";
-import Link from "next/link";
+import "./shell.css";
 import SwRegister from "./sw-register";
 import FluentRoot from "./fluent-root";
-import { FoxLogo } from "@/components/FoxLogo";
+import AppShell from "@/components/AppShell";
 
 export const metadata = {
   title: "Fox Prospect",
@@ -23,20 +23,7 @@ export default function RootLayout({ children }) {
       <body>
         <SwRegister />
         <FluentRoot>
-          <header className="topbar">
-            <Link href="/" className="brand">
-              <FoxLogo />
-            </Link>
-            <nav className="nav">
-              <Link href="/">Piste</Link>
-              <Link href="/accounts">Comptes</Link>
-              <Link href="/scraping">Scraping</Link>
-              <Link href="/import">Importer</Link>
-              <Link href="/analytics">Analyse</Link>
-              <Link href="/settings">Réglages</Link>
-            </nav>
-          </header>
-          <main className="container">{children}</main>
+          <AppShell>{children}</AppShell>
         </FluentRoot>
       </body>
     </html>
