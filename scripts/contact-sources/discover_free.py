@@ -153,7 +153,8 @@ def brave_contacts(query, company):
         parts = re.split(r"\s[-–|]\s", title)
         name = parts[0].strip()
         role = parts[1].strip() if len(parts) > 1 else (res.get("description") or "")[:120].strip()
-        if not name:
+        # Filtre les résultats qui ne sont pas un vrai profil (page login/générique).
+        if not name or re.search(r"linkedin|s.identifier|s.inscrire|sign\s?up|join now|milliard|million", name, re.I):
             continue
         out.append({
             "company": company,
