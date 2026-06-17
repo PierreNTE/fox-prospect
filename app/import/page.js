@@ -2,10 +2,38 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Card,
+  Button,
+  Input,
+  Textarea,
+  Title2,
+  Body1,
+  Caption1,
+  Spinner,
+  Table,
+  TableHeader,
+  TableRow,
+  TableCell,
+  TableBody,
+  TableHeaderCell,
+} from "@fluentui/react-components";
+import {
+  LinkSquare24Regular,
+  PersonAdd24Regular,
+  DocumentTable24Regular,
+  ArrowUpload24Regular,
+  Add24Regular,
+  CheckmarkCircle24Regular,
+  ErrorCircle24Regular,
+} from "@fluentui/react-icons";
+
+const BRAND = "#5B53E6";
+const GREEN = "#107C10";
+const RED = "#C50F1F";
 
 const EMPTY = { first_name: "", last_name: "", role: "", company: "", company_website: "", linkedin_url: "", email: "" };
 
-// Mappe les en-têtes usuels (FR/EN, exports Sales Nav, CSV maison) vers nos champs.
 const HEADER_MAP = {
   prenom: "first_name", "prénom": "first_name", firstname: "first_name", "first name": "first_name", first_name: "first_name",
   nom: "last_name", lastname: "last_name", "last name": "last_name", last_name: "last_name",
@@ -21,8 +49,7 @@ function parseCsv(text) {
   if (lines.length < 2) return [];
   const delim = (lines[0].match(/;/g) || []).length > (lines[0].match(/,/g) || []).length ? ";" : ",";
   const split = (line) => {
-    const out = [];
-    let cur = "", inQ = false;
+    const out = []; let cur = "", inQ = false;
     for (const ch of line) {
       if (ch === '"') inQ = !inQ;
       else if (ch === delim && !inQ) { out.push(cur); cur = ""; }
@@ -51,13 +78,10 @@ export default function ImportPage() {
   const [liResult, setLiResult] = useState(null);
 
   const lookupLinkedin = async () => {
-    setLiBusy(true);
-    setMessage(null);
-    setLiResult(null);
+    setLiBusy(true); setMessage(null); setLiResult(null);
     try {
       const res = await fetch("/api/import-linkedin", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
+        method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ linkedinUrl: liUrl }),
       });
       const d = await res.json().catch(() => ({}));
@@ -65,22 +89,15 @@ export default function ImportPage() {
       else {
         setManual({ ...EMPTY, ...d.prospect });
         setLiResult(d);
-        setMessage({
-          type: "ok",
-          text: `Profil identifié (confiance ${d.confidence}). Vérifie les champs ci-dessous, complète si besoin, puis ajoute à la piste.`,
-        });
+        setMessage({ type: "ok", text: `Profil identifié (confiance ${d.confidence}). Vérifie les champs ci-dessous, complète si besoin, puis ajoute à la piste.` });
       }
-    } catch (e) {
-      setMessage({ type: "err", text: e.message });
-    } finally {
-      setLiBusy(false);
-    }
+    } catch (e) { setMessage({ type: "err", text: e.message }); }
+    finally { setLiBusy(false); }
   };
 
   const send = async (rows) => {
     const res = await fetch("/api/prospects", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
+      method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify(rows),
     });
     const d = await res.json();
@@ -92,96 +109,156 @@ export default function ImportPage() {
   };
 
   return (
-    <>
-      <h1>Importer des prospects</h1>
-      <p className="sub">À la main pour un contact repéré, ou en collant un CSV (export Sales Navigator, SIRENE, fichier maison).</p>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div>
+        <Title2>Importer des prospects</Title2>
+        <Body1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 2 }}>
+          À la main pour un contact repéré, ou en collant un CSV (Sales Navigator, SIRENE, fichier maison).
+        </Body1>
+      </div>
 
-      {message && <div className={`alert alert-${message.type}`}>{message.text}</div>}
+      {/* ── Toast ── */}
+      {message && (
+        <Card style={{ borderLeft: `3px solid ${message.type === "ok" ? GREEN : RED}`, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+          {message.type === "ok"
+            ? <CheckmarkCircle24Regular style={{ color: GREEN, flexShrink: 0 }} />
+            : <ErrorCircle24Regular style={{ color: RED, flexShrink: 0 }} />}
+          <Body1 style={{ color: message.type === "ok" ? GREEN : RED }}>{message.text}</Body1>
+        </Card>
+      )}
 
-      <div className="card">
-        <h2>Depuis un profil LinkedIn</h2>
-        <p className="sub small">
-          Colle l'URL du profil : l'app identifie la personne via le web public (pas de scraping LinkedIn)
-          et pré-remplit le formulaire. Tu pourras ensuite enrichir l'email depuis sa fiche.
-        </p>
-        <div className="row">
-          <input
+      {/* ── LinkedIn ── */}
+      <Card style={{ padding: "20px 20px 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <LinkSquare24Regular style={{ color: "#0077b5" }} />
+          <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Depuis un profil LinkedIn</Body1>
+        </div>
+        <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginBottom: 12 }}>
+          Colle l'URL du profil : l'app identifie la personne via le web public (pas de scraping LinkedIn) et pré-remplit le formulaire.
+        </Caption1>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Input
             type="url"
             placeholder="https://www.linkedin.com/in/…"
             value={liUrl}
-            onChange={(e) => setLiUrl(e.target.value)}
-            style={{ flex: 1, minWidth: 220 }}
+            onChange={(_, d) => setLiUrl(d.value)}
+            style={{ flex: 1, minWidth: 240 }}
           />
-          <button className="btn-fox" disabled={liBusy || !liUrl.trim()} onClick={lookupLinkedin}>
-            {liBusy && <span className="spin" />}
+          <Button appearance="primary" disabled={liBusy || !liUrl.trim()} onClick={lookupLinkedin}
+            icon={liBusy ? <Spinner size="tiny" /> : <LinkSquare24Regular />}>
             {liBusy ? "Identification…" : "Identifier"}
-          </button>
+          </Button>
         </div>
-        {liBusy && <p className="sub small" style={{ marginTop: 8 }}>Recherche web en cours, 20-60 secondes…</p>}
-        {liResult?.notes && <p className="sub small" style={{ marginTop: 8 }}>{liResult.notes}</p>}
-      </div>
+        {liBusy && (
+          <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 8 }}>
+            Recherche web en cours, 20-60 secondes…
+          </Caption1>
+        )}
+        {liResult?.notes && (
+          <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block", marginTop: 8 }}>{liResult.notes}</Caption1>
+        )}
+      </Card>
 
-      <div className="card">
-        <h2>Ajout manuel</h2>
-        <div className="grid2">
-          <div><label>Prénom</label><input value={manual.first_name} onChange={(e) => setManual({ ...manual, first_name: e.target.value })} /></div>
-          <div><label>Nom</label><input value={manual.last_name} onChange={(e) => setManual({ ...manual, last_name: e.target.value })} /></div>
-          <div><label>Poste</label><input placeholder="DSI, RSSI, Responsable infrastructure…" value={manual.role} onChange={(e) => setManual({ ...manual, role: e.target.value })} /></div>
-          <div><label>Entreprise *</label><input value={manual.company} onChange={(e) => setManual({ ...manual, company: e.target.value })} /></div>
-          <div><label>Site web</label><input placeholder="https://…" value={manual.company_website} onChange={(e) => setManual({ ...manual, company_website: e.target.value })} /></div>
-          <div><label>URL LinkedIn</label><input placeholder="https://www.linkedin.com/in/…" value={manual.linkedin_url} onChange={(e) => setManual({ ...manual, linkedin_url: e.target.value })} /></div>
-          <div><label>Email pro (si connu)</label><input value={manual.email} onChange={(e) => setManual({ ...manual, email: e.target.value })} /></div>
+      {/* ── Manual form ── */}
+      <Card style={{ padding: "20px 20px 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+          <PersonAdd24Regular style={{ color: BRAND }} />
+          <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Ajout manuel</Body1>
         </div>
-        <div className="row" style={{ marginTop: 16 }}>
-          <button
-            className="btn-fox"
-            onClick={() => {
-              if (!manual.company || (!manual.first_name && !manual.last_name)) {
-                setMessage({ type: "err", text: "Entreprise et au moins un nom sont requis." });
-                return;
-              }
-              send([manual]);
-            }}
-          >
-            Ajouter à la piste
-          </button>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14, marginBottom: 16 }}>
+          {[
+            { label: "Prénom", field: "first_name", placeholder: "" },
+            { label: "Nom", field: "last_name", placeholder: "" },
+            { label: "Poste", field: "role", placeholder: "DSI, RSSI, Responsable infrastructure…" },
+            { label: "Entreprise *", field: "company", placeholder: "" },
+            { label: "Site web", field: "company_website", placeholder: "https://…", type: "url" },
+            { label: "URL LinkedIn", field: "linkedin_url", placeholder: "https://www.linkedin.com/in/…", type: "url" },
+            { label: "Email pro (si connu)", field: "email", placeholder: "", type: "email" },
+          ].map(({ label, field, placeholder, type }) => (
+            <div key={field}>
+              <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>{label}</Caption1>
+              <Input
+                type={type || "text"}
+                placeholder={placeholder}
+                value={manual[field]}
+                onChange={(_, d) => setManual({ ...manual, [field]: d.value })}
+              />
+            </div>
+          ))}
         </div>
-      </div>
+        <Button
+          appearance="primary"
+          icon={<Add24Regular />}
+          onClick={() => {
+            if (!manual.company || (!manual.first_name && !manual.last_name)) {
+              setMessage({ type: "err", text: "Entreprise et au moins un nom sont requis." });
+              return;
+            }
+            send([manual]);
+          }}
+        >
+          Ajouter à la piste
+        </Button>
+      </Card>
 
-      <div className="card">
-        <h2>Import CSV</h2>
-        <p className="sub small">
+      {/* ── CSV import ── */}
+      <Card style={{ padding: "20px 20px 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <DocumentTable24Regular style={{ color: BRAND }} />
+          <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Import CSV</Body1>
+        </div>
+        <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginBottom: 12 }}>
           Colonnes reconnues : prénom, nom, poste, entreprise, site, linkedin, email — en français ou en anglais, séparateur , ou ;
-        </p>
-        <textarea
+        </Caption1>
+        <Textarea
           placeholder={"prenom;nom;poste;entreprise;email\nMarie;Durand;DSI;Acme Industries;m.durand@acme.fr"}
           value={csv}
-          onChange={(e) => { setCsv(e.target.value); setPreview(parseCsv(e.target.value)); }}
-          style={{ minHeight: 150, fontFamily: "monospace", fontSize: 13 }}
+          onChange={(_, d) => { setCsv(d.value); setPreview(parseCsv(d.value)); }}
+          rows={6}
+          style={{ width: "100%", fontFamily: "monospace", fontSize: 13 }}
         />
+
         {csv.trim() && preview.length === 0 && (
-          <div className="alert alert-err">
-            Aucune ligne reconnue. Vérifie que la première ligne contient des en-têtes
-            (prénom, nom, poste, entreprise, email…) et que le séparateur est cohérent.
+          <Card style={{ borderLeft: `3px solid ${RED}`, padding: "10px 12px", marginTop: 10 }}>
+            <Caption1 style={{ color: RED }}>
+              Aucune ligne reconnue. Vérifie que la première ligne contient des en-têtes (prénom, nom, poste, entreprise, email…).
+            </Caption1>
+          </Card>
+        )}
+
+        {preview.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <Body1 style={{ fontWeight: 600, display: "block", marginBottom: 8 }}>
+              {preview.length} ligne(s) détectée(s) — aperçu :
+            </Body1>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHeaderCell>Contact</TableHeaderCell>
+                  <TableHeaderCell>Poste</TableHeaderCell>
+                  <TableHeaderCell>Entreprise</TableHeaderCell>
+                  <TableHeaderCell>Email</TableHeaderCell>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {preview.slice(0, 5).map((r, i) => (
+                  <TableRow key={i}>
+                    <TableCell><Body1 style={{ fontWeight: 600 }}>{r.first_name} {r.last_name}</Body1></TableCell>
+                    <TableCell><Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>{r.role}</Caption1></TableCell>
+                    <TableCell><Body1>{r.company}</Body1></TableCell>
+                    <TableCell><Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>{r.email}</Caption1></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <div style={{ marginTop: 14 }}>
+              <Button appearance="primary" icon={<ArrowUpload24Regular />} onClick={() => send(preview)}>
+                Importer {preview.length} prospect(s)
+              </Button>
+            </div>
           </div>
         )}
-        {preview.length > 0 && (
-          <>
-            <p className="small" style={{ marginTop: 12 }}><strong>{preview.length} ligne(s) détectée(s)</strong> — aperçu :</p>
-            <table>
-              <thead><tr><th>Contact</th><th>Poste</th><th>Entreprise</th><th>Email</th></tr></thead>
-              <tbody>
-                {preview.slice(0, 5).map((r, i) => (
-                  <tr key={i}><td>{r.first_name} {r.last_name}</td><td className="sub">{r.role}</td><td>{r.company}</td><td className="sub">{r.email}</td></tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="row" style={{ marginTop: 14 }}>
-              <button className="btn-fox" onClick={() => send(preview)}>Importer {preview.length} prospect(s)</button>
-            </div>
-          </>
-        )}
-      </div>
-    </>
+      </Card>
+    </div>
   );
 }

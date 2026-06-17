@@ -1,6 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  Card,
+  Button,
+  Input,
+  Textarea,
+  Title2,
+  Body1,
+  Caption1,
+  Spinner,
+} from "@fluentui/react-components";
+import {
+  Settings24Regular,
+  Person24Regular,
+  Target24Regular,
+  Checkmark24Regular,
+  Save24Regular,
+} from "@fluentui/react-icons";
+
+const BRAND = "#5B53E6";
+const GREEN = "#107C10";
+const RED = "#C50F1F";
 
 export default function SettingsPage() {
   const [s, setS] = useState(null);
@@ -13,15 +34,9 @@ export default function SettingsPage() {
       .then((d) => (d.error ? setError(d.error) : setS(d.settings)));
   }, []);
 
-  if (!s) return <div className="empty">{error || "Chargement…"}</div>;
-
-  const icp = s.icp || {};
-  const setIcp = (next) => setS({ ...s, icp: next });
-
   const save = async () => {
     const res = await fetch("/api/settings", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
+      method: "PUT", headers: { "content-type": "application/json" },
       body: JSON.stringify(s),
     });
     const d = await res.json();
@@ -29,146 +44,148 @@ export default function SettingsPage() {
     else { setSaved(true); setTimeout(() => setSaved(false), 1600); }
   };
 
+  if (!s) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 48, gap: 12 }}>
+        {error ? <Body1 style={{ color: RED }}>{error}</Body1>
+          : <><Spinner size="small" /><Body1 style={{ color: "var(--colorNeutralForeground2)" }}>Chargement…</Body1></>}
+      </div>
+    );
+  }
+
+  const icp = s.icp || {};
+  const setIcp = (next) => setS({ ...s, icp: next });
+
   return (
-    <>
-      <h1>Réglages</h1>
-      <p className="sub">
-        Le moteur adapte recherche et brouillons à ton offre et à ton identité.
-        L'ICP affine le score Business de chaque prospect.
-      </p>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div>
+        <Title2>Réglages</Title2>
+        <Body1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 2 }}>
+          Le moteur adapte recherche et brouillons à ton offre et à ton identité.
+        </Body1>
+      </div>
 
-      {error && <div className="alert alert-err">{error}</div>}
+      {error && (
+        <Card style={{ borderLeft: `3px solid ${RED}`, padding: "12px 16px" }}>
+          <Body1 style={{ color: RED }}>{error}</Body1>
+        </Card>
+      )}
 
-      <div className="card">
-        <h2>Mon offre</h2>
-        <label>
-          Description de l'offre (mise à jour le jour où tu signes chez Palo Alto, Dell, Oracle ou AWS)
-        </label>
-        <textarea
+      {/* ── Mon offre ── */}
+      <Card style={{ padding: "20px 20px 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+          <Settings24Regular style={{ color: BRAND }} />
+          <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Mon offre</Body1>
+        </div>
+        <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginBottom: 10 }}>
+          Description de l'offre — mise à jour le jour où tu signes chez un nouveau constructeur/éditeur.
+        </Caption1>
+        <Textarea
           placeholder="Ex. : Solutions de cybersécurité réseau (NGFW, SASE, Zero Trust) pour ETI et grands comptes…"
           value={s.offer || ""}
-          onChange={(e) => setS({ ...s, offer: e.target.value })}
-          style={{ minHeight: 130 }}
+          onChange={(_, d) => setS({ ...s, offer: d.value })}
+          rows={5}
+          style={{ width: "100%" }}
         />
-      </div>
+      </Card>
 
-      {/* ── Profil client idéal ─────────────────────────────────────────── */}
-      <div className="card">
-        <h2>Profil client idéal (ICP)</h2>
-        <p className="sub small" style={{ marginBottom: 14 }}>
-          Définit la cible idéale. Le score Business de chaque prospect est calculé en fonction
-          de ces critères (taille, secteur, codes NAF). Laisser vide = pas de filtre.
-        </p>
+      {/* ── ICP ── */}
+      <Card style={{ padding: "20px 20px 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <Target24Regular style={{ color: BRAND }} />
+          <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Profil client idéal (ICP)</Body1>
+        </div>
+        <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginBottom: 16 }}>
+          Définit la cible idéale. Le score Business est calculé en fonction de ces critères (taille, secteur, NAF). Laisser vide = pas de filtre.
+        </Caption1>
 
-        <div className="grid2">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
           <div>
-            <label>Effectif minimum</label>
-            <input
+            <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Effectif minimum</Caption1>
+            <Input
               type="number"
-              min="0"
-              step="50"
-              value={icp.effectif_min ?? ""}
               placeholder="ex. 250"
-              onChange={(e) =>
-                setIcp({ ...icp, effectif_min: e.target.value === "" ? null : +e.target.value })
-              }
+              value={icp.effectif_min ?? ""}
+              onChange={(_, d) => setIcp({ ...icp, effectif_min: d.value === "" ? null : +d.value })}
             />
           </div>
           <div>
-            <label>Effectif maximum</label>
-            <input
+            <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Effectif maximum</Caption1>
+            <Input
               type="number"
-              min="0"
-              step="1000"
-              value={icp.effectif_max ?? ""}
               placeholder="ex. 10000"
-              onChange={(e) =>
-                setIcp({ ...icp, effectif_max: e.target.value === "" ? null : +e.target.value })
-              }
+              value={icp.effectif_max ?? ""}
+              onChange={(_, d) => setIcp({ ...icp, effectif_max: d.value === "" ? null : +d.value })}
             />
           </div>
         </div>
 
-        <div style={{ marginTop: 14 }}>
-          <label>Codes NAF inclus (séparés par virgule)</label>
-          <input
+        <div style={{ marginBottom: 14 }}>
+          <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Codes NAF inclus (séparés par virgule)</Caption1>
+          <Input
             placeholder="Vide = tous — ex. 6201Z, 6420Z, 6419Z, 8610Z"
             value={(icp.naf_inclus || []).join(", ")}
-            onChange={(e) =>
-              setIcp({
-                ...icp,
-                naf_inclus: e.target.value.split(",").map((x) => x.trim()).filter(Boolean),
-              })
-            }
+            onChange={(_, d) => setIcp({ ...icp, naf_inclus: d.value.split(",").map((x) => x.trim()).filter(Boolean) })}
           />
-          <p className="sub small" style={{ marginTop: 4 }}>
+          <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 4 }}>
             Finance : 64xx · Assurance : 65xx · Santé : 86xx · Tech/SI : 62xx · Énergie : 35xx
-          </p>
+          </Caption1>
         </div>
 
-        <div style={{ marginTop: 12 }}>
-          <label>Codes NAF exclus</label>
-          <input
+        <div style={{ marginBottom: 14 }}>
+          <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Codes NAF exclus</Caption1>
+          <Input
             placeholder="ex. 9900Z, 0111Z"
             value={(icp.naf_exclus || []).join(", ")}
-            onChange={(e) =>
-              setIcp({
-                ...icp,
-                naf_exclus: e.target.value.split(",").map((x) => x.trim()).filter(Boolean),
-              })
-            }
+            onChange={(_, d) => setIcp({ ...icp, naf_exclus: d.value.split(",").map((x) => x.trim()).filter(Boolean) })}
           />
         </div>
 
-        <div style={{ marginTop: 12 }}>
-          <label>Secteurs cibles (mots-clés, séparés par virgule)</label>
-          <input
+        <div>
+          <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Secteurs cibles (mots-clés, séparés par virgule)</Caption1>
+          <Input
             placeholder="ex. banque, assurance, santé, énergie, transport, défense"
             value={(icp.secteurs_inclus || []).join(", ")}
-            onChange={(e) =>
-              setIcp({
-                ...icp,
-                secteurs_inclus: e.target.value.split(",").map((x) => x.trim()).filter(Boolean),
-              })
-            }
+            onChange={(_, d) => setIcp({ ...icp, secteurs_inclus: d.value.split(",").map((x) => x.trim()).filter(Boolean) })}
           />
-          <p className="sub small" style={{ marginTop: 4 }}>
+          <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 4 }}>
             Utilisé dans la recherche LLM pour orienter la qualification des prospects.
-          </p>
+          </Caption1>
         </div>
-      </div>
+      </Card>
 
-      <div className="card">
-        <h2>Identité expéditeur</h2>
-        <div className="grid2">
+      {/* ── Identité expéditeur ── */}
+      <Card style={{ padding: "20px 20px 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+          <Person24Regular style={{ color: BRAND }} />
+          <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Identité expéditeur</Body1>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }}>
           <div>
-            <label>Nom</label>
-            <input
-              value={s.sender_name || ""}
-              onChange={(e) => setS({ ...s, sender_name: e.target.value })}
-            />
+            <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Nom</Caption1>
+            <Input value={s.sender_name || ""} onChange={(_, d) => setS({ ...s, sender_name: d.value })} />
           </div>
           <div>
-            <label>Poste</label>
-            <input
-              placeholder="Account Executive"
-              value={s.sender_role || ""}
-              onChange={(e) => setS({ ...s, sender_role: e.target.value })}
-            />
+            <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Poste</Caption1>
+            <Input placeholder="Account Executive" value={s.sender_role || ""} onChange={(_, d) => setS({ ...s, sender_role: d.value })} />
           </div>
           <div>
-            <label>Société</label>
-            <input
-              value={s.sender_company || ""}
-              onChange={(e) => setS({ ...s, sender_company: e.target.value })}
-            />
+            <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Société</Caption1>
+            <Input value={s.sender_company || ""} onChange={(_, d) => setS({ ...s, sender_company: d.value })} />
           </div>
         </div>
-      </div>
+      </Card>
 
-      <button className="btn-fox" onClick={save}>
-        {saved ? "Enregistré ✓" : "Enregistrer"}
-      </button>
-    </>
+      {/* ── Save ── */}
+      <div>
+        <Button
+          appearance="primary"
+          icon={saved ? <Checkmark24Regular /> : <Save24Regular />}
+          onClick={save}
+        >
+          {saved ? "Enregistré ✓" : "Enregistrer"}
+        </Button>
+      </div>
+    </div>
   );
 }
