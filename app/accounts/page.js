@@ -2,47 +2,82 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Card,
+  Button,
+  Input,
+  Title2,
+  Body1,
+  Caption1,
+  Badge,
+  Spinner,
+  Table,
+  TableHeader,
+  TableRow,
+  TableCell,
+  TableBody,
+  TableHeaderCell,
+} from "@fluentui/react-components";
+import {
+  Add24Regular,
+  BuildingMultiple24Regular,
+  Fire24Regular,
+  ArrowSync24Regular,
+  Search24Regular,
+  DataTrending24Regular,
+  ArrowClockwise24Regular,
+  Stop24Regular,
+  CalendarSync24Regular,
+} from "@fluentui/react-icons";
+
+const BRAND = "#5B53E6";
+const GREEN = "#107C10";
+const AMBER = "#F6A623";
+const RED = "#C50F1F";
+
+function heatColor(score) {
+  if (score >= 70) return RED;
+  if (score >= 40) return AMBER;
+  return GREEN;
+}
 
 function HeatBadge({ score }) {
-  if (score === null || score === undefined) return null;
-  const color = score >= 70 ? "var(--accent)" : score >= 40 ? "#e67e22" : "var(--text-3)";
+  if (score == null) return <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>—</Caption1>;
   return (
-    <span style={{ fontWeight: 700, color, fontSize: 13, minWidth: 28, display: "inline-block" }}>
-      {score}
-    </span>
+    <span style={{ fontWeight: 700, color: heatColor(score), fontSize: 14 }}>{score}</span>
   );
 }
 
 function HotAccountCard({ account, onClick }) {
   const topSignal = account.signals?.[0];
   return (
-    <div
-      className="card"
+    <Card
       onClick={onClick}
-      style={{ cursor: "pointer", padding: "12px 16px", marginBottom: 0 }}
+      style={{ cursor: "pointer", padding: "12px 16px" }}
     >
-      <div className="row spread" style={{ alignItems: "flex-start" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <HeatBadge score={account.heat_score} />
-            <strong style={{ fontSize: 14 }}>{account.name}</strong>
-            {account.sector && <span className="sub small">{account.sector}</span>}
+            <Body1 style={{ fontWeight: 700 }}>{account.name}</Body1>
+            {account.sector && (
+              <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>{account.sector}</Caption1>
+            )}
           </div>
           {topSignal && (
-            <p className="sub small" style={{ marginTop: 4, marginBottom: 0 }}>
+            <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block", marginTop: 4 }}>
               <span style={{ textTransform: "capitalize" }}>{topSignal.type}</span>
-              {" · "}{topSignal.detail?.slice(0, 80)}{topSignal.detail?.length > 80 ? "…" : ""}
-              {topSignal.date && <> · <em>{topSignal.date}</em></>}
-            </p>
+              {" · "}{topSignal.detail?.slice(0, 90)}{topSignal.detail?.length > 90 ? "…" : ""}
+            </Caption1>
           )}
         </div>
         {account.signals_count > 0 && (
-          <span className="sub small" style={{ marginLeft: 8, whiteSpace: "nowrap" }}>
+          <Badge appearance="outline" color="warning">
             {account.signals_count} signal{account.signals_count > 1 ? "s" : ""}
-          </span>
+          </Badge>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -55,18 +90,15 @@ export default function AccountsPage() {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [seeding, setSeeding] = useState(false);
-
   const [batch, setBatch] = useState(null);
   const [queuing, setQueuing] = useState(false);
   const [queuedMsg, setQueuedMsg] = useState("");
-  const stopRef = useRef(false);
-
-  // ── Import SIREN ────────────────────────────────────────────────────────
   const [sireneTotal, setSireneTotal] = useState(null);
   const [sirenePage, setSirenePage] = useState(1);
   const [sireneImporting, setSireneImporting] = useState(false);
   const [sireneResult, setSireneResult] = useState(null);
   const [sireneHasMore, setSireneHasMore] = useState(true);
+  const stopRef = useRef(false);
 
   const load = async () => {
     const res = await fetch("/api/accounts");
@@ -89,28 +121,7 @@ export default function AccountsPage() {
     if (d.total !== undefined) setSireneTotal(d.total);
   };
 
-  useEffect(() => {
-    load();
-    loadHot();
-    loadSireneTotal();
-  }, []);
-
-  const importSirene = async () => {
-    setSireneImporting(true);
-    setSireneResult(null);
-    const res = await fetch("/api/companies/import", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ categories: ["ETI", "GE"], page: sirenePage, per_page: 25 }),
-    });
-    const d = await res.json().catch(() => ({}));
-    setSireneImporting(false);
-    if (d.error) { setError(d.error); return; }
-    setSireneResult(d);
-    setSirenePage(d.next_page || sirenePage + 1);
-    setSireneHasMore(d.has_more ?? false);
-    setSireneTotal((t) => (t ?? 0) + (d.imported || 0));
-  };
+  useEffect(() => { load(); loadHot(); loadSireneTotal(); }, []);
 
   const create = async () => {
     if (!name.trim()) return;
@@ -131,22 +142,33 @@ export default function AccountsPage() {
     const d = await res.json().catch(() => ({}));
     setSeeding(false);
     if (!res.ok || d.error) { setError(d.error || `Erreur ${res.status}.`); return; }
-    await load();
-    await loadHot();
+    await load(); await loadHot();
+  };
+
+  const importSirene = async () => {
+    setSireneImporting(true); setSireneResult(null);
+    const res = await fetch("/api/companies/import", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ categories: ["ETI", "GE"], page: sirenePage, per_page: 25 }),
+    });
+    const d = await res.json().catch(() => ({}));
+    setSireneImporting(false);
+    if (d.error) { setError(d.error); return; }
+    setSireneResult(d);
+    setSirenePage(d.next_page || sirenePage + 1);
+    setSireneHasMore(d.has_more ?? false);
+    setSireneTotal((t) => (t ?? 0) + (d.imported || 0));
   };
 
   const runBatch = async () => {
     const all = await load();
-    const queue = all
-      .filter((a) => !a.last_refreshed_at)
-      .map((a) => ({ id: a.id, name: a.name }));
+    const queue = all.filter((a) => !a.last_refreshed_at).map((a) => ({ id: a.id, name: a.name }));
     if (queue.length === 0) {
-      setBatch({ total: 0, done: 0, message: "Tous les comptes ont déjà été analysés au moins une fois." });
+      setBatch({ total: 0, done: 0, message: "Tous les comptes ont déjà été analysés." });
       return;
     }
     stopRef.current = false;
     setBatch({ total: queue.length, done: 0, queue, currentId: null, currentName: null, message: "" });
-
     let done = 0;
     for (let i = 0; i < queue.length; i++) {
       if (stopRef.current) {
@@ -163,13 +185,11 @@ export default function AccountsPage() {
         if (res.status === 429) {
           await load();
           setBatch({ total: queue.length, done, currentId: null, currentName: null, queue: [],
-            message: `Plafond quotidien atteint après ${done} analyse(s). La recherche reprendra demain.` });
+            message: `Plafond quotidien atteint après ${done} analyse(s). Reprendra demain.` });
           return;
         }
         if (res.ok) done++;
-      } catch {
-        // continue malgré une erreur ponctuelle
-      }
+      } catch {}
       await load();
       setBatch((b) => ({ ...b, done }));
     }
@@ -177,215 +197,269 @@ export default function AccountsPage() {
     setBatch((b) => ({ ...b, currentId: null, currentName: null, message: `Terminé : ${done}/${queue.length} comptes analysés.` }));
   };
 
-  const stopBatch = () => { stopRef.current = true; };
-
-  // Enfile tous les comptes non analysés dans la file de jobs — sans garder l'onglet ouvert.
   const enqueueAll = async () => {
     const all = await load();
     const pending = all.filter((a) => !a.last_refreshed_at);
     if (pending.length === 0) { setQueuedMsg("Tous les comptes ont déjà été analysés."); return; }
     setQueuing(true); setQueuedMsg("");
     const res = await fetch("/api/jobs", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
+      method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ kind: "analyze_account", items: pending.map((a) => ({ account_id: a.id })) }),
     });
     const d = await res.json().catch(() => ({}));
     setQueuing(false);
     if (d.error) { setError(d.error); return; }
-    setQueuedMsg(`${d.enqueued} compte(s) planifié(s) — le cron les analysera à 5h du matin (ou déclenche /api/cron/process-jobs manuellement).`);
+    setQueuedMsg(`${d.enqueued} compte(s) planifié(s) — le cron les analysera à 5h.`);
   };
 
   const filtered = (accounts || []).filter((a) =>
     a.name.toLowerCase().includes(q.toLowerCase()) || (a.sector || "").toLowerCase().includes(q.toLowerCase())
   );
   const notAnalyzed = (accounts || []).filter((a) => !a.last_refreshed_at).length;
-  const running = batch && batch.currentId;
-
-  const hotVisible = hotAccounts && hotAccounts.filter((a) => a.heat_score > 0).length > 0;
+  const running = batch?.currentId;
+  const hotVisible = hotAccounts?.filter((a) => a.heat_score > 0).length > 0;
 
   return (
-    <>
-      <h1>Comptes</h1>
-      <p className="sub">Tes grands comptes : cartographie de l'organisation IT, actualités et signaux stratégiques par entreprise.</p>
-
-      {error && <div className="alert alert-err">{error}</div>}
-
-      {/* ── Dashboard comptes chauds ──────────────────────────────────────── */}
-      {hotVisible && (
-        <div className="card">
-          <h2>Comptes chauds</h2>
-          <p className="sub small" style={{ marginBottom: 12 }}>
-            Triés par chaleur des signaux (score d'urgence avec décroissance temporelle).
-          </p>
-          <div style={{ display: "grid", gap: 8 }}>
-            {hotAccounts.filter((a) => a.heat_score > 0).map((a) => (
-              <HotAccountCard
-                key={a.id}
-                account={a}
-                onClick={() => router.push(`/accounts/${a.id}`)}
-              />
-            ))}
-          </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* ── Header ── */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <Title2>Comptes</Title2>
+          <Body1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 2 }}>
+            Cartographie des organisations IT, signaux stratégiques et contacts décideurs.
+          </Body1>
         </div>
-      )}
-
-      {/* ── Créer / Importer ──────────────────────────────────────────────── */}
-      <div className="card">
-        <h2>Analyser un nouveau compte</h2>
-        <div className="row">
-          <input
-            placeholder="Nom de l'entreprise (ex. Coopérative U)"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && create()}
-            style={{ flex: 1, minWidth: 220 }}
-          />
-          <button className="btn-fox" disabled={busy || !name.trim()} onClick={create}>
-            {busy && <span className="spin" />}
-            Créer le compte
-          </button>
-        </div>
-        <div className="row" style={{ marginTop: 12 }}>
-          <button onClick={seed} disabled={seeding || !!running}>
-            {seeding && <span className="spin spin-dark" />}
-            Importer les grands comptes français
-          </button>
-          <span className="sub small">Ajoute ~50 grandes entreprises FR (sans les analyser).</span>
-        </div>
+        <Button appearance="primary" icon={<Add24Regular />} onClick={() => document.getElementById("new-account-name")?.focus()}>
+          Nouveau compte
+        </Button>
       </div>
 
-      {/* ── Recherche en lot ──────────────────────────────────────────────── */}
+      {/* ── Error ── */}
+      {error && (
+        <Card style={{ borderLeft: `3px solid ${RED}`, padding: "12px 16px" }}>
+          <Body1 style={{ color: RED }}>{error}</Body1>
+        </Card>
+      )}
+
+      {/* ── Hot accounts ── */}
+      {hotVisible && (
+        <Card style={{ padding: "20px 20px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+            <Fire24Regular style={{ color: RED }} />
+            <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Comptes chauds</Body1>
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)", marginLeft: 4 }}>
+              triés par score de chaleur des signaux
+            </Caption1>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {hotAccounts.filter((a) => a.heat_score > 0).map((a) => (
+              <HotAccountCard key={a.id} account={a} onClick={() => router.push(`/accounts/${a.id}`)} />
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* ── Create account ── */}
+      <Card style={{ padding: "20px 20px 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+          <BuildingMultiple24Regular style={{ color: BRAND }} />
+          <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Analyser un nouveau compte</Body1>
+        </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Input
+            id="new-account-name"
+            placeholder="Nom de l'entreprise (ex. Coopérative U)"
+            value={name}
+            onChange={(_, d) => setName(d.value)}
+            onKeyDown={(e) => e.key === "Enter" && create()}
+            style={{ flex: 1, minWidth: 240 }}
+          />
+          <Button appearance="primary" disabled={busy || !name.trim()} onClick={create}
+            icon={busy ? <Spinner size="tiny" /> : <Add24Regular />}>
+            Créer le compte
+          </Button>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 14, flexWrap: "wrap" }}>
+          <Button appearance="outline" disabled={seeding || !!running} onClick={seed}
+            icon={seeding ? <Spinner size="tiny" /> : <DataTrending24Regular />}>
+            Importer les grands comptes français
+          </Button>
+          <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
+            Ajoute ~50 grandes entreprises FR (sans les analyser).
+          </Caption1>
+        </div>
+      </Card>
+
+      {/* ── Batch analysis ── */}
       {accounts && accounts.length > 0 && (
-        <div className="card">
-          <div className="row spread">
-            <h2>Recherche en lot</h2>
-            {!running && (
-              <button className="btn-fox" onClick={runBatch} disabled={notAnalyzed === 0}>
-                Analyser les {notAnalyzed} compte(s) en attente
-              </button>
-            )}
-            {running && <button onClick={stopBatch}>Stopper</button>}
+        <Card style={{ padding: "20px 20px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <ArrowSync24Regular style={{ color: BRAND }} />
+              <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Recherche en lot</Body1>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {!running && (
+                <Button appearance="primary" disabled={notAnalyzed === 0} onClick={runBatch}
+                  icon={<ArrowClockwise24Regular />}>
+                  Analyser les {notAnalyzed} compte(s) en attente
+                </Button>
+              )}
+              {running && (
+                <Button appearance="outline" onClick={() => { stopRef.current = true; }} icon={<Stop24Regular />}>
+                  Stopper
+                </Button>
+              )}
+            </div>
           </div>
 
           {batch && (
-            <>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {running && (
-                <div className="batch-current">
-                  <span className="spin spin-dark" />
-                  <span>Analyse en cours : <strong>{batch.currentName}</strong></span>
-                  <span className="sub small">{batch.done}/{batch.total}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Spinner size="tiny" />
+                  <Body1>Analyse : <strong>{batch.currentName}</strong></Body1>
+                  <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>{batch.done}/{batch.total}</Caption1>
                 </div>
               )}
-              {batch.message && <p className="sub small" style={{ marginTop: 8 }}>{batch.message}</p>}
-              {running && batch.queue && batch.queue.length > 0 && (
-                <p className="sub small" style={{ marginTop: 8 }}>
+              {batch.message && <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>{batch.message}</Caption1>}
+              {running && batch.queue?.length > 0 && (
+                <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
                   À venir : {batch.queue.slice(0, 4).map((x) => x.name).join(", ")}
                   {batch.queue.length > 4 && ` … (+${batch.queue.length - 4})`}
-                </p>
+                </Caption1>
               )}
-            </>
+            </div>
           )}
+
           {!batch && (
             <>
-              <p className="sub small">
-                <strong>Option A (onglet ouvert) :</strong> analyse immédiate, progression visible ci-dessus.<br />
-                <strong>Option B (tâche de fond) :</strong> planifie les comptes dans la file — tu peux fermer l'onglet, le cron traitera à 5h.
-              </p>
-              <div className="row" style={{ marginTop: 8 }}>
-                <button onClick={enqueueAll} disabled={queuing || notAnalyzed === 0}>
-                  {queuing && <span className="spin spin-dark" />}
-                  Planifier {notAnalyzed} compte(s) en tâche de fond
-                </button>
+              <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block", marginBottom: 10 }}>
+                <strong>Option A (onglet ouvert) :</strong> analyse immédiate, progression visible ci-dessus.{" "}
+                <strong>Option B (fond) :</strong> planifie dans la file — tu peux fermer l'onglet.
+              </Caption1>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <Button appearance="outline" disabled={queuing || notAnalyzed === 0} onClick={enqueueAll}
+                  icon={queuing ? <Spinner size="tiny" /> : <CalendarSync24Regular />}>
+                  Planifier {notAnalyzed} compte(s) en fond
+                </Button>
+                {queuedMsg && (
+                  <Caption1 style={{ color: GREEN }}>{queuedMsg}</Caption1>
+                )}
               </div>
-              {queuedMsg && <p className="sub small" style={{ marginTop: 8, color: "var(--accent)" }}>{queuedMsg}</p>}
             </>
           )}
-        </div>
+        </Card>
       )}
 
-      {/* ── Base entreprises SIRENE ──────────────────────────────────────── */}
-      <div className="card">
-        <div className="row spread">
-          <div>
-            <h2>Base entreprises SIRENE</h2>
-            <p className="sub small" style={{ marginBottom: 0 }}>
+      {/* ── SIRENE import ── */}
+      <Card style={{ padding: "20px 20px 24px" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ flex: 1 }}>
+            <Body1 style={{ fontWeight: 700, fontSize: 15, display: "block", marginBottom: 4 }}>Base SIRENE</Body1>
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
               Importe ETI et grandes entreprises depuis l'API officielle INSEE/SIRENE.
               Alimente les firmographiques (NAF, effectif, région) pour le scoring.
-              {sireneTotal !== null && (
-                <> · <strong>{sireneTotal.toLocaleString("fr-FR")}</strong> société(s) déjà en base.</>
+              {sireneTotal != null && (
+                <> · <strong style={{ color: "var(--colorNeutralForeground1)" }}>{sireneTotal.toLocaleString("fr-FR")}</strong> société(s) en base.</>
               )}
-            </p>
+            </Caption1>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <Button appearance="outline" disabled={sireneImporting || !sireneHasMore} onClick={importSirene}
+              icon={sireneImporting ? <Spinner size="tiny" /> : <ArrowClockwise24Regular />}>
+              {sireneHasMore ? `Importer page ${sirenePage} (25 ent.)` : "Import terminé"}
+            </Button>
+            {sireneResult && !sireneImporting && (
+              <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
+                {sireneResult.imported} importée(s) · {sireneResult.skipped} ignorée(s)
+              </Caption1>
+            )}
           </div>
         </div>
-        <div className="row" style={{ marginTop: 12, gap: 10 }}>
-          <button
-            className="btn-fox"
-            disabled={sireneImporting || !sireneHasMore}
-            onClick={importSirene}
-          >
-            {sireneImporting && <span className="spin" />}
-            {sireneHasMore
-              ? `Importer la page ${sirenePage} (25 entreprises)`
-              : "Import terminé"}
-          </button>
-          {sireneResult && !sireneImporting && (
-            <span className="sub small" style={{ alignSelf: "center" }}>
-              {sireneResult.imported} importée(s) · {sireneResult.skipped} ignorée(s)
-              {sireneResult.has_more
-                ? ` · page ${sireneResult.page}/${Math.ceil(sireneResult.total_results / 25)}`
-                : " · fin de liste"}
-            </span>
-          )}
-        </div>
-      </div>
+      </Card>
 
-      {/* ── Liste complète ────────────────────────────────────────────────── */}
+      {/* ── Accounts table ── */}
       {accounts && accounts.length > 0 && (
-        <div className="card" style={{ padding: 0 }}>
-          <div style={{ padding: "14px 16px 0" }}>
-            <input placeholder="Filtrer…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <Card style={{ padding: "16px 0 0" }}>
+          <div style={{ padding: "0 16px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+            <Input
+              placeholder="Filtrer par nom ou secteur…"
+              value={q}
+              onChange={(_, d) => setQ(d.value)}
+              contentBefore={<Search24Regular />}
+              style={{ flex: 1, maxWidth: 360 }}
+            />
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)", marginLeft: "auto" }}>
+              {filtered.length} / {accounts.length}
+            </Caption1>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Entreprise</th>
-                <th>Secteur</th>
-                <th style={{ textAlign: "right" }}>Chaleur</th>
-                <th>Signaux</th>
-                <th>Dernière veille</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell>Entreprise</TableHeaderCell>
+                <TableHeaderCell>Secteur</TableHeaderCell>
+                <TableHeaderCell style={{ textAlign: "right" }}>Chaleur</TableHeaderCell>
+                <TableHeaderCell>Signaux</TableHeaderCell>
+                <TableHeaderCell>Dernière veille</TableHeaderCell>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {filtered.map((a) => {
                 const hot = hotAccounts?.find((h) => h.id === a.id);
                 return (
-                  <tr key={a.id} className="clickable" onClick={() => router.push(`/accounts/${a.id}`)}>
-                    <td>
-                      <strong>{a.name}</strong>
-                      {batch && batch.currentId === a.id && <span className="spin spin-dark" style={{ marginLeft: 8 }} />}
-                    </td>
-                    <td className="sub">{a.sector || "—"}</td>
-                    <td style={{ textAlign: "right" }}>
-                      {hot ? <HeatBadge score={hot.heat_score} /> : "—"}
-                    </td>
-                    <td>{(a.signals || []).length || "—"}</td>
-                    <td className="sub small">
-                      {a.last_refreshed_at ? new Date(a.last_refreshed_at).toLocaleDateString("fr-FR") : "en attente"}
-                    </td>
-                  </tr>
+                  <TableRow
+                    key={a.id}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => router.push(`/accounts/${a.id}`)}
+                  >
+                    <TableCell>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <Body1 style={{ fontWeight: 600 }}>{a.name}</Body1>
+                        {batch?.currentId === a.id && <Spinner size="tiny" />}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>{a.sector || "—"}</Caption1>
+                    </TableCell>
+                    <TableCell style={{ textAlign: "right" }}>
+                      {hot ? <HeatBadge score={hot.heat_score} /> : <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>—</Caption1>}
+                    </TableCell>
+                    <TableCell>
+                      <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>
+                        {(a.signals || []).length || "—"}
+                      </Caption1>
+                    </TableCell>
+                    <TableCell>
+                      <Caption1 style={{ color: a.last_refreshed_at ? "var(--colorNeutralForeground2)" : "var(--colorNeutralForeground4)" }}>
+                        {a.last_refreshed_at
+                          ? new Date(a.last_refreshed_at).toLocaleDateString("fr-FR")
+                          : "en attente"}
+                      </Caption1>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </Card>
       )}
 
       {accounts && accounts.length === 0 && (
-        <div className="card empty">
-          <p>Aucun compte pour l'instant. Crée-en un, importe les grands comptes français ci-dessus, ou importe des prospects (leur entreprise crée le compte automatiquement).</p>
-        </div>
+        <Card style={{ padding: "40px 24px", textAlign: "center" }}>
+          <BuildingMultiple24Regular style={{ fontSize: 40, color: "var(--colorNeutralForeground3)", display: "block", margin: "0 auto 12px" }} />
+          <Body1 style={{ color: "var(--colorNeutralForeground2)" }}>
+            Aucun compte pour l'instant. Crée-en un ou importe les grands comptes français.
+          </Body1>
+        </Card>
       )}
-    </>
+
+      {!accounts && !error && (
+        <Card style={{ padding: 32, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
+          <Spinner size="small" />
+          <Body1 style={{ color: "var(--colorNeutralForeground2)" }}>Chargement des comptes…</Body1>
+        </Card>
+      )}
+    </div>
   );
 }
