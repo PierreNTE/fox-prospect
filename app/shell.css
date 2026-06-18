@@ -60,6 +60,9 @@
   color: var(--colorNeutralForeground2); background: transparent;
   border: none; cursor: pointer; transition: background .12s ease;
 }
+/* L'icône SVG dans le bouton (flex) était écrasée à ~2px de large (flex-shrink).
+   Taille explicite + flex:none = rendu fiable, indépendant du contexte flex. */
+.app-iconbtn svg { width: 20px; height: 20px; flex: 0 0 auto; }
 .app-iconbtn:hover { background: var(--colorNeutralBackground1Hover); }
 .app-iconbtn.primary { background: var(--colorBrandBackground); color: var(--colorNeutralForegroundOnBrand); }
 .app-iconbtn.primary:hover { background: var(--colorBrandBackgroundHover); }
