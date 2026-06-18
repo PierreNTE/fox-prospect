@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { analyzeAccount } from "@/lib/account-analyze";
+import { drainJobQueue } from "@/lib/process-jobs";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // plusieurs analyses à la suite (Fluid Compute)
@@ -53,5 +54,16 @@ export async function GET(request) {
     }
   }
 
-  return NextResponse.json({ refreshed: done.length, details: done });
+  // Puis on draine la file `jobs` (kind=analyze_account) dans le budget restant.
+  // Vercel Hobby = 2 crons max : pas de cron dédié à process-jobs, on le greffe
+  // ici. drainJobQueue recompte le budget consommé (incluant les comptes qu'on
+  // vient de rafraîchir) et ne dépasse jamais le plafond quotidien partagé.
+  let queue = null;
+  try {
+    queue = await drainJobQueue(supabase, { dailyCap });
+  } catch (e) {
+    queue = { error: e.message };
+  }
+
+  return NextResponse.json({ refreshed: done.length, details: done, queue });
 }
