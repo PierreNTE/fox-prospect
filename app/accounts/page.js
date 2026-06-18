@@ -146,10 +146,12 @@ export default function AccountsPage() {
   };
 
   const importSirene = async () => {
-    setSireneImporting(true); setSireneResult(null);
-    const res = await fetch("/api/companies/import", {
+    setSireneImporting(true); setSireneResult(null); setError("");
+    // Crée de vrais COMPTES (ICP-filtrés) prêts à scraper/analyser, pas seulement
+    // des lignes firmographiques. limit=25 nouveaux comptes par clic.
+    const res = await fetch("/api/accounts/import-sirene", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ categories: ["ETI", "GE"], page: sirenePage, per_page: 25 }),
+      body: JSON.stringify({ categories: ["ETI", "GE"], page: sirenePage, limit: 25 }),
     });
     const d = await res.json().catch(() => ({}));
     setSireneImporting(false);
@@ -158,6 +160,7 @@ export default function AccountsPage() {
     setSirenePage(d.next_page || sirenePage + 1);
     setSireneHasMore(d.has_more ?? false);
     setSireneTotal((t) => (t ?? 0) + (d.imported || 0));
+    await load(); await loadHot(); // les nouveaux comptes apparaissent dans la liste
   };
 
   const runBatch = async () => {
@@ -356,23 +359,24 @@ export default function AccountsPage() {
       <Card style={{ padding: "20px 20px 24px" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <div style={{ flex: 1 }}>
-            <Body1 style={{ fontWeight: 700, fontSize: 15, display: "block", marginBottom: 4 }}>Base SIRENE</Body1>
+            <Body1 style={{ fontWeight: 700, fontSize: 15, display: "block", marginBottom: 4 }}>Ajouter des comptes cibles (SIRENE)</Body1>
             <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
-              Importe ETI et grandes entreprises depuis l'API officielle INSEE/SIRENE.
-              Alimente les firmographiques (NAF, effectif, région) pour le scoring.
-              {sireneTotal != null && (
-                <> · <strong style={{ color: "var(--colorNeutralForeground1)" }}>{sireneTotal.toLocaleString("fr-FR")}</strong> société(s) en base.</>
+              Crée de nouveaux comptes ETI/GE filtrés sur ton ICP (NAF, effectif),
+              prêts à scraper et qualifier. Source : API officielle INSEE/SIRENE.
+              Veille auto désactivée par défaut (budget) — active-la par compte si besoin.
+              {accounts != null && (
+                <> · <strong style={{ color: "var(--colorNeutralForeground1)" }}>{accounts.length.toLocaleString("fr-FR")}</strong> compte(s) en base.</>
               )}
             </Caption1>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <Button appearance="outline" disabled={sireneImporting || !sireneHasMore} onClick={importSirene}
               icon={sireneImporting ? <Spinner size="tiny" /> : <ArrowClockwise24Regular />}>
-              {sireneHasMore ? `Importer page ${sirenePage} (25 ent.)` : "Import terminé"}
+              {sireneImporting ? "Import en cours…" : sireneHasMore ? "Importer ~25 comptes" : "Import terminé"}
             </Button>
             {sireneResult && !sireneImporting && (
               <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
-                {sireneResult.imported} importée(s) · {sireneResult.skipped} ignorée(s)
+                +{sireneResult.imported} compte(s){sireneResult.duplicates ? ` · ${sireneResult.duplicates} déjà connu(s)` : ""}{sireneResult.skipped_icp ? ` · ${sireneResult.skipped_icp} hors ICP` : ""}
               </Caption1>
             )}
           </div>
