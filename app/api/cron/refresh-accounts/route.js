@@ -3,6 +3,7 @@ import { getSupabase } from "@/lib/supabase";
 import { analyzeAccount } from "@/lib/account-analyze";
 import { drainJobQueue } from "@/lib/process-jobs";
 import { checkMonthlyBudget } from "@/lib/budget";
+import { enqueueAutoQualif } from "@/lib/auto-qualif";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // plusieurs analyses à la suite (Fluid Compute)
@@ -62,10 +63,20 @@ export async function GET(request) {
     }
   }
 
-  // Puis on draine la file `jobs` (kind=analyze_account) dans le budget restant.
-  // Vercel Hobby = 2 crons max : pas de cron dédié à process-jobs, on le greffe
-  // ici. drainJobQueue recompte le budget consommé (incluant les comptes qu'on
-  // vient de rafraîchir) et ne dépasse jamais le plafond quotidien partagé.
+  // Qualification autonome : auto-promotion des résultats de scraping + mise en
+  // file d'un job research_prospect par prospect « nouveau ». (AUTO_QUALIFY=off
+  // pour désactiver.) Le drain ci-dessous les qualifie, borné par le budget.
+  let autoq = null;
+  try {
+    autoq = await enqueueAutoQualif(supabase);
+  } catch (e) {
+    autoq = { error: e.message };
+  }
+
+  // Puis on draine la file `jobs` (analyze_account + research_prospect) dans le
+  // budget restant. Vercel Hobby = 2 crons max : pas de cron dédié à process-jobs,
+  // on le greffe ici. drainJobQueue vérifie le kill-switch budget mensuel et ne
+  // dépasse jamais le plafond quotidien partagé.
   let queue = null;
   try {
     queue = await drainJobQueue(supabase, { dailyCap });
@@ -73,5 +84,5 @@ export async function GET(request) {
     queue = { error: e.message };
   }
 
-  return NextResponse.json({ refreshed: done.length, details: done, queue });
+  return NextResponse.json({ refreshed: done.length, details: done, autoq, queue });
 }
