@@ -17,11 +17,102 @@ import {
   Target24Regular,
   Checkmark24Regular,
   Save24Regular,
+  Heart24Regular,
+  CheckmarkCircle24Regular,
+  ErrorCircle24Regular,
+  Warning24Regular,
+  ArrowSync24Regular,
 } from "@fluentui/react-icons";
 
 const BRAND = "#5B53E6";
 const GREEN = "#107C10";
 const RED = "#C50F1F";
+const AMBER = "#F6A623";
+
+const STATUS_VISUAL = {
+  ok: { color: GREEN, Icon: CheckmarkCircle24Regular },
+  error: { color: RED, Icon: ErrorCircle24Regular },
+  absent: { color: AMBER, Icon: Warning24Regular },
+};
+
+function HealthRow({ label, status, detail }) {
+  const v = STATUS_VISUAL[status] || STATUS_VISUAL.absent;
+  const { Icon } = v;
+  return (
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--colorNeutralStroke2)" }}>
+      <Icon style={{ color: v.color, flexShrink: 0, marginTop: 1 }} />
+      <div style={{ minWidth: 0 }}>
+        <Body1 style={{ fontWeight: 600 }}>{label}</Body1>
+        <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block" }}>{detail}</Caption1>
+      </div>
+    </div>
+  );
+}
+
+function HealthCard() {
+  const [health, setHealth] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = async () => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/health");
+      setHealth(await res.json());
+    } catch (e) {
+      setHealth({ error: e.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => { run(); }, []);
+
+  const b = health?.budget;
+  const pct = b && b.month_budget_eur ? Math.min(100, Math.round((b.month_spent_eur / b.month_budget_eur) * 100)) : 0;
+
+  return (
+    <Card style={{ padding: "20px 20px 24px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <Heart24Regular style={{ color: health ? (health.healthy ? GREEN : RED) : BRAND }} />
+        <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Diagnostic système</Body1>
+        <Button
+          appearance="subtle" size="small" style={{ marginLeft: "auto" }}
+          icon={busy ? <Spinner size="tiny" /> : <ArrowSync24Regular />}
+          disabled={busy} onClick={run}
+        >
+          Vérifier
+        </Button>
+      </div>
+
+      {!health && busy && (
+        <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>Vérification en cours…</Caption1>
+      )}
+
+      {health?.error && <Body1 style={{ color: RED }}>{health.error}</Body1>}
+
+      {health?.services && (
+        <>
+          <HealthRow label="Supabase (base de données)" status={health.services.supabase.status} detail={health.services.supabase.detail} />
+          <HealthRow label="Anthropic (crédits LLM)" status={health.services.anthropic.status} detail={health.services.anthropic.detail} />
+          <HealthRow label="Brave Search (découverte)" status={health.services.brave.status} detail={health.services.brave.detail} />
+
+          {/* Budget du mois */}
+          <div style={{ paddingTop: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+              <Caption1 style={{ fontWeight: 600 }}>Budget du mois</Caption1>
+              <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>
+                {b?.month_spent_eur ?? "—"} € / {b?.month_budget_eur} €
+              </Caption1>
+            </div>
+            <div style={{ height: 6, background: "var(--colorNeutralBackground3)", borderRadius: 3, overflow: "hidden" }}>
+              <div style={{ width: `${pct}%`, height: "100%", background: pct >= 100 ? RED : pct >= 80 ? AMBER : GREEN, borderRadius: 3, transition: "width .4s ease" }} />
+            </div>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
 
 export default function SettingsPage() {
   const [s, setS] = useState(null);
@@ -45,10 +136,16 @@ export default function SettingsPage() {
   };
 
   if (!s) {
+    // Le diagnostic reste affiché même si les réglages ne chargent pas (Supabase
+    // KO, etc.) — c'est précisément le cas où on en a besoin.
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 48, gap: 12 }}>
-        {error ? <Body1 style={{ color: RED }}>{error}</Body1>
-          : <><Spinner size="small" /><Body1 style={{ color: "var(--colorNeutralForeground2)" }}>Chargement…</Body1></>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        <Title2>Réglages</Title2>
+        <HealthCard />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 24, gap: 12 }}>
+          {error ? <Body1 style={{ color: RED }}>{error}</Body1>
+            : <><Spinner size="small" /><Body1 style={{ color: "var(--colorNeutralForeground2)" }}>Chargement…</Body1></>}
+        </div>
       </div>
     );
   }
@@ -70,6 +167,9 @@ export default function SettingsPage() {
           <Body1 style={{ color: RED }}>{error}</Body1>
         </Card>
       )}
+
+      {/* ── Diagnostic système ── */}
+      <HealthCard />
 
       {/* ── Mon offre ── */}
       <Card style={{ padding: "20px 20px 24px" }}>
