@@ -2,6 +2,37 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Card,
+  Button,
+  Input,
+  Select,
+  Title2,
+  Body1,
+  Caption1,
+  Badge,
+  Spinner,
+  Table,
+  TableHeader,
+  TableRow,
+  TableCell,
+  TableBody,
+  TableHeaderCell,
+} from "@fluentui/react-components";
+import {
+  Search24Regular,
+  ArrowSort24Regular,
+  Dismiss24Regular,
+  Flash24Regular,
+  ArrowRight24Regular,
+  ArrowImport24Regular,
+} from "@fluentui/react-icons";
+
+const BRAND = "#5B53E6";
+const GREEN = "#107C10";
+const AMBER = "#F6A623";
+const RED = "#C50F1F";
+const BLUE = "#0078D4";
 
 const STATUSES = ["nouveau", "recherché", "contacté", "répondu", "rdv", "perdu", "opt-out"];
 const SORT_OPTIONS = [
@@ -11,35 +42,36 @@ const SORT_OPTIONS = [
   { value: "company", label: "Entreprise A → Z" },
 ];
 
+const STAGE_COLORS = {
+  nouveau: "var(--colorNeutralForeground3)",
+  recherché: BLUE,
+  contacté: AMBER,
+  répondu: "#e67e22",
+  rdv: GREEN,
+};
+
 const NBA_COLORS = {
-  prepare_rdv: "#27ae60", confirm_rdv: "#27ae60",
-  relance_urgente: "#c0392b", relance: "#e67e22",
-  generer: "var(--accent)", enrichir: "#8e44ad",
-  envoyer: "var(--accent)", rechercher: "var(--accent)",
-  opt_out: "var(--text-3)", archive: "var(--text-3)",
+  prepare_rdv: GREEN, confirm_rdv: GREEN,
+  relance_urgente: RED, relance: AMBER,
+  generer: BRAND, enrichir: "#8e44ad",
+  envoyer: BRAND, rechercher: BRAND,
+  opt_out: "var(--colorNeutralForeground3)", archive: "var(--colorNeutralForeground3)",
 };
 
 function ScoreBadge({ score }) {
-  if (score == null) return <span className="score score-none">—</span>;
-  const cls = score >= 70 ? "score-high" : score >= 40 ? "score-mid" : "score-low";
-  return <span className={`score ${cls}`}>{score}</span>;
+  if (score == null) return <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>—</Caption1>;
+  const color = score >= 70 ? GREEN : score >= 40 ? AMBER : RED;
+  return <span style={{ fontWeight: 700, fontSize: 14, color }}>{score}</span>;
 }
 
 function NbaChip({ nba }) {
-  const color = NBA_COLORS[nba.action] || "var(--accent)";
+  const color = NBA_COLORS[nba.action] || BRAND;
   return (
-    <span
-      style={{
-        display: "inline-block",
-        fontSize: 11,
-        fontWeight: 700,
-        padding: "2px 8px",
-        borderRadius: 12,
-        background: color,
-        color: "#fff",
-        whiteSpace: "nowrap",
-      }}
-    >
+    <span style={{
+      display: "inline-block", fontSize: 11, fontWeight: 700,
+      padding: "2px 8px", borderRadius: 12,
+      background: color, color: "#fff", whiteSpace: "nowrap",
+    }}>
       {nba.label}
     </span>
   );
@@ -70,35 +102,24 @@ export default function Dashboard() {
     if (d.priorities) setPriorities(d.priorities);
   };
 
-  useEffect(() => {
-    load();
-    loadPriorities();
-  }, []);
+  useEffect(() => { load(); loadPriorities(); }, []);
 
   const setStatus = async (id, status) => {
-    if (
-      status === "opt-out" &&
-      !confirm("Inscrire ce contact en opposition permanente ? Il ne pourra plus jamais être importé.")
-    ) return;
+    if (status === "opt-out" && !confirm("Inscrire ce contact en opposition permanente ?")) return;
     setError("");
     const res = await fetch(`/api/prospects/${id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
+      method: "PATCH", headers: { "content-type": "application/json" },
       body: JSON.stringify({ status }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) setError(data.error || `Erreur ${res.status}.`);
-    load();
-    loadPriorities();
+    load(); loadPriorities();
   };
 
   const counts = useMemo(() => {
     const c = { tous: 0 };
     for (const s of STATUSES) c[s] = 0;
-    (prospects || []).forEach((p) => {
-      c[p.status] = (c[p.status] || 0) + 1;
-      c.tous++;
-    });
+    (prospects || []).forEach((p) => { c[p.status] = (c[p.status] || 0) + 1; c.tous++; });
     return c;
   }, [prospects]);
 
@@ -106,23 +127,18 @@ export default function Dashboard() {
     let list = prospects || [];
     if (q.trim()) {
       const lq = q.toLowerCase();
-      list = list.filter(
-        (p) =>
-          `${p.first_name} ${p.last_name}`.toLowerCase().includes(lq) ||
-          (p.company || "").toLowerCase().includes(lq) ||
-          (p.role || "").toLowerCase().includes(lq)
+      list = list.filter((p) =>
+        `${p.first_name} ${p.last_name}`.toLowerCase().includes(lq) ||
+        (p.company || "").toLowerCase().includes(lq) ||
+        (p.role || "").toLowerCase().includes(lq)
       );
     }
     if (filterStatus !== "tous") list = list.filter((p) => p.status === filterStatus);
     if (minScore > 0) list = list.filter((p) => (p.fit_score || 0) >= minScore);
     const sorted = [...list];
     if (sortBy === "score") sorted.sort((a, b) => (b.fit_score || 0) - (a.fit_score || 0));
-    else if (sortBy === "name")
-      sorted.sort((a, b) =>
-        `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`, "fr")
-      );
-    else if (sortBy === "company")
-      sorted.sort((a, b) => (a.company || "").localeCompare(b.company || "", "fr"));
+    else if (sortBy === "name") sorted.sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`, "fr"));
+    else if (sortBy === "company") sorted.sort((a, b) => (a.company || "").localeCompare(b.company || "", "fr"));
     return sorted;
   }, [prospects, q, filterStatus, sortBy, minScore]);
 
@@ -130,194 +146,188 @@ export default function Dashboard() {
   const topPriorities = (priorities || []).filter((p) => p.nba.priority >= 50);
 
   return (
-    <>
-      <h1>La piste</h1>
-      <p className="sub">
-        Tes prospects, du sourcing au rendez-vous. Clique sur une ligne pour qualifier et générer les accroches.
-      </p>
-
-      {/* ── Funnel ── cliquable pour filtrer ─────────────────────────────── */}
-      <div className="trail">
-        {["nouveau", "recherché", "contacté", "répondu", "rdv"].map((s) => (
-          <div
-            key={s}
-            className={`trail-step ${counts[s] > 0 ? "active" : ""}`}
-            onClick={() => setFilterStatus(filterStatus === s ? "tous" : s)}
-            style={{
-              cursor: "pointer",
-              outline: filterStatus === s ? "2px solid var(--accent)" : "none",
-              outlineOffset: 2,
-              borderRadius: 6,
-            }}
-          >
-            <div className="n">{counts[s] ?? 0}</div>
-            <div className="l">{s}</div>
-          </div>
-        ))}
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* ── Header ── */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <Title2>La piste</Title2>
+          <Body1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 2 }}>
+            Tes prospects, du sourcing au rendez-vous.
+          </Body1>
+        </div>
+        <Button appearance="outline" icon={<ArrowImport24Regular />} onClick={() => router.push("/import")}>
+          Importer
+        </Button>
       </div>
 
-      {error && <div className="alert alert-err">{error}</div>}
+      {error && (
+        <Card style={{ borderLeft: `3px solid ${RED}`, padding: "12px 16px" }}>
+          <Body1 style={{ color: RED }}>{error}</Body1>
+        </Card>
+      )}
 
-      {/* ── Priorités du jour ─────────────────────────────────────────────── */}
-      {topPriorities.length > 0 && (
-        <div className="card" style={{ padding: "14px 16px" }}>
-          <div className="row spread" style={{ marginBottom: showPriorities ? 12 : 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <h2 style={{ margin: 0 }}>Priorités du jour</h2>
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  padding: "1px 7px",
-                  borderRadius: 12,
-                  background: "var(--accent)",
-                  color: "#fff",
-                }}
-              >
-                {topPriorities.length}
-              </span>
-            </div>
-            <button
-              onClick={() => setShowPriorities((v) => !v)}
-              style={{ fontSize: 12, padding: "4px 10px" }}
+      {/* ── Pipeline funnel ── */}
+      <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
+        {["nouveau", "recherché", "contacté", "répondu", "rdv"].map((s) => {
+          const active = filterStatus === s;
+          const color = STAGE_COLORS[s];
+          return (
+            <Card
+              key={s}
+              onClick={() => setFilterStatus(active ? "tous" : s)}
+              style={{
+                flex: "1 1 100px", minWidth: 90, padding: "12px 14px", cursor: "pointer",
+                borderBottom: active ? `3px solid ${color}` : "3px solid transparent",
+                transition: "border-color .15s",
+              }}
             >
-              {showPriorities ? "Masquer" : "Afficher"}
-            </button>
-          </div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: counts[s] > 0 ? color : "var(--colorNeutralForeground3)", lineHeight: 1 }}>
+                {counts[s] ?? 0}
+              </div>
+              <Caption1 style={{ color: "var(--colorNeutralForeground2)", textTransform: "capitalize", marginTop: 4, display: "block" }}>
+                {s}
+              </Caption1>
+            </Card>
+          );
+        })}
+      </div>
 
+      {/* ── Priorités du jour ── */}
+      {topPriorities.length > 0 && (
+        <Card style={{ padding: "16px 20px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: showPriorities ? 12 : 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Flash24Regular style={{ color: AMBER }} />
+              <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Priorités du jour</Body1>
+              <Badge appearance="filled" color="warning">{topPriorities.length}</Badge>
+            </div>
+            <Button appearance="subtle" size="small" onClick={() => setShowPriorities((v) => !v)}>
+              {showPriorities ? "Masquer" : "Afficher"}
+            </Button>
+          </div>
           {showPriorities && topPriorities.slice(0, 6).map((p, i) => (
             <div
               key={p.id}
-              className="row spread clickable"
               onClick={() => router.push(`/prospects/${p.id}`)}
               style={{
-                padding: "9px 0",
-                borderTop: i > 0 ? "1px solid var(--border)" : "none",
+                display: "flex", alignItems: "center", gap: 8, padding: "10px 0",
+                borderTop: i > 0 ? "1px solid var(--colorNeutralStroke2)" : "none",
                 cursor: "pointer",
-                gap: 8,
               }}
             >
               <div style={{ flex: 1, minWidth: 0 }}>
-                <strong style={{ fontSize: 13 }}>
-                  {p.first_name} {p.last_name}
-                </strong>
-                <span className="sub small" style={{ marginLeft: 6 }}>
-                  {p.company}
-                </span>
+                <Body1 style={{ fontWeight: 700 }}>{p.first_name} {p.last_name}</Body1>
+                <Caption1 style={{ color: "var(--colorNeutralForeground3)", marginLeft: 6 }}>{p.company}</Caption1>
                 {p.nba.reason && (
-                  <p className="sub small" style={{ margin: "2px 0 0", lineHeight: 1.3 }}>
+                  <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block", marginTop: 2 }}>
                     {p.nba.reason}
-                  </p>
+                  </Caption1>
                 )}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                 <NbaChip nba={p.nba} />
                 <ScoreBadge score={p.fit_score} />
+                <ArrowRight24Regular style={{ fontSize: 16, color: "var(--colorNeutralForeground3)" }} />
               </div>
             </div>
           ))}
-        </div>
+        </Card>
       )}
 
-      {/* ── Liste complète avec filtres ───────────────────────────────────── */}
-      <div className="card" style={{ padding: 0 }}>
-        <div
-          className="row"
-          style={{
-            padding: "12px 16px",
-            gap: 8,
-            flexWrap: "wrap",
-            borderBottom: "1px solid var(--border)",
-          }}
-        >
-          <input
+      {/* ── Prospects list ── */}
+      <Card style={{ padding: "0" }}>
+        <div style={{ padding: "12px 16px 12px", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", borderBottom: "1px solid var(--colorNeutralStroke2)" }}>
+          <Input
             placeholder="Rechercher par nom, entreprise, poste…"
             value={q}
-            onChange={(e) => setQ(e.target.value)}
-            style={{ flex: "1 1 180px", minWidth: 150 }}
+            onChange={(_, d) => setQ(d.value)}
+            contentBefore={<Search24Regular />}
+            style={{ flex: "1 1 200px", minWidth: 160 }}
           />
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ width: "auto" }}>
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-          <select
-            value={minScore}
-            onChange={(e) => setMinScore(+e.target.value)}
-            style={{ width: "auto" }}
-          >
+          <Select value={sortBy} onChange={(_, d) => setSortBy(d.value)} style={{ width: "auto" }}>
+            {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </Select>
+          <Select value={minScore} onChange={(_, d) => setMinScore(+d.value)} style={{ width: "auto" }}>
             <option value={0}>Tous les scores</option>
             <option value={70}>Score ≥ 70</option>
             <option value={40}>Score ≥ 40</option>
-          </select>
+          </Select>
           {hasFilters && (
-            <button
-              onClick={() => { setQ(""); setFilterStatus("tous"); setMinScore(0); }}
-              style={{ fontSize: 12, padding: "5px 10px" }}
-            >
-              × Réinitialiser
-            </button>
+            <Button appearance="subtle" size="small" icon={<Dismiss24Regular />}
+              onClick={() => { setQ(""); setFilterStatus("tous"); setMinScore(0); }}>
+              Réinitialiser
+            </Button>
           )}
-          <span className="sub small" style={{ whiteSpace: "nowrap", alignSelf: "center" }}>
+          <Caption1 style={{ color: "var(--colorNeutralForeground3)", marginLeft: "auto", whiteSpace: "nowrap" }}>
             {filtered.length} / {(prospects || []).length}
-          </span>
+          </Caption1>
         </div>
 
         {prospects === null ? (
-          <div className="empty">Chargement…</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 32, gap: 12 }}>
+            <Spinner size="small" />
+            <Body1 style={{ color: "var(--colorNeutralForeground2)" }}>Chargement…</Body1>
+          </div>
         ) : prospects.length === 0 ? (
-          <div className="empty">
-            <p>Aucun prospect sur la piste pour l'instant.</p>
-            <a className="btn btn-fox" href="/import">Importer mes premiers prospects</a>
+          <div style={{ padding: "40px 24px", textAlign: "center" }}>
+            <Body1 style={{ color: "var(--colorNeutralForeground2)", display: "block", marginBottom: 16 }}>
+              Aucun prospect sur la piste pour l'instant.
+            </Body1>
+            <Button appearance="primary" icon={<ArrowImport24Regular />} onClick={() => router.push("/import")}>
+              Importer mes premiers prospects
+            </Button>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="empty"><p>Aucun prospect ne correspond aux filtres actifs.</p></div>
+          <div style={{ padding: 24, textAlign: "center" }}>
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>Aucun prospect ne correspond aux filtres actifs.</Caption1>
+          </div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Contact</th>
-                <th>Poste</th>
-                <th>Entreprise</th>
-                <th
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell>Contact</TableHeaderCell>
+                <TableHeaderCell>Poste</TableHeaderCell>
+                <TableHeaderCell>Entreprise</TableHeaderCell>
+                <TableHeaderCell
                   style={{ cursor: "pointer", userSelect: "none" }}
-                  title="Trier par score"
                   onClick={() => setSortBy(sortBy === "score" ? "recent" : "score")}
                 >
-                  Fit {sortBy === "score" ? "▼" : ""}
-                </th>
-                <th>Statut</th>
-              </tr>
-            </thead>
-            <tbody>
+                  Fit {sortBy === "score" && "▼"}
+                </TableHeaderCell>
+                <TableHeaderCell>Statut</TableHeaderCell>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {filtered.map((p) => (
-                <tr key={p.id} className="clickable" style={{ cursor: "pointer" }}>
-                  <td onClick={() => router.push(`/prospects/${p.id}`)}>
-                    <strong>{p.first_name} {p.last_name}</strong>
-                  </td>
-                  <td onClick={() => router.push(`/prospects/${p.id}`)} className="sub">
-                    {p.role || "—"}
-                  </td>
-                  <td onClick={() => router.push(`/prospects/${p.id}`)}>{p.company}</td>
-                  <td onClick={() => router.push(`/prospects/${p.id}`)}>
+                <TableRow key={p.id} style={{ cursor: "pointer" }}>
+                  <TableCell onClick={() => router.push(`/prospects/${p.id}`)}>
+                    <Body1 style={{ fontWeight: 600 }}>{p.first_name} {p.last_name}</Body1>
+                  </TableCell>
+                  <TableCell onClick={() => router.push(`/prospects/${p.id}`)}>
+                    <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>{p.role || "—"}</Caption1>
+                  </TableCell>
+                  <TableCell onClick={() => router.push(`/prospects/${p.id}`)}>
+                    <Body1>{p.company}</Body1>
+                  </TableCell>
+                  <TableCell onClick={() => router.push(`/prospects/${p.id}`)}>
                     <ScoreBadge score={p.fit_score} />
-                  </td>
-                  <td>
-                    <select
+                  </TableCell>
+                  <TableCell>
+                    <Select
                       value={p.status}
-                      onChange={(e) => setStatus(p.id, e.target.value)}
+                      onChange={(_, d) => setStatus(p.id, d.value)}
                       onClick={(e) => e.stopPropagation()}
-                      style={{ width: "auto", padding: "5px 8px" }}
+                      style={{ width: "auto" }}
                     >
                       {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </td>
-                </tr>
+                    </Select>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
-      </div>
-    </>
+      </Card>
+    </div>
   );
 }

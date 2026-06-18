@@ -1,7 +1,44 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import {
+  Card,
+  Button,
+  Spinner,
+  Badge,
+  Title2,
+  Body1,
+  Caption1,
+} from "@fluentui/react-components";
+import {
+  ArrowDownload24Regular,
+  DataTrending24Regular,
+  PeopleCommunity24Regular,
+  Money24Regular,
+  CalendarLtr24Regular,
+  StarEmphasis24Regular,
+} from "@fluentui/react-icons";
+import {
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
+
+/* ── Constants ────────────────────────────────────────────────────────────── */
+
+const BRAND = "#5B53E6";
+const AMBER = "#F6A623";
+const GREEN = "#107C10";
+const RED = "#C50F1F";
+const BLUE = "#0078D4";
 
 const STATUS_ORDER = ["nouveau", "recherché", "contacté", "répondu", "rdv", "opt-out"];
 const STATUS_LABELS = {
@@ -13,13 +50,14 @@ const STATUS_LABELS = {
   "opt-out": "Opt-out",
 };
 const STATUS_COLORS = {
-  nouveau: "var(--faint)",
-  recherché: "#3498db",
-  contacté: "var(--fox)",
+  nouveau: "#8079EF",
+  recherché: BLUE,
+  contacté: AMBER,
   répondu: "#e67e22",
-  rdv: "var(--ok)",
-  "opt-out": "var(--bad)",
+  rdv: GREEN,
+  "opt-out": RED,
 };
+
 const EVENT_LABELS = {
   status_change: "Changement de statut",
   email_sent: "Email envoyé",
@@ -27,129 +65,155 @@ const EVENT_LABELS = {
   rdv_booked: "RDV programmé",
   reply_received: "Réponse reçue",
   note_added: "Note ajoutée",
-  research_done: "Recherche effectuée",
+  research_done: "Recherche IA",
   draft_generated: "Brouillon généré",
   auto_action: "Action automatique",
   signal_detected: "Signal détecté",
   enrich_done: "Enrichissement",
 };
+
 const ROUTE_LABELS = {
-  research: "Recherche",
+  research: "Recherche IA",
   generate: "Génération",
   enrich: "Enrichissement",
   "import-linkedin": "Import LinkedIn",
   "accounts/analyze": "Analyse compte",
 };
 
-function ScoreRing({ value, label }) {
-  if (value == null) return <div style={{ textAlign: "center", color: "var(--faint)" }}>—</div>;
-  const color = value >= 70 ? "var(--ok)" : value >= 40 ? "var(--fox)" : "var(--bad)";
-  return (
-    <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: 36, fontWeight: 700, color, lineHeight: 1.1 }}>{value}</div>
-      <div className="sub small" style={{ marginTop: 2 }}>{label}</div>
-    </div>
-  );
-}
+/* ── Sub-components ──────────────────────────────────────────────────────── */
 
-function KpiCard({ label, value, sub, color }) {
+function KpiCard({ icon: Icon, label, value, sub, color, trend }) {
+  const trendColor = trend === "up" ? GREEN : trend === "down" ? RED : "var(--colorNeutralForeground3)";
+  const trendArrow = trend === "up" ? "↑" : trend === "down" ? "↓" : "—";
   return (
-    <div className="card" style={{ textAlign: "center", padding: "18px 14px" }}>
-      <div style={{ fontSize: 30, fontWeight: 700, color: color || "var(--ink)", lineHeight: 1.1 }}>{value}</div>
-      <div style={{ fontWeight: 600, fontSize: 14, marginTop: 4 }}>{label}</div>
-      {sub && <div className="sub small" style={{ marginTop: 2 }}>{sub}</div>}
-    </div>
-  );
-}
-
-function StatusBar({ byStatus }) {
-  const total = Object.values(byStatus).reduce((a, b) => a + b, 0);
-  if (total === 0) return <div className="sub small">Aucun prospect.</div>;
-  return (
-    <div>
-      <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", height: 18, marginBottom: 10 }}>
-        {STATUS_ORDER.filter((s) => byStatus[s]).map((s) => (
-          <div
-            key={s}
-            title={`${STATUS_LABELS[s] || s} : ${byStatus[s]}`}
-            style={{ flex: byStatus[s], background: STATUS_COLORS[s] || "var(--faint)", minWidth: byStatus[s] ? 4 : 0 }}
-          />
-        ))}
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px" }}>
-        {STATUS_ORDER.filter((s) => byStatus[s]).map((s) => (
-          <span key={s} style={{ fontSize: 12.5, display: "flex", alignItems: "center", gap: 5 }}>
-            <span style={{ width: 10, height: 10, borderRadius: 2, background: STATUS_COLORS[s] || "var(--faint)", display: "inline-block" }} />
-            <span style={{ color: "var(--muted)" }}>{STATUS_LABELS[s] || s}</span>
-            <strong>{byStatus[s]}</strong>
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CostBars({ data }) {
-  const maxCost = Math.max(...data.map((d) => d.cost), 0.00001);
-  const total = data.reduce((s, d) => s + d.cost, 0);
-  if (total === 0) {
-    return <div className="sub small" style={{ paddingTop: 16 }}>Aucun coût IA enregistré sur 30 jours.</div>;
-  }
-  return (
-    <div>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 72 }}>
-        {data.map((d) => (
-          <div
-            key={d.day}
-            title={`${d.day} : ${d.cost.toFixed(4)} €`}
-            style={{
-              flex: 1,
-              background: d.cost > 0 ? "var(--fox)" : "var(--line)",
-              opacity: d.cost > 0 ? 0.85 : 0.4,
-              height: `${Math.max((d.cost / maxCost) * 100, d.cost > 0 ? 4 : 1)}%`,
-              borderRadius: "2px 2px 0 0",
-              transition: "height 0.3s ease",
-            }}
-          />
-        ))}
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
-        <span className="sub small">{data[0]?.day?.slice(5)}</span>
-        <span className="sub small" style={{ color: "var(--fox-ink)", fontWeight: 600 }}>
-          {total.toFixed(4)} € total
+    <Card style={{ padding: "20px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ color: color || BRAND, fontSize: 22, display: "flex" }}>
+          {Icon && <Icon />}
         </span>
-        <span className="sub small">{data[data.length - 1]?.day?.slice(5)}</span>
+        <Caption1 style={{ color: "var(--colorNeutralForeground2)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", fontSize: 11 }}>
+          {label}
+        </Caption1>
+      </div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={{ fontSize: 32, fontWeight: 700, color: color || "var(--colorNeutralForeground1)", lineHeight: 1 }}>
+          {value}
+        </span>
+        {trend && (
+          <span style={{ fontSize: 13, fontWeight: 600, color: trendColor }}>{trendArrow}</span>
+        )}
+      </div>
+      {sub && <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>{sub}</Caption1>}
+    </Card>
+  );
+}
+
+function PipelineDonut({ byStatus }) {
+  const data = STATUS_ORDER
+    .filter((s) => byStatus[s] > 0)
+    .map((s) => ({ name: STATUS_LABELS[s], value: byStatus[s], color: STATUS_COLORS[s] }));
+
+  if (data.length === 0) {
+    return <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>Aucun prospect.</Caption1>;
+  }
+
+  const total = data.reduce((s, d) => s + d.value, 0);
+
+  return (
+    <div style={{ display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap" }}>
+      <ResponsiveContainer width={160} height={160}>
+        <PieChart>
+          <Pie data={data} cx="50%" cy="50%" innerRadius={48} outerRadius={72} dataKey="value" paddingAngle={2}>
+            {data.map((d) => (
+              <Cell key={d.name} fill={d.color} />
+            ))}
+          </Pie>
+          <Tooltip formatter={(v, n) => [`${v} (${Math.round((v / total) * 100)}%)`, n]} />
+        </PieChart>
+      </ResponsiveContainer>
+      <div style={{ display: "flex", flexDirection: "column", gap: 7, flex: 1 }}>
+        {data.map((d) => (
+          <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: d.color, flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: "var(--colorNeutralForeground2)", flex: 1 }}>{d.name}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--colorNeutralForeground1)" }}>{d.value}</span>
+            <span style={{ fontSize: 11, color: "var(--colorNeutralForeground3)", width: 36, textAlign: "right" }}>
+              {Math.round((d.value / total) * 100)}%
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-function HorizBars({ data, colorFn }) {
-  const max = Math.max(...data.map((d) => d.value), 1);
+function CostAreaChart({ byDay }) {
+  const total = byDay.reduce((s, d) => s + d.cost, 0);
+  if (total === 0) {
+    return (
+      <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", paddingTop: 12 }}>
+        Aucun coût IA enregistré sur 30 jours.
+      </Caption1>
+    );
+  }
+  const data = byDay.map((d) => ({ day: d.day.slice(5), cost: +d.cost.toFixed(5) }));
   return (
-    <div style={{ display: "grid", gap: 7 }}>
-      {data.map((d) => (
-        <div key={d.key}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-            <span style={{ fontSize: 13, color: "var(--muted)" }}>{d.label}</span>
-            <strong style={{ fontSize: 13 }}>{d.value}</strong>
-          </div>
-          <div style={{ height: 6, background: "var(--surface-2)", borderRadius: 3, overflow: "hidden" }}>
-            <div
-              style={{
-                width: `${(d.value / max) * 100}%`,
-                height: "100%",
-                background: colorFn ? colorFn(d.key) : "var(--fox)",
-                borderRadius: 3,
-                transition: "width 0.4s ease",
-              }}
-            />
-          </div>
-        </div>
-      ))}
-    </div>
+    <ResponsiveContainer width="100%" height={140}>
+      <AreaChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+        <defs>
+          <linearGradient id="costGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={BRAND} stopOpacity={0.25} />
+            <stop offset="95%" stopColor={BRAND} stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <XAxis dataKey="day" tick={{ fontSize: 10, fill: "var(--colorNeutralForeground3)" }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+        <YAxis tick={{ fontSize: 10, fill: "var(--colorNeutralForeground3)" }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v.toFixed(3)}€`} />
+        <Tooltip formatter={(v) => [`${v.toFixed(5)} €`, "Coût"]} labelStyle={{ fontSize: 12 }} contentStyle={{ fontSize: 12, borderRadius: 6 }} />
+        <Area type="monotone" dataKey="cost" stroke={BRAND} strokeWidth={2} fill="url(#costGrad)" dot={false} activeDot={{ r: 4 }} />
+      </AreaChart>
+    </ResponsiveContainer>
   );
 }
+
+function RouteBarChart({ byRoute }) {
+  const entries = Object.entries(byRoute).sort(([, a], [, b]) => b - a);
+  if (entries.length === 0) return null;
+  const data = entries.map(([key, value]) => ({ label: ROUTE_LABELS[key] || key, cost: +value.toFixed(4) }));
+  return (
+    <ResponsiveContainer width="100%" height={Math.max(60, data.length * 36)}>
+      <BarChart data={data} layout="vertical" margin={{ top: 0, right: 8, left: 4, bottom: 0 }}>
+        <XAxis type="number" tick={{ fontSize: 10, fill: "var(--colorNeutralForeground3)" }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v.toFixed(3)}€`} />
+        <YAxis type="category" dataKey="label" tick={{ fontSize: 12, fill: "var(--colorNeutralForeground2)" }} tickLine={false} axisLine={false} width={110} />
+        <Tooltip formatter={(v) => [`${v.toFixed(5)} €`, "Coût"]} contentStyle={{ fontSize: 12, borderRadius: 6 }} />
+        <Bar dataKey="cost" fill={AMBER} radius={[0, 3, 3, 0]} maxBarSize={18} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function ActivityBars({ byKind }) {
+  const entries = Object.entries(byKind).sort(([, a], [, b]) => b - a);
+  if (entries.length === 0) return null;
+  const data = entries.map(([key, value]) => ({
+    label: EVENT_LABELS[key] || key,
+    value,
+    fill: key === "rdv_booked" ? GREEN : key === "reply_received" ? BLUE : key === "research_done" ? BRAND : AMBER,
+  }));
+  return (
+    <ResponsiveContainer width="100%" height={Math.max(60, data.length * 36)}>
+      <BarChart data={data} layout="vertical" margin={{ top: 0, right: 8, left: 4, bottom: 0 }}>
+        <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10, fill: "var(--colorNeutralForeground3)" }} tickLine={false} axisLine={false} />
+        <YAxis type="category" dataKey="label" tick={{ fontSize: 12, fill: "var(--colorNeutralForeground2)" }} tickLine={false} axisLine={false} width={150} />
+        <Tooltip formatter={(v) => [v, "Événements"]} contentStyle={{ fontSize: 12, borderRadius: 6 }} />
+        <Bar dataKey="value" radius={[0, 3, 3, 0]} maxBarSize={18}>
+          {data.map((d, i) => <Cell key={i} fill={d.fill} />)}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+/* ── Page ────────────────────────────────────────────────────────────────── */
 
 export default function AnalyticsPage() {
   const [data, setData] = useState(null);
@@ -162,135 +226,146 @@ export default function AnalyticsPage() {
       .catch(() => setError("Erreur de chargement."));
   }, []);
 
-  const handleExport = () => {
-    window.location.href = "/api/prospects/export?format=csv";
-  };
-
   return (
-    <>
-      <div className="row spread" style={{ marginBottom: 4, flexWrap: "wrap", gap: 8 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* ── Header ── */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div>
-          <h1>Analyse</h1>
-          <p className="sub">Coûts IA · pipeline commercial · activité (30 derniers jours)</p>
+          <Title2>Analyse</Title2>
+          <Body1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 2 }}>
+            Coûts IA · pipeline commercial · activité — 30 derniers jours
+          </Body1>
         </div>
-        <button onClick={handleExport} title="Télécharger tous les prospects en CSV">
-          ↓ Exporter CSV
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button
+            appearance="outline"
+            icon={<ArrowDownload24Regular />}
+            onClick={() => { window.location.href = "/api/prospects/export?format=csv"; }}
+          >
+            CSV
+          </Button>
+          <Button
+            appearance="outline"
+            icon={<ArrowDownload24Regular />}
+            onClick={() => window.open("/api/prospects/export?format=json", "_blank")}
+          >
+            JSON
+          </Button>
+        </div>
       </div>
 
-      {error && <div className="alert alert-err">{error}</div>}
+      {/* ── Error ── */}
+      {error && (
+        <Card style={{ borderLeft: `3px solid ${RED}`, padding: "12px 16px" }}>
+          <Body1 style={{ color: RED }}>{error}</Body1>
+        </Card>
+      )}
 
+      {/* ── Loading ── */}
       {!data && !error && (
-        <div className="card">
-          <span className="spin spin-dark" /> Chargement des données…
-        </div>
+        <Card style={{ padding: 32, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
+          <Spinner size="small" />
+          <Body1 style={{ color: "var(--colorNeutralForeground2)" }}>Chargement des données…</Body1>
+        </Card>
       )}
 
       {data && (
         <>
-          {/* ── KPIs résumés ────────────────────────────────────────────── */}
-          <div className="grid2" style={{ gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+          {/* ── KPI cards ── */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
             <KpiCard
+              icon={PeopleCommunity24Regular}
               label="Prospects"
               value={data.prospects.total}
               sub={`score moyen ${data.prospects.avg_fit_score ?? "—"}/100`}
+              color={BRAND}
             />
             <KpiCard
+              icon={Money24Regular}
               label="Coût IA 30j"
               value={`${data.ai.total_cost_eur.toFixed(3)} €`}
-              sub={`${data.ai.runs} appels · ${data.ai.web_searches} recherches web`}
-              color="var(--fox-ink)"
+              sub={`${data.ai.runs} appels · ${data.ai.web_searches} rech. web`}
+              color={AMBER}
             />
             <KpiCard
+              icon={CalendarLtr24Regular}
               label="Événements 30j"
               value={data.events.total}
-              sub={`dont ${data.events.rdv_booked} RDV · ${data.events.research_done} rech.`}
+              sub={`${data.events.rdv_booked} RDV · ${data.events.research_done} recherches`}
+              color={GREEN}
             />
             <KpiCard
+              icon={StarEmphasis24Regular}
               label="Score fit récent"
               value={data.scores.avg_recent ?? "—"}
-              sub={`sur ${data.scores.sample_size} analyse(s) récente(s)`}
-              color={data.scores.avg_recent >= 70 ? "var(--ok)" : data.scores.avg_recent >= 40 ? "var(--fox)" : "var(--bad)"}
+              sub={`sur ${data.scores.sample_size} analyse(s)`}
+              color={
+                data.scores.avg_recent == null ? "var(--colorNeutralForeground3)"
+                  : data.scores.avg_recent >= 70 ? GREEN
+                  : data.scores.avg_recent >= 40 ? AMBER
+                  : RED
+              }
             />
           </div>
 
-          {/* ── Pipeline prospects ───────────────────────────────────────── */}
-          <div className="card">
-            <h2>Répartition des prospects</h2>
-            <StatusBar byStatus={data.prospects.by_status} />
-          </div>
-
-          {/* ── Coût IA par jour ─────────────────────────────────────────── */}
-          <div className="card">
-            <div className="row spread" style={{ marginBottom: 14 }}>
-              <h2 style={{ margin: 0 }}>Coûts IA — 30 derniers jours</h2>
-              <span className="sub small">
-                {(data.ai.tokens_in / 1000).toFixed(1)}k tokens in ·{" "}
-                {(data.ai.tokens_out / 1000).toFixed(1)}k tokens out
-              </span>
+          {/* ── Pipeline donut ── */}
+          <Card style={{ padding: "20px 20px 24px" }}>
+            <div style={{ marginBottom: 16 }}>
+              <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Pipeline prospects</Body1>
             </div>
-            <CostBars data={data.ai.by_day} />
+            <PipelineDonut byStatus={data.prospects.by_status} />
+          </Card>
+
+          {/* ── Coût IA + par route ── */}
+          <Card style={{ padding: "20px 20px 24px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 16, flexWrap: "wrap", gap: 6 }}>
+              <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Coûts IA — 30 jours</Body1>
+              <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
+                {(data.ai.tokens_in / 1000).toFixed(1)}k in · {(data.ai.tokens_out / 1000).toFixed(1)}k out
+              </Caption1>
+            </div>
+            <CostAreaChart byDay={data.ai.by_day} />
             {Object.keys(data.ai.by_route).length > 0 && (
-              <div style={{ marginTop: 18 }}>
-                <div className="sub small" style={{ marginBottom: 10, fontWeight: 600 }}>Par route</div>
-                <HorizBars
-                  data={Object.entries(data.ai.by_route)
-                    .sort(([, a], [, b]) => b - a)
-                    .map(([key, value]) => ({
-                      key,
-                      label: ROUTE_LABELS[key] || key,
-                      value: +value.toFixed(4),
-                    }))}
-                  colorFn={() => "var(--fox)"}
-                />
-              </div>
+              <>
+                <div style={{ marginTop: 20, marginBottom: 10 }}>
+                  <Caption1 style={{ fontWeight: 600, color: "var(--colorNeutralForeground2)", textTransform: "uppercase", letterSpacing: "0.04em", fontSize: 11 }}>
+                    Répartition par route
+                  </Caption1>
+                </div>
+                <RouteBarChart byRoute={data.ai.by_route} />
+              </>
             )}
-          </div>
+          </Card>
 
-          {/* ── Activité commerciale ─────────────────────────────────────── */}
-          {Object.keys(data.events.by_kind).length > 0 && (
-            <div className="card">
-              <h2>Activité commerciale — 30 derniers jours</h2>
-              <HorizBars
-                data={Object.entries(data.events.by_kind)
-                  .sort(([, a], [, b]) => b - a)
-                  .map(([key, value]) => ({
-                    key,
-                    label: EVENT_LABELS[key] || key,
-                    value,
-                  }))}
-                colorFn={(key) => (key === "rdv_booked" ? "var(--ok)" : key === "reply_received" ? "#3498db" : "var(--fox)")}
-              />
+          {/* ── Activité commerciale ── */}
+          <Card style={{ padding: "20px 20px 24px" }}>
+            <div style={{ marginBottom: 16 }}>
+              <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Activité commerciale — 30 jours</Body1>
             </div>
-          )}
-          {Object.keys(data.events.by_kind).length === 0 && (
-            <div className="card">
-              <h2>Activité commerciale</h2>
-              <p className="sub small">
-                Aucun événement enregistré pour l'instant. Les événements s'alimentent automatiquement : changements de statut, recherches, génération de brouillons.
-              </p>
-            </div>
-          )}
+            {Object.keys(data.events.by_kind).length > 0 ? (
+              <ActivityBars byKind={data.events.by_kind} />
+            ) : (
+              <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
+                Aucun événement enregistré. Les événements s'alimentent automatiquement : changements de statut, recherches, génération de brouillons.
+              </Caption1>
+            )}
+          </Card>
 
-          {/* ── Export ───────────────────────────────────────────────────── */}
-          <div className="card">
-            <div className="row spread">
-              <div>
-                <h2 style={{ margin: 0 }}>Export CRM</h2>
-                <p className="sub small" style={{ marginTop: 4, marginBottom: 0 }}>
-                  Tous les prospects avec leur dernier score et résumé de recherche — prêt pour Pipedrive, HubSpot, ou un tableur.
-                </p>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={handleExport}>↓ CSV</button>
-                <button onClick={() => window.open("/api/prospects/export?format=json", "_blank")}>
-                  ↓ JSON
-                </button>
+          {/* ── Tokens détail ── */}
+          <Card style={{ padding: "16px 20px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <DataTrending24Regular style={{ color: BRAND }} />
+              <Body1 style={{ fontWeight: 600 }}>Utilisation tokens</Body1>
+              <div style={{ display: "flex", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>
+                <Badge appearance="filled" color="brand">{(data.ai.tokens_in / 1000).toFixed(1)}k entrée</Badge>
+                <Badge appearance="filled" color="warning">{(data.ai.tokens_out / 1000).toFixed(1)}k sortie</Badge>
+                <Badge appearance="filled" color="success">{data.ai.runs} appels</Badge>
+                <Badge appearance="filled" color="informative">{data.ai.web_searches} recherches web</Badge>
               </div>
             </div>
-          </div>
+          </Card>
         </>
       )}
-    </>
+    </div>
   );
 }

@@ -2,6 +2,36 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Card,
+  Button,
+  Input,
+  Select,
+  Title2,
+  Body1,
+  Caption1,
+  Badge,
+  Spinner,
+  Table,
+  TableHeader,
+  TableRow,
+  TableCell,
+  TableBody,
+  TableHeaderCell,
+} from "@fluentui/react-components";
+import {
+  Globe24Regular,
+  Play24Regular,
+  CheckmarkCircle24Regular,
+  ErrorCircle24Regular,
+  LinkSquare24Regular,
+} from "@fluentui/react-icons";
+
+const BRAND = "#5B53E6";
+const GREEN = "#107C10";
+const RED = "#C50F1F";
+const AMBER = "#F6A623";
+const BLUE = "#0078D4";
 
 const KIND_LABELS = {
   discover: "Découvrir (noms + LinkedIn)",
@@ -9,22 +39,21 @@ const KIND_LABELS = {
   enrich: "Enrichir l'existant (email)",
 };
 
-const STATUS_PILL = {
-  pending: { cls: "pill-nouveau", txt: "en attente" },
-  running: { cls: "pill-contacte", txt: "en cours" },
-  done: { cls: "pill-rdv", txt: "terminé" },
-  error: { cls: "pill-optout", txt: "erreur" },
-};
-
-function StatusPill({ status }) {
-  const s = STATUS_PILL[status] || STATUS_PILL.pending;
-  return <span className={`pill ${s.cls}`}>{s.txt}</span>;
+function StatusBadge({ status }) {
+  const map = {
+    pending: { color: "informative", label: "en attente" },
+    running: { color: "warning", label: "en cours" },
+    done: { color: "success", label: "terminé" },
+    error: { color: "danger", label: "erreur" },
+  };
+  const s = map[status] || map.pending;
+  return <Badge appearance="tint" color={s.color}>{s.label}</Badge>;
 }
 
 function ProgressBar({ value }) {
   return (
-    <div style={{ height: 6, background: "var(--surface-2)", borderRadius: 3, overflow: "hidden", minWidth: 80 }}>
-      <div style={{ width: `${value || 0}%`, height: "100%", background: "var(--fox)", transition: "width 0.4s ease" }} />
+    <div style={{ height: 6, background: "var(--colorNeutralBackground3)", borderRadius: 3, overflow: "hidden", minWidth: 80 }}>
+      <div style={{ width: `${value || 0}%`, height: "100%", background: BRAND, transition: "width 0.4s ease", borderRadius: 3 }} />
     </div>
   );
 }
@@ -33,18 +62,15 @@ export default function ScrapingPage() {
   const router = useRouter();
   const [accounts, setAccounts] = useState([]);
   const [jobs, setJobs] = useState([]);
-  const [selected, setSelected] = useState(null); // { job, results }
+  const [selected, setSelected] = useState(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
-
-  // Formulaire
   const [accountId, setAccountId] = useState("");
   const [company, setCompany] = useState("");
   const [kind, setKind] = useState("discover_and_enrich");
   const [limit, setLimit] = useState(8);
   const [launching, setLaunching] = useState(false);
-
-  const [qualifying, setQualifying] = useState(null); // id du résultat en cours
+  const [qualifying, setQualifying] = useState(null);
   const pollRef = useRef(null);
 
   const loadJobs = async () => {
@@ -65,7 +91,6 @@ export default function ScrapingPage() {
     loadJobs();
   }, []);
 
-  // Polling 5 s tant qu'un job tourne (ou est en attente).
   useEffect(() => {
     const active = jobs.some((j) => j.status === "running" || j.status === "pending");
     if (active && !pollRef.current) {
@@ -74,12 +99,9 @@ export default function ScrapingPage() {
         if (selected?.job?.id) await loadSelected(selected.job.id);
       }, 5000);
     } else if (!active && pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
+      clearInterval(pollRef.current); pollRef.current = null;
     }
-    return () => {
-      if (pollRef.current && !active) { clearInterval(pollRef.current); pollRef.current = null; }
-    };
+    return () => { if (pollRef.current && !active) { clearInterval(pollRef.current); pollRef.current = null; } };
   }, [jobs, selected]);
 
   const launch = async () => {
@@ -87,8 +109,7 @@ export default function ScrapingPage() {
     if (!accountId && !company.trim()) { setError("Choisis un compte ou saisis une entreprise."); return; }
     setLaunching(true);
     const res = await fetch("/api/scrape/enqueue", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
+      method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ account_id: accountId || null, company: company.trim(), kind, limit: Number(limit) }),
     });
     const d = await res.json().catch(() => ({}));
@@ -96,12 +117,11 @@ export default function ScrapingPage() {
     if (!res.ok || d.error) { setError(d.error || `Erreur ${res.status}.`); return; }
     setInfo(d.dispatched
       ? "Job lancé — le worker démarre dans quelques secondes."
-      : "Job mis en file — il sera traité au prochain passage du cron (PAT GitHub non configuré).");
+      : "Job mis en file — traité au prochain passage du cron (PAT GitHub non configuré).");
     await loadJobs();
     if (d.job?.id) loadSelected(d.job.id);
   };
 
-  // Promotion + qualification 2 passes (réutilise /api/research existant).
   const qualifyOne = async (result) => {
     setQualifying(result.id); setError(""); setInfo("");
     try {
@@ -116,7 +136,7 @@ export default function ScrapingPage() {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ prospectId }),
       });
-      if (rr.status === 429) { setError("Plafond quotidien de recherches atteint — qualification reprise demain."); return false; }
+      if (rr.status === 429) { setError("Plafond quotidien atteint — qualification reprise demain."); return false; }
       return true;
     } finally {
       setQualifying(null);
@@ -126,139 +146,218 @@ export default function ScrapingPage() {
 
   const qualifyAll = async () => {
     const todo = (selected?.results || []).filter((r) => !r.prospect_id);
-    for (const r of todo) {
-      const ok = await qualifyOne(r);
-      if (!ok) break; // 429 / erreur → on s'arrête (respect du cap)
-    }
+    for (const r of todo) { const ok = await qualifyOne(r); if (!ok) break; }
     setInfo("Qualification en lot terminée (ou stoppée au plafond).");
   };
 
   return (
-    <>
-      <h1>Scraping</h1>
-      <p className="sub">Découverte de décideurs + enrichissement, exécutés par le worker GitHub Actions. Progression en direct.</p>
-
-      {error && <div className="alert alert-err">{error}</div>}
-      {info && <div className="alert alert-ok">{info}</div>}
-
-      {/* ── Lancer ──────────────────────────────────────────────────────────── */}
-      <div className="card">
-        <h2>Lancer un scraping</h2>
-        <div className="grid2">
-          <div>
-            <label>Compte cible</label>
-            <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-              <option value="">— saisie libre ci-dessous —</option>
-              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label>…ou entreprise (texte)</label>
-            <input placeholder="ex. Decathlon" value={company} onChange={(e) => setCompany(e.target.value)} disabled={!!accountId} />
-          </div>
-          <div>
-            <label>Type</label>
-            <select value={kind} onChange={(e) => setKind(e.target.value)}>
-              {Object.entries(KIND_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
-          <div>
-            <label>Profils max</label>
-            <input type="number" min="1" max="20" value={limit} onChange={(e) => setLimit(e.target.value)} />
-          </div>
-        </div>
-        <div className="row" style={{ marginTop: 14 }}>
-          <button className="btn-fox" disabled={launching} onClick={launch}>
-            {launching && <span className="spin" />}
-            Lancer
-          </button>
-        </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* ── Header ── */}
+      <div>
+        <Title2>Scraping</Title2>
+        <Body1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 2 }}>
+          Découverte de décideurs + enrichissement, exécutés par le worker GitHub Actions. Progression en direct.
+        </Body1>
       </div>
 
-      {/* ── Jobs ────────────────────────────────────────────────────────────── */}
-      <div className="card" style={{ padding: 0 }}>
-        <div style={{ padding: "16px 20px 8px" }}><h2 style={{ margin: 0 }}>Jobs</h2></div>
-        {jobs.length === 0 && <p className="sub small" style={{ padding: "0 20px 18px" }}>Aucun job pour l'instant.</p>}
-        {jobs.length > 0 && (
-          <table>
-            <thead>
-              <tr><th>Cible</th><th>Type</th><th>Statut</th><th>Progression</th><th>Résultats</th></tr>
-            </thead>
-            <tbody>
+      {/* ── Feedback ── */}
+      {error && (
+        <Card style={{ borderLeft: `3px solid ${RED}`, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+          <ErrorCircle24Regular style={{ color: RED, flexShrink: 0 }} />
+          <Body1 style={{ color: RED }}>{error}</Body1>
+        </Card>
+      )}
+      {info && (
+        <Card style={{ borderLeft: `3px solid ${GREEN}`, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+          <CheckmarkCircle24Regular style={{ color: GREEN, flexShrink: 0 }} />
+          <Body1 style={{ color: GREEN }}>{info}</Body1>
+        </Card>
+      )}
+
+      {/* ── Launch form ── */}
+      <Card style={{ padding: "20px 20px 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+          <Globe24Regular style={{ color: BRAND }} />
+          <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Lancer un scraping</Body1>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 16 }}>
+          <div>
+            <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Compte cible</Caption1>
+            <Select value={accountId} onChange={(_, d) => setAccountId(d.value)}>
+              <option value="">— saisie libre ci-dessous —</option>
+              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </Select>
+          </div>
+          <div>
+            <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>… ou entreprise (texte)</Caption1>
+            <Input
+              placeholder="ex. Decathlon"
+              value={company}
+              onChange={(_, d) => setCompany(d.value)}
+              disabled={!!accountId}
+            />
+          </div>
+          <div>
+            <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Type</Caption1>
+            <Select value={kind} onChange={(_, d) => setKind(d.value)}>
+              {Object.entries(KIND_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </Select>
+          </div>
+          <div>
+            <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Profils max</Caption1>
+            <Input
+              type="number"
+              min="1"
+              max="20"
+              value={String(limit)}
+              onChange={(_, d) => setLimit(d.value)}
+            />
+          </div>
+        </div>
+        <Button
+          appearance="primary"
+          icon={launching ? <Spinner size="tiny" /> : <Play24Regular />}
+          disabled={launching}
+          onClick={launch}
+        >
+          Lancer
+        </Button>
+      </Card>
+
+      {/* ── Jobs table ── */}
+      <Card style={{ padding: "0" }}>
+        <div style={{ padding: "16px 20px 10px" }}>
+          <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Jobs</Body1>
+        </div>
+        {jobs.length === 0 ? (
+          <div style={{ padding: "0 20px 20px" }}>
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>Aucun job pour l'instant.</Caption1>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHeaderCell>Cible</TableHeaderCell>
+                <TableHeaderCell>Type</TableHeaderCell>
+                <TableHeaderCell>Statut</TableHeaderCell>
+                <TableHeaderCell>Progression</TableHeaderCell>
+                <TableHeaderCell>Résultats</TableHeaderCell>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {jobs.map((j) => {
                 const st = j.stats || {};
                 return (
-                  <tr key={j.id} className="clickable" onClick={() => loadSelected(j.id)}>
-                    <td><strong>{j.params?.company || j.params?.account_id || "—"}</strong></td>
-                    <td className="sub small">{KIND_LABELS[j.kind] || j.kind}</td>
-                    <td><StatusPill status={j.status} /></td>
-                    <td><ProgressBar value={j.progress} /></td>
-                    <td className="sub small">
-                      {st.found ?? 0} trouvé{(st.found ?? 0) > 1 ? "s" : ""}
-                      {st.enriched ? ` · ${st.enriched} email` : ""}
-                      {st.blocked ? ` · ${st.blocked} bloqué` : ""}
-                    </td>
-                  </tr>
+                  <TableRow key={j.id} style={{ cursor: "pointer" }} onClick={() => loadSelected(j.id)}>
+                    <TableCell>
+                      <Body1 style={{ fontWeight: 600 }}>{j.params?.company || j.params?.account_id || "—"}</Body1>
+                    </TableCell>
+                    <TableCell>
+                      <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>{KIND_LABELS[j.kind] || j.kind}</Caption1>
+                    </TableCell>
+                    <TableCell><StatusBadge status={j.status} /></TableCell>
+                    <TableCell><ProgressBar value={j.progress} /></TableCell>
+                    <TableCell>
+                      <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>
+                        {st.found ?? 0} trouvé{(st.found ?? 0) > 1 ? "s" : ""}
+                        {st.enriched ? ` · ${st.enriched} email` : ""}
+                        {st.blocked ? ` · ${st.blocked} bloqué` : ""}
+                      </Caption1>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
-      </div>
+      </Card>
 
-      {/* ── Résultats du job sélectionné ────────────────────────────────────── */}
+      {/* ── Selected job results ── */}
       {selected?.job && (
-        <div className="card" style={{ padding: 0 }}>
-          <div className="row spread" style={{ padding: "16px 20px 8px" }}>
-            <h2 style={{ margin: 0 }}>
+        <Card style={{ padding: "0" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px 10px", flexWrap: "wrap", gap: 8 }}>
+            <Body1 style={{ fontWeight: 700, fontSize: 15 }}>
               Résultats — {selected.job.params?.company || selected.job.params?.account_id}
-            </h2>
+            </Body1>
             {(selected.results || []).some((r) => !r.prospect_id) && (
-              <button onClick={qualifyAll} disabled={!!qualifying}>Tout qualifier</button>
+              <Button appearance="outline" size="small" disabled={!!qualifying} onClick={qualifyAll}
+                icon={qualifying ? <Spinner size="tiny" /> : undefined}>
+                Tout qualifier
+              </Button>
             )}
           </div>
-          {selected.job.error && <div className="alert alert-err" style={{ margin: "0 20px 12px" }}>{selected.job.error}</div>}
-          {(selected.results || []).length === 0 && (
-            <p className="sub small" style={{ padding: "0 20px 18px" }}>
-              {selected.job.status === "running" ? "En cours…" : "Aucun contact (source bloquée ou rien trouvé)."}
-            </p>
+
+          {selected.job.error && (
+            <Card style={{ borderLeft: `3px solid ${RED}`, padding: "10px 12px", margin: "0 20px 12px" }}>
+              <Caption1 style={{ color: RED }}>{selected.job.error}</Caption1>
+            </Card>
           )}
-          {(selected.results || []).length > 0 && (
-            <table>
-              <thead>
-                <tr><th>Nom</th><th>Poste</th><th>Email</th><th>Source</th><th></th></tr>
-              </thead>
-              <tbody>
+
+          {(selected.results || []).length === 0 ? (
+            <div style={{ padding: "0 20px 20px" }}>
+              <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
+                {selected.job.status === "running" ? "En cours…" : "Aucun contact (source bloquée ou rien trouvé)."}
+              </Caption1>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHeaderCell>Nom</TableHeaderCell>
+                  <TableHeaderCell>Poste</TableHeaderCell>
+                  <TableHeaderCell>Email</TableHeaderCell>
+                  <TableHeaderCell>Source</TableHeaderCell>
+                  <TableHeaderCell></TableHeaderCell>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {selected.results.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <strong>{r.full_name || "—"}</strong>
-                      {r.linkedin_url && <> · <a href={r.linkedin_url} target="_blank" rel="noreferrer" className="sub small">LinkedIn</a></>}
-                    </td>
-                    <td className="sub small">{r.title || "—"}</td>
-                    <td className="sub small">
-                      {r.email
-                        ? <>{r.email} {r.email_confidence && <span className="relbadge rel-partiel">{r.email_confidence}</span>}</>
-                        : "—"}
-                    </td>
-                    <td className="sub small">{r.source}</td>
-                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      {r.prospect_id
-                        ? <span className="sub small" style={{ color: "var(--ok)" }}>✓ qualifié</span>
-                        : (
-                          <button onClick={() => qualifyOne(r)} disabled={qualifying === r.id}>
-                            {qualifying === r.id && <span className="spin spin-dark" />}
-                            Qualifier
-                          </button>
+                  <TableRow key={r.id}>
+                    <TableCell>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <Body1 style={{ fontWeight: 600 }}>{r.full_name || "—"}</Body1>
+                        {r.linkedin_url && (
+                          <a href={r.linkedin_url} target="_blank" rel="noreferrer"
+                            style={{ color: "#0077b5", display: "flex" }} onClick={(e) => e.stopPropagation()}>
+                            <LinkSquare24Regular style={{ fontSize: 16 }} />
+                          </a>
                         )}
-                    </td>
-                  </tr>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>{r.title || "—"}</Caption1>
+                    </TableCell>
+                    <TableCell>
+                      {r.email ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>{r.email}</Caption1>
+                          {r.email_confidence && <Badge appearance="outline" size="small">{r.email_confidence}</Badge>}
+                        </div>
+                      ) : (
+                        <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>—</Caption1>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>{r.source}</Caption1>
+                    </TableCell>
+                    <TableCell style={{ textAlign: "right" }}>
+                      {r.prospect_id ? (
+                        <Badge appearance="tint" color="success" icon={<CheckmarkCircle24Regular />}>qualifié</Badge>
+                      ) : (
+                        <Button appearance="outline" size="small" disabled={qualifying === r.id}
+                          icon={qualifying === r.id ? <Spinner size="tiny" /> : undefined}
+                          onClick={() => qualifyOne(r)}>
+                          Qualifier
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           )}
-        </div>
+        </Card>
       )}
-    </>
+    </div>
   );
 }
