@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { analyzeAccount } from "@/lib/account-analyze";
 import { drainJobQueue } from "@/lib/process-jobs";
+import { checkMonthlyBudget } from "@/lib/budget";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // plusieurs analyses à la suite (Fluid Compute)
@@ -22,6 +23,13 @@ export async function GET(request) {
   const supabase = getSupabase();
   const dailyCap = Number(process.env.DAILY_RESEARCH_CAP) || 50;
   const batch = Number(process.env.WATCH_BATCH) || 2; // nb max de comptes par exécution
+
+  // Kill-switch budget mensuel : la veille autonome ne dépense rien au-delà de
+  // MONTHLY_BUDGET_EUR (sinon le cron tournerait tous les jours sans plafond €).
+  const budgetState = await checkMonthlyBudget(supabase);
+  if (budgetState.exceeded) {
+    return NextResponse.json({ refreshed: 0, reason: `budget mensuel atteint (${budgetState.spent.toFixed(2)} € / ${budgetState.budget} €)` });
+  }
 
   // Budget déjà consommé sur 24 h (comptes rafraîchis).
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();

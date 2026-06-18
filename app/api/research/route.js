@@ -10,6 +10,7 @@ import { validateResearch } from "@/lib/schemas";
 import { logAiRun } from "@/lib/ai-runs";
 import { logEvent } from "@/lib/events";
 import { getEnvConfig, MODEL_HAIKU, MODEL_SONNET } from "@/lib/constants";
+import { checkMonthlyBudget } from "@/lib/budget";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -52,6 +53,16 @@ export async function POST(request) {
   if ((dailyCount ?? 0) >= dailyCap) {
     return NextResponse.json(
       { error: "Plafond quotidien de recherches atteint (sécurité budget). Modifiable via DAILY_RESEARCH_CAP." },
+      { status: 429 }
+    );
+  }
+
+  // Kill-switch budget mensuel : coupe net si la dépense Anthropic du mois a
+  // atteint MONTHLY_BUDGET_EUR (reprise automatique au 1er du mois suivant).
+  const { exceeded, spent, budget } = await checkMonthlyBudget(supabase);
+  if (exceeded) {
+    return NextResponse.json(
+      { error: `Budget mensuel atteint (${spent.toFixed(2)} € / ${budget} €). Reprise le 1er du mois prochain, ou augmente MONTHLY_BUDGET_EUR.` },
       { status: 429 }
     );
   }
