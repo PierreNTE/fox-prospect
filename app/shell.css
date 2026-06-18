@@ -75,6 +75,10 @@
   .app-mobile-brand { display: inline-flex; align-items: center; }
   .app-search { display: none; }
   .app-main { padding: 16px 14px 88px; }
+
+  /* Tables: conteneur scrollable sur mobile */
+  .fui-Table, table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
   .app-bottombar {
     display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
     justify-content: space-around; align-items: center;
