@@ -1,11 +1,10 @@
 "use client";
 
-// Shell applicatif (refonte P1) : rail latéral desktop + top bar (recherche/⌘K)
-// + bottom nav mobile. Composants Fluent v9 + icônes Fluent.
-
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
 import { FoxMark, FoxLogo } from "@/components/FoxLogo";
+import SearchModal from "@/components/SearchModal";
 import {
   Board24Regular,
   BuildingMultiple24Regular,
@@ -30,9 +29,24 @@ const isActive = (path, href) => (href === "/" ? path === "/" : path.startsWith(
 
 export default function AppShell({ children }) {
   const path = usePathname() || "/";
+  const router = useRouter();
+  const [showSearch, setShowSearch] = useState(false);
+
+  useEffect(() => {
+    function onKey(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setShowSearch(true);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <div className="app-shell">
+      {showSearch && <SearchModal onClose={() => setShowSearch(false)} />}
+
       <nav className="app-rail" aria-label="Navigation principale">
         <Link href="/" className="rail-logo" aria-label="Fox Prospect — accueil">
           <FoxMark size={34} />
@@ -63,16 +77,33 @@ export default function AppShell({ children }) {
           <span className="app-mobile-brand">
             <FoxLogo size={30} />
           </span>
-          <div className="app-search" role="button" tabIndex={0} aria-label="Rechercher">
+          <div
+            className="app-search"
+            role="button"
+            tabIndex={0}
+            aria-label="Rechercher"
+            onClick={() => setShowSearch(true)}
+            onKeyDown={e => e.key === "Enter" && setShowSearch(true)}
+          >
             <Search24Regular />
             <span>Rechercher un compte, un contact…</span>
             <kbd>⌘K</kbd>
           </div>
           <div className="app-topbar-actions">
-            <button className="app-iconbtn" aria-label="Notifications">
+            <button
+              className="app-iconbtn"
+              aria-label="Activité"
+              title="Activité récente"
+              onClick={() => router.push("/analytics")}
+            >
               <Alert24Regular />
             </button>
-            <button className="app-iconbtn primary" aria-label="Nouveau">
+            <button
+              className="app-iconbtn primary"
+              aria-label="Importer des prospects"
+              title="Importer des prospects"
+              onClick={() => router.push("/import")}
+            >
               <Add24Regular />
             </button>
           </div>

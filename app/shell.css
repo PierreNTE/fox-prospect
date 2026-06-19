@@ -15,7 +15,11 @@
   border-right: 1px solid var(--colorNeutralStroke2);
   position: sticky; top: 0; height: 100vh;
 }
-.app-rail .rail-logo { margin-bottom: 12px; display: inline-flex; }
+.app-rail .rail-logo {
+  margin-bottom: 12px;
+  display: flex; align-items: center; justify-content: center;
+  text-decoration: none; border: none; outline-offset: 2px;
+}
 .app-rail-item {
   width: 46px; height: 42px;
   display: flex; align-items: center; justify-content: center;
@@ -71,6 +75,54 @@
 
 .app-mobile-brand { display: none; }
 .app-bottombar { display: none; }
+
+/* ---------- Search Modal (command palette) ---------- */
+.search-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 80px;
+}
+.search-modal {
+  width: calc(100% - 32px); max-width: 560px;
+  border-radius: var(--borderRadiusLarge, 8px);
+  background: var(--colorNeutralBackground1);
+  border: 1px solid var(--colorNeutralStroke2);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .4);
+  overflow: hidden;
+}
+.search-modal-input {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--colorNeutralStroke2);
+}
+.search-modal-input svg { color: var(--colorNeutralForeground3); flex: none; }
+.search-modal-input input {
+  flex: 1; border: none; outline: none; background: transparent;
+  font-size: 15px; color: var(--colorNeutralForeground1); font-family: inherit;
+}
+.search-modal-state {
+  padding: 24px 16px; text-align: center;
+  color: var(--colorNeutralForeground3); font-size: 13px;
+}
+.search-modal-hint { padding: 16px; }
+.search-modal-results { padding: 6px 0 8px; }
+.search-modal-group {
+  padding: 8px 16px 4px;
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--colorNeutralForeground3);
+}
+.search-modal-item {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 8px 16px; border: none; background: transparent;
+  cursor: pointer; text-align: left;
+  color: var(--colorNeutralForeground1); font-family: inherit;
+  transition: background .1s;
+}
+.search-modal-item:hover { background: var(--colorNeutralBackground1Hover); }
+.search-modal-item svg { flex: none; color: var(--colorNeutralForeground3); }
+.search-modal-item-name { font-size: 14px; font-weight: 500; flex: 1; }
+.search-modal-item-sub { font-size: 12px; color: var(--colorNeutralForeground3); white-space: nowrap; }
 
 /* ---------- Mobile ---------- */
 @media (max-width: 720px) {
