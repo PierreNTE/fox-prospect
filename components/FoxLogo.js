@@ -3,7 +3,7 @@ export function FoxMark({ size = 36 }) {
     <span
       role="img"
       aria-label="Fox Prospect"
-      style={{ fontSize: size, lineHeight: 1, display: "inline-block" }}
+      style={{ fontSize: size, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}
     >
       🦊
     </span>
