@@ -8,7 +8,7 @@ export const metadata = {
   title: "Fox Prospect",
   description: "Copilote de prospection B2B IT — qualification et points d'accroche",
   appleWebApp: { capable: true, title: "Fox Prospect", statusBarStyle: "default" },
-  icons: { apple: "/apple-touch-icon.png" },
+  icons: { icon: "/favicon.svg", apple: "/apple-touch-icon.png" },
 };
 
 export const viewport = {
