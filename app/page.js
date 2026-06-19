@@ -27,6 +27,7 @@ import {
   ArrowRight24Regular,
   ArrowImport24Regular,
 } from "@fluentui/react-icons";
+import { SkeletonLine, SkeletonTableRows, SkeletonFunnelCards } from "@/components/Skeleton";
 
 const BRAND = "#5B53E6";
 const GREEN = "#107C10";
@@ -168,7 +169,7 @@ export default function Dashboard() {
 
       {/* ── Pipeline funnel ── */}
       <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
-        {["nouveau", "recherché", "contacté", "répondu", "rdv"].map((s) => {
+        {prospects === null ? <SkeletonFunnelCards count={5} /> : ["nouveau", "recherché", "contacté", "répondu", "rdv"].map((s) => {
           const active = filterStatus === s;
           const color = STAGE_COLORS[s];
           return (
@@ -264,10 +265,9 @@ export default function Dashboard() {
         </div>
 
         {prospects === null ? (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 32, gap: 12 }}>
-            <Spinner size="small" />
-            <Body1 style={{ color: "var(--colorNeutralForeground2)" }}>Chargement…</Body1>
-          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <tbody><SkeletonTableRows rows={8} cols={5} /></tbody>
+          </table>
         ) : prospects.length === 0 ? (
           <div style={{ padding: "40px 24px", textAlign: "center" }}>
             <Body1 style={{ color: "var(--colorNeutralForeground2)", display: "block", marginBottom: 16 }}>

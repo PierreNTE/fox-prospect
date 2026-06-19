@@ -29,6 +29,7 @@ import {
   Stop24Regular,
   CalendarSync24Regular,
 } from "@fluentui/react-icons";
+import { SkeletonTableRows, SkeletonAccountCards } from "@/components/Skeleton";
 
 const BRAND = "#5B53E6";
 const GREEN = "#107C10";
@@ -459,9 +460,8 @@ export default function AccountsPage() {
       )}
 
       {!accounts && !error && (
-        <Card style={{ padding: 32, display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
-          <Spinner size="small" />
-          <Body1 style={{ color: "var(--colorNeutralForeground2)" }}>Chargement des comptes…</Body1>
+        <Card style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <SkeletonAccountCards count={6} />
         </Card>
       )}
     </div>
