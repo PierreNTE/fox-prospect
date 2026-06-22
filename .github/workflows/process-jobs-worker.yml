@@ -34,8 +34,9 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           if [ -z "$CRON_SECRET" ]; then
-            echo "::error::Secret CRON_SECRET manquant (Settings → Secrets → Actions)."
-            exit 1
+            echo "::warning::Secret CRON_SECRET non configuré — drain ignoré."
+            echo "Ajoute-le dans Settings → Secrets and variables → Actions (= valeur Vercel)."
+            exit 0
           fi
           endpoint="$BASE_URL/api/cron/process-jobs"
           echo "Drain via $endpoint"
