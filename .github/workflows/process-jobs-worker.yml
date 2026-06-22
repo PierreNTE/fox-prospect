@@ -1,0 +1,70 @@
+name: process-jobs-worker
+
+# Draine la file `jobs` (qualification IA des prospects + analyse de comptes) en
+# appelant l'endpoint existant /api/cron/process-jobs. Contourne la limite des
+# 2 crons Vercel Hobby (1×/jour) : GitHub Actions peut tourner aussi souvent que
+# voulu, gratuitement. Chaque appel draine un lot (perRun, défaut 8) et reste
+# borné par le kill-switch budget mensuel côté serveur (jamais > MONTHLY_BUDGET_EUR).
+#
+# Déclencheurs :
+#  - schedule : toutes les 2 h (UTC). Maintient la file à jour en continu.
+#               ⚠️ GitHub désactive les crons après 60 j sans activité repo.
+#  - workflow_dispatch : bouton "Run workflow" (rattrapage manuel d'un backlog).
+on:
+  schedule:
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+
+# Évite deux drains simultanés (le verrou optimiste côté serveur protège déjà des
+# doublons, mais inutile de lancer deux runs en parallèle).
+concurrency:
+  group: process-jobs-worker
+  cancel-in-progress: false
+
+jobs:
+  drain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Drainer la file jusqu'à épuisement (ou plafond budget)
+        env:
+          # URL de prod (Variable repo facultative ; défaut = domaine Vercel).
+          BASE_URL: ${{ vars.APP_BASE_URL || 'https://fox-prospect.vercel.app' }}
+          # Même valeur que le secret CRON_SECRET côté Vercel.
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::Secret CRON_SECRET manquant (Settings → Secrets → Actions)."
+            exit 1
+          fi
+          endpoint="$BASE_URL/api/cron/process-jobs"
+          echo "Drain via $endpoint"
+          # Boucle : draine un lot à chaque appel jusqu'à file vide OU plafond budget.
+          # Cap à 25 itérations (= 25 × perRun jobs) pour borner un run.
+          for i in $(seq 1 25); do
+            resp=$(curl -sS --max-time 320 -H "Authorization: Bearer $CRON_SECRET" "$endpoint")
+            echo "[$i] $resp"
+            total=$(echo "$resp" | jq -r '.total // 0')
+            reason=$(echo "$resp" | jq -r '.reason // ""')
+            if [ -n "$reason" ]; then
+              echo "Arrêt : $reason"
+              break
+            fi
+            if [ "$total" = "0" ]; then
+              echo "File vide — terminé."
+              break
+            fi
+            sleep 3
+          done
+
+      - name: Alerte en cas d'échec
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🔴 process-jobs-worker en échec — run ${context.runId}`,
+              body: `Le drain de la file de jobs a échoué.\n\nVoir le run : ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            })
