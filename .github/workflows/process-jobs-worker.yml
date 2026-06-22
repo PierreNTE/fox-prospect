@@ -45,6 +45,11 @@ jobs:
           for i in $(seq 1 25); do
             resp=$(curl -sS --max-time 320 -H "Authorization: Bearer $CRON_SECRET" "$endpoint")
             echo "[$i] $resp"
+            err=$(echo "$resp" | jq -r '.error // ""')
+            if [ -n "$err" ]; then
+              echo "::error::Endpoint a répondu une erreur : $err (CRON_SECRET GitHub ≠ Vercel ?)"
+              exit 1
+            fi
             total=$(echo "$resp" | jq -r '.total // 0')
             reason=$(echo "$resp" | jq -r '.reason // ""')
             if [ -n "$reason" ]; then
