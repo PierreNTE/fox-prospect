@@ -21,6 +21,10 @@ concurrency:
   group: process-jobs-worker
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  issues: write   # nécessaire à l'alerte d'échec (création d'une issue)
+
 jobs:
   drain:
     runs-on: ubuntu-latest
