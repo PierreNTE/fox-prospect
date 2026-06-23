@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { eur } from "@/lib/format";
 import {
   Card,
   Button,
@@ -101,7 +102,7 @@ function HealthCard() {
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
               <Caption1 style={{ fontWeight: 600 }}>Budget du mois</Caption1>
               <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>
-                {b?.month_spent_eur ?? "—"} € / {b?.month_budget_eur} €
+                {b ? eur(b.month_spent_eur) : "—"} / {b ? eur(b.month_budget_eur) : "—"}
               </Caption1>
             </div>
             <div style={{ height: 6, background: "var(--colorNeutralBackground3)", borderRadius: 3, overflow: "hidden" }}>

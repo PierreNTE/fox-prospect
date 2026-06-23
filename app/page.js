@@ -307,6 +307,21 @@ export default function Dashboard() {
                 <TableRow key={p.id} style={{ cursor: "pointer" }}>
                   <TableCell onClick={() => router.push(`/prospects/${p.id}`)}>
                     <Body1 style={{ fontWeight: 600 }}>{p.first_name} {p.last_name}</Body1>
+                    <div style={{ marginTop: 2 }}>
+                      {p.phone ? (
+                        <a href={`tel:${(p.phone || "").replace(/\s/g, "")}`} onClick={(e) => e.stopPropagation()}
+                          style={{ fontSize: 12, color: GREEN, fontWeight: 600, textDecoration: "none" }}>
+                          {p.phone}
+                        </a>
+                      ) : p.email ? (
+                        <a href={`mailto:${p.email}`} onClick={(e) => e.stopPropagation()}
+                          style={{ fontSize: 12, color: BRAND, textDecoration: "none" }}>
+                          {p.email}
+                        </a>
+                      ) : (
+                        <Caption1 style={{ fontSize: 11, color: RED }}>⚠ sans coordonnée</Caption1>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell onClick={() => router.push(`/prospects/${p.id}`)}>
                     <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>{p.role || "—"}</Caption1>

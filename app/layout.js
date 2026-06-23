@@ -7,8 +7,9 @@ import AppShell from "@/components/AppShell";
 export const metadata = {
   title: "Fox Prospect",
   description: "Copilote de prospection B2B IT — qualification et points d'accroche",
-  appleWebApp: { capable: true, title: "Fox Prospect", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "Fox Prospect", statusBarStyle: "black" },
   icons: { icon: "/favicon.svg", apple: "/apple-touch-icon.png" },
+  formatDetection: { telephone: false },
 };
 
 export const viewport = {

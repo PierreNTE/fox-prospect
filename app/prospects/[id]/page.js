@@ -92,6 +92,46 @@ function NbaBanner({ nba }) {
   );
 }
 
+// Bandeau coordonnées — l'information la plus visible (priorité : tél > email > LinkedIn).
+// Tél et email actionnables (clic-pour-appeler / écrire). Un prospect sans tél NI email
+// est signalé « non exploitable ».
+function ContactBar({ prospect }) {
+  const phone = (prospect.phone || "").trim();
+  const email = (prospect.email || "").trim();
+  const linkedin = (prospect.linkedin_url || "").trim();
+  const exploitable = phone || email;
+  return (
+    <Card style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      {phone && (
+        <a href={`tel:${phone.replace(/\s/g, "")}`}
+          style={{ display: "inline-flex", alignItems: "center", gap: 8, textDecoration: "none",
+            background: GREEN, color: "#fff", fontWeight: 700, fontSize: 15, padding: "8px 14px", borderRadius: 8 }}>
+          <Phone24Regular style={{ fontSize: 18 }} /> {phone}
+        </a>
+      )}
+      {email && (
+        <a href={`mailto:${email}`}
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none",
+            color: BRAND, fontWeight: 600, fontSize: 14, padding: "8px 12px", border: `1px solid ${BRAND}`, borderRadius: 8 }}>
+          <Mail24Regular style={{ fontSize: 16 }} /> {email}
+        </a>
+      )}
+      {linkedin && (
+        <a href={linkedin} target="_blank" rel="noreferrer"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none",
+            color: "#0077b5", fontSize: 13, padding: "8px 10px" }}>
+          <LinkSquare24Regular style={{ fontSize: 16 }} /> LinkedIn ↗
+        </a>
+      )}
+      {!exploitable && (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: RED, fontWeight: 700, fontSize: 13 }}>
+          ⚠ Non exploitable — ni téléphone ni email
+        </span>
+      )}
+    </Card>
+  );
+}
+
 function ScoreBar({ label, score, note }) {
   const color = score >= 70 ? BRAND : score >= 40 ? AMBER : RED;
   return (
@@ -243,6 +283,9 @@ export default function ProspectPage() {
           {prospect.fit_score != null && <ScoreBadge score={prospect.fit_score} big />}
         </div>
       </div>
+
+      {/* ── Coordonnées (info la plus visible) ── */}
+      <ContactBar prospect={prospect} />
 
       {/* ── Error ── */}
       {error && (

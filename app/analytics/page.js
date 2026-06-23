@@ -31,6 +31,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { eur } from "@/lib/format";
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
@@ -167,8 +168,8 @@ function CostAreaChart({ byDay }) {
           </linearGradient>
         </defs>
         <XAxis dataKey="day" tick={{ fontSize: 10, fill: "var(--colorNeutralForeground3)" }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-        <YAxis tick={{ fontSize: 10, fill: "var(--colorNeutralForeground3)" }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v.toFixed(3)}€`} />
-        <Tooltip formatter={(v) => [`${v.toFixed(5)} €`, "Coût"]} labelStyle={{ fontSize: 12 }} contentStyle={{ fontSize: 12, borderRadius: 6 }} />
+        <YAxis tick={{ fontSize: 10, fill: "var(--colorNeutralForeground3)" }} tickLine={false} axisLine={false} tickFormatter={(v) => eur(v)} />
+        <Tooltip formatter={(v) => [eur(v), "Coût"]} labelStyle={{ fontSize: 12 }} contentStyle={{ fontSize: 12, borderRadius: 6 }} />
         <Area type="monotone" dataKey="cost" stroke={BRAND} strokeWidth={2} fill="url(#costGrad)" dot={false} activeDot={{ r: 4 }} />
       </AreaChart>
     </ResponsiveContainer>
@@ -182,9 +183,9 @@ function RouteBarChart({ byRoute }) {
   return (
     <ResponsiveContainer width="100%" height={Math.max(60, data.length * 36)}>
       <BarChart data={data} layout="vertical" margin={{ top: 0, right: 8, left: 4, bottom: 0 }}>
-        <XAxis type="number" tick={{ fontSize: 10, fill: "var(--colorNeutralForeground3)" }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v.toFixed(3)}€`} />
+        <XAxis type="number" tick={{ fontSize: 10, fill: "var(--colorNeutralForeground3)" }} tickLine={false} axisLine={false} tickFormatter={(v) => eur(v)} />
         <YAxis type="category" dataKey="label" tick={{ fontSize: 12, fill: "var(--colorNeutralForeground2)" }} tickLine={false} axisLine={false} width={110} />
-        <Tooltip formatter={(v) => [`${v.toFixed(5)} €`, "Coût"]} contentStyle={{ fontSize: 12, borderRadius: 6 }} />
+        <Tooltip formatter={(v) => [eur(v), "Coût"]} contentStyle={{ fontSize: 12, borderRadius: 6 }} />
         <Bar dataKey="cost" fill={AMBER} radius={[0, 3, 3, 0]} maxBarSize={18} />
       </BarChart>
     </ResponsiveContainer>
@@ -283,7 +284,7 @@ export default function AnalyticsPage() {
             <KpiCard
               icon={Money24Regular}
               label="Coût IA 30j"
-              value={`${data.ai.total_cost_eur.toFixed(3)} €`}
+              value={eur(data.ai.total_cost_eur)}
               sub={`${data.ai.runs} appels · ${data.ai.web_searches} rech. web`}
               color={AMBER}
             />
