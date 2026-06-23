@@ -8,7 +8,7 @@ export async function GET(_request, { params }) {
   const supabase = getSupabase();
   const { id } = params;
 
-  const [{ data: prospect, error }, { data: research }, { data: drafts }] = await Promise.all([
+  const [{ data: prospect, error }, { data: research }, { data: drafts }, { data: events }] = await Promise.all([
     supabase.from("prospects").select("*").eq("id", id).single(),
     supabase
       .from("research")
@@ -22,6 +22,13 @@ export async function GET(_request, { params }) {
       .eq("prospect_id", id)
       .order("created_at", { ascending: false })
       .limit(1),
+    // Timeline complète des interactions (manuelles + auto) pour l'historique.
+    supabase
+      .from("events")
+      .select("*")
+      .eq("prospect_id", id)
+      .order("occurred_at", { ascending: false })
+      .limit(100),
   ]);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
@@ -30,6 +37,7 @@ export async function GET(_request, { params }) {
     prospect,
     research: research?.[0] || null,
     drafts: drafts?.[0] || null,
+    events: events || [],
   });
 }
 

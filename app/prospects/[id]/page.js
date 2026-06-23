@@ -18,7 +18,7 @@ import {
   Switch,
 } from "@fluentui/react-components";
 import {
-  STATUS_ORDER, STATUS_LABELS,
+  STATUS_ORDER, STATUS_LABELS, statusLabel,
   dataQualityLevel, DATA_QUALITY_LABELS,
 } from "@/lib/constants";
 import {
@@ -33,6 +33,10 @@ import {
   Sparkle24Regular,
   ArrowLeft24Regular,
   Building24Regular,
+  Chat24Regular,
+  History24Regular,
+  Add24Regular,
+  CalendarLtr24Regular,
 } from "@fluentui/react-icons";
 
 const BRAND = "#5B53E6";
@@ -42,7 +46,7 @@ const RED = "#C50F1F";
 
 const NBA_COLORS = {
   prepare_rdv: GREEN, avancer: GREEN, fideliser: GREEN, appeler: GREEN,
-  relance_urgente: RED, relance: AMBER,
+  relance_urgente: RED, relance: AMBER, relance_prevue: RED,
   generer: BRAND, enrichir: "#8e44ad",
   envoyer: BRAND, rechercher: BRAND,
   opt_out: "var(--colorNeutralForeground3)", archive: "var(--colorNeutralForeground3)",
@@ -171,6 +175,173 @@ function StatusBar({ prospect, onPatch }) {
   );
 }
 
+// ── Suivi commercial : timeline d'interactions + saisie rapide (P3 #2) ───────
+const CHANNEL_META = {
+  appel:    { label: "Appel",    Icon: Phone24Regular,      color: GREEN },
+  email:    { label: "E-mail",   Icon: Mail24Regular,       color: BRAND },
+  linkedin: { label: "LinkedIn", Icon: LinkSquare24Regular, color: "#0077b5" },
+  autre:    { label: "Autre",    Icon: Chat24Regular,       color: "var(--colorNeutralForeground3)" },
+};
+
+function fmtDate(s) {
+  if (!s) return "";
+  try { return new Date(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" }); }
+  catch { return String(s); }
+}
+
+// Description d'un événement système (non-interaction) pour la timeline.
+function describeEvent(ev) {
+  switch (ev.kind) {
+    case "status_change":
+      return { label: "Changement de statut", detail: `${statusLabel(ev.from_status)} → ${statusLabel(ev.to_status)}`, color: "var(--colorNeutralForeground3)", Icon: ArrowClockwise24Regular };
+    case "research_done":
+      return { label: "Recherche IA", detail: "Qualification effectuée", color: BRAND, Icon: Search24Regular };
+    case "draft_generated":
+      return { label: "Brouillons générés", detail: "Email · LinkedIn · points d'appel", color: "#8e44ad", Icon: Sparkle24Regular };
+    case "enrich_done":
+      return { label: "Enrichissement", detail: ev.note || "Coordonnées enrichies", color: "#8e44ad", Icon: Search24Regular };
+    case "opt_out":
+      return { label: "Ne pas contacter", detail: ev.note || "Opposition enregistrée", color: RED, Icon: Flash24Regular };
+    case "auto_action":
+      return { label: "Action automatique", detail: ev.note || "", color: "var(--colorNeutralForeground3)", Icon: Flash24Regular };
+    default:
+      return { label: ev.kind, detail: ev.note || "", color: "var(--colorNeutralForeground3)", Icon: Flash24Regular };
+  }
+}
+
+function SuiviCommercial({ prospect, events, onSaved }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [channel, setChannel] = useState("appel");
+  const [occurredOn, setOccurredOn] = useState(today);
+  const [note, setNote] = useState("");
+  const [nextAction, setNextAction] = useState("");
+  const [followUp, setFollowUp] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const followUpAt = prospect.follow_up_at;
+  const overdue = followUpAt && followUpAt < today;
+  const dueToday = followUpAt && followUpAt === today;
+
+  const submit = async () => {
+    setErr("");
+    if (!note.trim() && !nextAction.trim()) { setErr("Renseigne au moins un compte-rendu ou une prochaine action."); return; }
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/prospects/${prospect.id}/interactions`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ channel, occurred_at: occurredOn || undefined, note, next_action: nextAction, follow_up_at: followUp || null }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || d.error) { setErr(d.error || `Erreur ${res.status}.`); return; }
+      setNote(""); setNextAction(""); setFollowUp(""); setChannel("appel"); setOccurredOn(today);
+      onSaved && onSaved();
+    } catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Card style={{ padding: "20px 20px 24px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <History24Regular style={{ color: BRAND }} />
+        <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Suivi commercial</Body1>
+      </div>
+
+      {followUpAt && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8,
+          color: overdue ? RED : dueToday ? "#E8730C" : "var(--colorNeutralForeground2)" }}>
+          <CalendarLtr24Regular style={{ fontSize: 16 }} />
+          <Caption1 style={{ fontWeight: 600 }}>
+            Relance {overdue ? "en retard" : dueToday ? "aujourd'hui" : "prévue"} le {fmtDate(followUpAt)}
+            {prospect.next_action ? ` — ${prospect.next_action}` : ""}
+          </Caption1>
+        </div>
+      )}
+
+      {/* Saisie rapide */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 14 }}>
+        <div>
+          <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Canal</Caption1>
+          <Select value={channel} onChange={(_, d) => setChannel(d.value)}>
+            <option value="appel">Appel</option>
+            <option value="email">E-mail</option>
+            <option value="linkedin">LinkedIn</option>
+            <option value="autre">Autre</option>
+          </Select>
+        </div>
+        <div>
+          <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Date du contact</Caption1>
+          <Input type="date" value={occurredOn} onChange={(_, d) => setOccurredOn(d.value)} />
+        </div>
+      </div>
+      <Caption1 style={{ display: "block", margin: "10px 0 4px", fontWeight: 600 }}>Compte-rendu / retour du prospect</Caption1>
+      <Textarea value={note} onChange={(_, d) => setNote(d.value)} rows={2}
+        placeholder="Points abordés, retour, objections…" style={{ width: "100%" }} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+        <div>
+          <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Prochaine action</Caption1>
+          <Input value={nextAction} onChange={(_, d) => setNextAction(d.value)} placeholder="Ex. envoyer la doc" />
+        </div>
+        <div>
+          <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Date de relance</Caption1>
+          <Input type="date" value={followUp} onChange={(_, d) => setFollowUp(d.value)} />
+        </div>
+      </div>
+      {err && <Caption1 style={{ color: RED, display: "block", marginTop: 8 }}>{err}</Caption1>}
+      <Button appearance="primary" icon={busy ? <Spinner size="tiny" /> : <Add24Regular />} disabled={busy}
+        onClick={submit} style={{ marginTop: 12 }}>
+        {busy ? "Enregistrement…" : "Enregistrer l'échange"}
+      </Button>
+
+      {/* Timeline */}
+      <div style={{ marginTop: 22 }}>
+        <Caption1 style={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--colorNeutralForeground3)" }}>
+          Historique ({events.length})
+        </Caption1>
+        {events.length === 0 ? (
+          <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 8 }}>
+            Aucune interaction pour l'instant. Enregistre ton premier échange ci-dessus.
+          </Caption1>
+        ) : (
+          <div style={{ marginTop: 8 }}>
+            {events.map((ev) => {
+              const isInteraction = ev.kind === "interaction";
+              const meta = isInteraction ? (CHANNEL_META[ev.channel] || CHANNEL_META.autre) : describeEvent(ev);
+              const Icon = meta.Icon;
+              return (
+                <div key={ev.id} style={{ display: "flex", gap: 10, padding: "10px 0", borderTop: "1px solid var(--colorNeutralStroke2)" }}>
+                  <div style={{ flexShrink: 0, width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                    background: `color-mix(in srgb, ${meta.color} 14%, transparent)` }}>
+                    <Icon style={{ fontSize: 16, color: meta.color }} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <Body1 style={{ fontWeight: 600, fontSize: 13 }}>{meta.label}</Body1>
+                    {isInteraction ? (
+                      <>
+                        {ev.note && <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block", marginTop: 1 }}>{ev.note}</Caption1>}
+                        {ev.next_action && (
+                          <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 2 }}>
+                            → {ev.next_action}{ev.follow_up_at ? ` · relance ${fmtDate(ev.follow_up_at)}` : ""}
+                          </Caption1>
+                        )}
+                      </>
+                    ) : (
+                      meta.detail && <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block" }}>{meta.detail}</Caption1>
+                    )}
+                  </div>
+                  <Caption1 style={{ color: "var(--colorNeutralForeground3)", flexShrink: 0, whiteSpace: "nowrap", fontSize: 11 }}>
+                    {fmtDate(ev.occurred_at)}
+                  </Caption1>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function ScoreBar({ label, score, note }) {
   const color = score >= 70 ? BRAND : score >= 40 ? AMBER : RED;
   return (
@@ -225,7 +396,7 @@ export default function ProspectPage() {
   const [sourceStatuses, setSourceStatuses] = useState({});
 
   const load = async () => {
-    const res = await fetch(`/api/prospects/${id}`);
+    const res = await fetch(`/api/prospects/${id}`, { cache: "no-store" });
     const d = await res.json();
     if (d.error) setError(d.error);
     else setData(d);
@@ -295,7 +466,7 @@ export default function ProspectPage() {
     );
   }
 
-  const { prospect, research, drafts } = data;
+  const { prospect, research, drafts, events } = data;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -380,6 +551,9 @@ export default function ProspectPage() {
           <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>Recherche web en cours, 20-40 secondes…</Caption1>
         )}
       </div>
+
+      {/* ── Suivi commercial : historique des interactions + saisie rapide ── */}
+      <SuiviCommercial prospect={prospect} events={events || []} onSaved={load} />
 
       {/* ── Empty state ── */}
       {!research && !busy && (

@@ -11,7 +11,7 @@ export async function GET() {
 
   const { data: prospects } = await supabase
     .from("prospects")
-    .select("id, first_name, last_name, role, company, status, fit_score, email, phone, account_id, researched_at, do_not_contact")
+    .select("id, first_name, last_name, role, company, status, fit_score, email, phone, account_id, researched_at, do_not_contact, follow_up_at, next_action")
     .not("status", "in", '("refuse","client")')
     .eq("do_not_contact", false)
     .order("fit_score", { ascending: false, nullsFirst: false })

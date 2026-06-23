@@ -53,6 +53,8 @@ const STATUS_COLORS = {
 };
 
 const EVENT_LABELS = {
+  interaction: "Interaction",
+  opt_out: "Opposition",
   status_change: "Changement de statut",
   email_sent: "Email envoyé",
   call_made: "Appel",
@@ -285,7 +287,7 @@ export default function AnalyticsPage() {
               icon={CalendarLtr24Regular}
               label="Événements 30j"
               value={data.events.total}
-              sub={`${data.events.rdv_booked} RDV · ${data.events.research_done} recherches`}
+              sub={`${data.events.interactions} interactions · ${data.events.research_done} recherches`}
               color={GREEN}
             />
             <KpiCard

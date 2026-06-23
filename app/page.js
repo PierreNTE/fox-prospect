@@ -58,7 +58,7 @@ const STAGE_COLORS = {
 
 const NBA_COLORS = {
   prepare_rdv: GREEN, avancer: GREEN, fideliser: GREEN, appeler: GREEN,
-  relance_urgente: RED, relance: AMBER,
+  relance_urgente: RED, relance: AMBER, relance_prevue: RED,
   generer: BRAND, enrichir: "#8e44ad",
   envoyer: BRAND, rechercher: BRAND,
   opt_out: "var(--colorNeutralForeground3)", archive: "var(--colorNeutralForeground3)",
@@ -73,6 +73,20 @@ function QualityDot({ prospect }) {
       title={DATA_QUALITY_LABELS[level]}
       style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }}
     />
+  );
+}
+
+// Puce de relance — visible dans la liste, colorée selon l'échéance.
+function RelanceChip({ date, action }) {
+  if (!date) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  const color = date < today ? RED : date === today ? "#E8730C" : "var(--colorNeutralForeground3)";
+  const d = new Date(date).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
+  return (
+    <span title={action ? `Relance : ${action}` : "Relance prévue"}
+      style={{ fontSize: 10, fontWeight: 700, color, border: `1px solid ${color}`, borderRadius: 4, padding: "0 5px", whiteSpace: "nowrap" }}>
+      ⏰ {d}
+    </span>
   );
 }
 
@@ -108,14 +122,14 @@ export default function Dashboard() {
   const [visibleCount, setVisibleCount] = useState(50); // pagination « voir plus »
 
   const load = async () => {
-    const res = await fetch("/api/prospects");
+    const res = await fetch("/api/prospects", { cache: "no-store" });
     const data = await res.json();
     if (data.error) setError(data.error);
     else setProspects(data.prospects);
   };
 
   const loadPriorities = async () => {
-    const res = await fetch("/api/prospects/priorities").catch(() => null);
+    const res = await fetch("/api/prospects/priorities", { cache: "no-store" }).catch(() => null);
     if (!res?.ok) return;
     const d = await res.json().catch(() => ({}));
     if (d.priorities) setPriorities(d.priorities);
@@ -322,13 +336,14 @@ export default function Dashboard() {
               {visible.map((p) => (
                 <TableRow key={p.id} style={{ cursor: "pointer" }}>
                   <TableCell onClick={() => router.push(`/prospects/${p.id}`)}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                       <Body1 style={{ fontWeight: 600 }}>{p.first_name} {p.last_name}</Body1>
                       {p.do_not_contact && (
                         <span title="Ne pas contacter" style={{ fontSize: 10, fontWeight: 700, color: RED, border: `1px solid ${RED}`, borderRadius: 4, padding: "0 4px" }}>
                           🚫
                         </span>
                       )}
+                      <RelanceChip date={p.follow_up_at} action={p.next_action} />
                     </div>
                     <div style={{ marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
                       <QualityDot prospect={p} />

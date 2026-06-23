@@ -85,7 +85,7 @@ export async function GET() {
     events: {
       total: (events || []).length,
       by_kind: eventsByKind,
-      rdv_booked: eventsByKind.rdv_booked || 0,
+      interactions: eventsByKind.interaction || 0,
       research_done: eventsByKind.research_done || 0,
     },
     scores: {
