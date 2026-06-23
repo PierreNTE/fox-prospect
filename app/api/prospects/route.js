@@ -5,9 +5,12 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const supabase = getSupabase();
+  // Liste = uniquement les colonnes affichées par le tableau de bord (funnel,
+  // table, puces qualité/relance). On évite `select *` qui tire `notes` (~10 Ko)
+  // et 7 autres colonnes inutiles ici → payload ~40 % plus léger.
   const { data, error } = await supabase
     .from("prospects")
-    .select("*")
+    .select("id, first_name, last_name, role, company, status, fit_score, email, phone, email_confidence, do_not_contact, follow_up_at, next_action")
     .order("created_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

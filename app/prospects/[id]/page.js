@@ -566,10 +566,14 @@ function ScoreBreakdown({ scores, prospect }) {
 
 /* ── Page ── */
 
+// Cache mémoire par prospect : réafficher une fiche déjà ouverte (ou recharger
+// après une action) est instantané, puis se rafraîchit en fond. Vidé au reload.
+const detailCache = new Map();
+
 export default function ProspectPage() {
   const { id } = useParams();
   const router = useRouter();
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(() => detailCache.get(id) || null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [selectedSignal, setSelectedSignal] = useState(null);
@@ -579,11 +583,12 @@ export default function ProspectPage() {
     const res = await fetch(`/api/prospects/${id}`, { cache: "no-store" });
     const d = await res.json();
     if (d.error) setError(d.error);
-    else setData(d);
+    else { detailCache.set(id, d); setData(d); }
     return d;
   };
 
-  useEffect(() => { load(); }, [id]);
+  // Au changement d'id : on affiche d'abord le cache (instantané) puis on rafraîchit.
+  useEffect(() => { setData(detailCache.get(id) || null); load(); }, [id]);
 
   useEffect(() => {
     if (!data?.research?.sources?.length) return;

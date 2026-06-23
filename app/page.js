@@ -109,10 +109,16 @@ function NbaChip({ nba }) {
   );
 }
 
+// Cache mémoire (persiste pendant la session, vidé au rechargement complet) :
+// au retour sur le tableau de bord, la liste s'affiche instantanément depuis le
+// cache puis se rafraîchit en arrière-plan — fini le skeleton à chaque navigation.
+let prospectsCache = null;
+let prioritiesCache = null;
+
 export default function Dashboard() {
   const router = useRouter();
-  const [prospects, setProspects] = useState(null);
-  const [priorities, setPriorities] = useState(null);
+  const [prospects, setProspects] = useState(prospectsCache);
+  const [priorities, setPriorities] = useState(prioritiesCache);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
   const [filterStatus, setFilterStatus] = useState("tous");
@@ -125,14 +131,14 @@ export default function Dashboard() {
     const res = await fetch("/api/prospects", { cache: "no-store" });
     const data = await res.json();
     if (data.error) setError(data.error);
-    else setProspects(data.prospects);
+    else { prospectsCache = data.prospects; setProspects(data.prospects); }
   };
 
   const loadPriorities = async () => {
     const res = await fetch("/api/prospects/priorities", { cache: "no-store" }).catch(() => null);
     if (!res?.ok) return;
     const d = await res.json().catch(() => ({}));
-    if (d.priorities) setPriorities(d.priorities);
+    if (d.priorities) { prioritiesCache = d.priorities; setPriorities(d.priorities); }
   };
 
   useEffect(() => { load(); loadPriorities(); }, []);
