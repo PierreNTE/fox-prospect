@@ -13,10 +13,12 @@ export const maxDuration = 300; // plusieurs analyses à la suite (Fluid Compute
 // limite du plafond quotidien partagé. Déclenché par le cron Vercel (1×/jour).
 export async function GET(request) {
   // Protection : le cron Vercel envoie Authorization: Bearer $CRON_SECRET.
-  const secret = process.env.CRON_SECRET;
+  // Tolérant aux espaces/retours à la ligne parasites (copier-coller du secret).
+  const secret = (process.env.CRON_SECRET || "").trim();
   if (secret) {
-    const auth = request.headers.get("authorization") || "";
-    if (auth !== `Bearer ${secret}`) {
+    const auth = (request.headers.get("authorization") || "").trim();
+    const token = auth.replace(/^Bearer\s+/i, "").trim();
+    if (token !== secret) {
       return NextResponse.json({ error: "Non autorisé." }, { status: 401 });
     }
   }

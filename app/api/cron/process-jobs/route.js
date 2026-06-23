@@ -11,10 +11,12 @@ export const maxDuration = 300;
 // pas de cron dédié — la file se vide en queue du cron de veille). Cette route
 // reste pour l'invocation manuelle (dashboard Vercel → Invoke, ou test local).
 export async function GET(request) {
-  const secret = process.env.CRON_SECRET;
+  // Tolérant aux espaces/retours à la ligne parasites (copier-coller du secret).
+  const secret = (process.env.CRON_SECRET || "").trim();
   if (secret) {
-    const auth = request.headers.get("authorization") || "";
-    if (auth !== `Bearer ${secret}`) {
+    const auth = (request.headers.get("authorization") || "").trim();
+    const token = auth.replace(/^Bearer\s+/i, "").trim();
+    if (token !== secret) {
       return NextResponse.json({ error: "Non autorisé." }, { status: 401 });
     }
   }
