@@ -20,7 +20,7 @@ import time
 import urllib.parse
 import urllib.request
 import urllib.error
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 # Réutilise les fonctions importables des scripts existants (même dossier).
 from discover_free import discover_company
@@ -248,6 +248,16 @@ def process_job(job):
 # ── Boucle principale ─────────────────────────────────────────────────────────
 
 def main():
+    # Auto-réparation : un job resté "running" > 30 min vient d'un timeout du runner
+    # (le job a été réclamé mais le run s'est arrêté avant la fin). On le repasse en
+    # pending — le dédup already_seen() évite de réécrire les contacts déjà extraits.
+    stale = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+    try:
+        sb(f"scrape_jobs?status=eq.running&started_at=lt.{urllib.parse.quote(stale)}",
+           method="PATCH", body={"status": "pending", "started_at": None})
+    except Exception:  # noqa: BLE001 — jamais bloquant
+        pass
+
     jobs = sb(f"scrape_jobs?status=eq.pending&order=created_at.asc&limit={JOB_BATCH}") or []
     print(f"=== worker : {len(jobs)} job(s) pending (cap {JOB_BATCH}) ===")
     if not jobs:
