@@ -342,6 +342,190 @@ function SuiviCommercial({ prospect, events, onSaved }) {
   );
 }
 
+// ── Section dépliable (P4 #8 : garder l'essentiel visible, l'enrichi repliable) ─
+function Collapsible({ title, icon, defaultOpen = false, right, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const Icon = icon;
+  return (
+    <Card style={{ padding: 0, overflow: "hidden" }}>
+      <button onClick={() => setOpen((o) => !o)}
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "16px 20px",
+          background: "none", border: "none", cursor: "pointer", textAlign: "left", color: "inherit", font: "inherit" }}>
+        {Icon && <Icon style={{ color: BRAND, fontSize: 18, flexShrink: 0 }} />}
+        <Body1 style={{ fontWeight: 700, fontSize: 15, flex: 1 }}>{title}</Body1>
+        {right}
+        <span style={{ color: "var(--colorNeutralForeground3)", display: "inline-block",
+          transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</span>
+      </button>
+      {open && <div style={{ padding: "0 20px 22px" }}>{children}</div>}
+    </Card>
+  );
+}
+
+// ── Brief commercial à la demande (P4 #5) ───────────────────────────────────
+const DISC_LABEL = { D: "Dominant", I: "Influent", S: "Stable", C: "Consciencieux" };
+const CHANGE_LABEL = { poste: "Poste", equipe: "Équipe", organisation: "Organisation", recrutement: "Recrutement", projet: "Projet", actualite: "Actualité" };
+const CANAL_LABEL = { appel: "Appel", email: "E-mail", linkedin: "LinkedIn" };
+
+function discProfileLabel(p) {
+  if (!p) return "Indéterminé";
+  return p.split("").map((l) => DISC_LABEL[l] || l).join(" / ");
+}
+
+function PeopleList({ people, kind }) {
+  if (!people?.length) return null;
+  return (
+    <div style={{ marginTop: 8 }}>
+      {people.map((p, i) => (
+        <div key={i} style={{ display: "flex", gap: 8, padding: "6px 0", borderTop: i > 0 ? "1px solid var(--colorNeutralStroke2)" : "none" }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Body1 style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</Body1>
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>{p.role}</Caption1>
+            {p.pourquoi && <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block" }}>{p.pourquoi}</Caption1>}
+          </div>
+          {kind === "relation" && p.relation && (
+            <span style={{ fontSize: 10, fontWeight: 700, alignSelf: "flex-start", color: "var(--colorNeutralForeground3)", border: "1px solid var(--colorNeutralStroke2)", borderRadius: 4, padding: "1px 6px" }}>
+              {p.relation}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BriefCommercial({ brief, busy, onGenerate }) {
+  const disc = brief?.disc;
+  const ent = brief?.entourage || {};
+  const entCount = (ent.equipe?.length || 0) + (ent.decideurs?.length || 0) + (ent.contacts_secondaires?.length || 0);
+  const confColor = disc?.confiance === "haute" ? GREEN : disc?.confiance === "moyenne" ? AMBER : "var(--colorNeutralForeground3)";
+
+  return (
+    <Card style={{ padding: "20px 20px 24px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Sparkle24Regular style={{ color: BRAND }} />
+          <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Brief commercial</Body1>
+        </div>
+        <Button appearance={brief ? "outline" : "primary"} size="small"
+          icon={busy ? <Spinner size="tiny" /> : <Sparkle24Regular />} disabled={busy} onClick={onGenerate}>
+          {busy ? "Analyse en cours…" : brief ? "Régénérer" : "Préparer l'approche (IA)"}
+        </Button>
+      </div>
+
+      {!brief && !busy && (
+        <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block", marginTop: 10, lineHeight: 1.6 }}>
+          Analyse approfondie <strong>à la demande</strong> pour préparer un premier contact : changements récents
+          exploitables, accroches personnalisées, profil DISC (si assez de signal) et entourage décisionnel.
+          Consomme du budget IA — déclenchée uniquement quand tu le décides.
+        </Caption1>
+      )}
+
+      {busy && (
+        <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 10 }}>
+          Recherche web + analyse, 20-60 secondes…
+        </Caption1>
+      )}
+
+      {brief && (
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
+          {brief.synthese_approche && (
+            <div style={{ padding: "12px 14px", borderRadius: 8, background: `color-mix(in srgb, ${BRAND} 6%, var(--colorNeutralBackground1))`, borderLeft: `3px solid ${BRAND}` }}>
+              <Body1 style={{ color: "var(--colorNeutralForeground1)", lineHeight: 1.6 }}>{brief.synthese_approche}</Body1>
+            </div>
+          )}
+
+          {/* Changements récents */}
+          {(brief.changements_recents || []).length > 0 && (
+            <div>
+              <Body1 style={{ fontWeight: 700, fontSize: 14, display: "block", marginBottom: 8 }}>Changements récents</Body1>
+              {brief.changements_recents.map((c, i) => (
+                <div key={i} style={{ padding: "10px 12px", borderRadius: 6, marginBottom: 6, background: "var(--colorNeutralBackground3)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "#E8730C", border: "1px solid #E8730C", borderRadius: 4, padding: "0 6px" }}>
+                      {CHANGE_LABEL[c.type] || c.type}
+                    </span>
+                    <Body1 style={{ fontWeight: 600, fontSize: 13 }}>{c.detail}</Body1>
+                  </div>
+                  {c.accroche && <Caption1 style={{ color: BRAND, display: "block", marginTop: 6, fontStyle: "italic" }}>« {c.accroche} »</Caption1>}
+                  <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 4 }}>
+                    {c.date}{c.source && <> · {c.source}</>}
+                  </Caption1>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Accroches personnalisées */}
+          {(brief.accroches || []).length > 0 && (
+            <div>
+              <Body1 style={{ fontWeight: 700, fontSize: 14, display: "block", marginBottom: 8 }}>Accroches personnalisées</Body1>
+              {brief.accroches.map((a, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, padding: "8px 0", borderTop: i > 0 ? "1px solid var(--colorNeutralStroke2)" : "none" }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, flexShrink: 0, color: "var(--colorNeutralForeground3)", border: "1px solid var(--colorNeutralStroke2)", borderRadius: 4, padding: "1px 6px", height: "fit-content" }}>
+                    {CANAL_LABEL[a.canal] || a.canal}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {a.angle && <Caption1 style={{ fontWeight: 700, display: "block" }}>{a.angle}</Caption1>}
+                    <Caption1 style={{ color: BRAND, fontStyle: "italic" }}>« {a.phrase} »</Caption1>
+                  </div>
+                  <CopyButton text={a.phrase} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Détails enrichis repliables */}
+      {brief && disc && (
+        <div style={{ marginTop: 14 }}>
+          <Collapsible title="Profil DISC" icon={Flash24Regular}
+            right={<span style={{ fontSize: 11, fontWeight: 700, color: confColor }}>{discProfileLabel(disc.profil)} · confiance {disc.confiance}</span>}>
+            {disc.confiance === "basse" && (
+              <Caption1 style={{ color: AMBER, display: "block", marginBottom: 8 }}>
+                Signal public limité — lecture indicative, à confirmer au contact.
+              </Caption1>
+            )}
+            {disc.style_communication && <Caption1 style={{ color: "var(--colorNeutralForeground1)", display: "block", marginBottom: 8 }}>{disc.style_communication}</Caption1>}
+            {disc.traits?.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                {disc.traits.map((t, i) => <span key={i} style={{ fontSize: 11, background: "var(--colorNeutralBackground3)", borderRadius: 12, padding: "2px 10px" }}>{t}</span>)}
+              </div>
+            )}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              {disc.a_faire?.length > 0 && (
+                <div>
+                  <Caption1 style={{ fontWeight: 700, color: GREEN, display: "block", marginBottom: 4 }}>À faire</Caption1>
+                  {disc.a_faire.map((x, i) => <Caption1 key={i} style={{ display: "block", color: "var(--colorNeutralForeground2)" }}>· {x}</Caption1>)}
+                </div>
+              )}
+              {disc.a_eviter?.length > 0 && (
+                <div>
+                  <Caption1 style={{ fontWeight: 700, color: RED, display: "block", marginBottom: 4 }}>À éviter</Caption1>
+                  {disc.a_eviter.map((x, i) => <Caption1 key={i} style={{ display: "block", color: "var(--colorNeutralForeground2)" }}>· {x}</Caption1>)}
+                </div>
+              )}
+            </div>
+            {disc.base && <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 10, fontStyle: "italic" }}>Base : {disc.base}</Caption1>}
+          </Collapsible>
+        </div>
+      )}
+
+      {brief && entCount > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <Collapsible title="Entourage décisionnel" icon={Building24Regular}
+            right={<span style={{ fontSize: 11, color: "var(--colorNeutralForeground3)" }}>{entCount} personne(s)</span>}>
+            {ent.equipe?.length > 0 && <><Caption1 style={{ fontWeight: 700, display: "block" }}>Équipe</Caption1><PeopleList people={ent.equipe} kind="relation" /></>}
+            {ent.decideurs?.length > 0 && <><Caption1 style={{ fontWeight: 700, display: "block", marginTop: 12 }}>Décideurs influents</Caption1><PeopleList people={ent.decideurs} /></>}
+            {ent.contacts_secondaires?.length > 0 && <><Caption1 style={{ fontWeight: 700, display: "block", marginTop: 12 }}>Contacts secondaires</Caption1><PeopleList people={ent.contacts_secondaires} /></>}
+          </Collapsible>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function ScoreBar({ label, score, note }) {
   const color = score >= 70 ? BRAND : score >= 40 ? AMBER : RED;
   return (
@@ -368,11 +552,7 @@ function ScoreBreakdown({ scores, prospect }) {
       note: [prospect.email ? `email (${prospect.email_confidence || "?"})` : "email manquant", prospect.phone ? "téléphone" : null, prospect.linkedin_url ? "LinkedIn" : null].filter(Boolean).join(" · ") },
   ];
   return (
-    <Card style={{ padding: "20px 20px 24px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Score décomposé</Body1>
-        <ScoreBadge score={scores.global_score} />
-      </div>
+    <Collapsible title="Score décomposé" right={<ScoreBadge score={scores.global_score} />}>
       <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginBottom: 16 }}>
         Gate d'urgence ×{scores.breakdown.gate} — sans signal récent, le score est plafonné à 50.
         {scores.breakdown.top_signal && (
@@ -380,7 +560,7 @@ function ScoreBreakdown({ scores, prospect }) {
         )}
       </Caption1>
       {bars.map((b) => <ScoreBar key={b.label} {...b} />)}
-    </Card>
+    </Collapsible>
   );
 }
 
@@ -466,7 +646,7 @@ export default function ProspectPage() {
     );
   }
 
-  const { prospect, research, drafts, events } = data;
+  const { prospect, research, drafts, events, brief } = data;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -554,6 +734,9 @@ export default function ProspectPage() {
 
       {/* ── Suivi commercial : historique des interactions + saisie rapide ── */}
       <SuiviCommercial prospect={prospect} events={events || []} onSaved={load} />
+
+      {/* ── Brief commercial à la demande (DISC, triggers, accroches, entourage) ── */}
+      <BriefCommercial brief={brief} busy={busy === "brief"} onGenerate={() => run("brief", "brief", brief ? { force: true } : {})} />
 
       {/* ── Empty state ── */}
       {!research && !busy && (
@@ -709,11 +892,10 @@ export default function ProspectPage() {
       {/* ── Coordonnées ── */}
       <ContactCoords prospect={prospect} onSaved={load} />
 
-      {/* ── Notes ── */}
-      <Card style={{ padding: "20px 20px 24px" }}>
-        <Body1 style={{ fontWeight: 700, fontSize: 15, display: "block", marginBottom: 12 }}>Notes</Body1>
+      {/* ── Notes (repliable) ── */}
+      <Collapsible title="Notes" icon={DocumentBulletList24Regular} defaultOpen={!!(prospect.notes || "").trim()}>
         <NotesEditor prospect={prospect} />
-      </Card>
+      </Collapsible>
     </div>
   );
 }

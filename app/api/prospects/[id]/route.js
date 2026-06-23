@@ -8,7 +8,7 @@ export async function GET(_request, { params }) {
   const supabase = getSupabase();
   const { id } = params;
 
-  const [{ data: prospect, error }, { data: research }, { data: drafts }, { data: events }] = await Promise.all([
+  const [{ data: prospect, error }, { data: research }, { data: drafts }, { data: events }, { data: briefs }] = await Promise.all([
     supabase.from("prospects").select("*").eq("id", id).single(),
     supabase
       .from("research")
@@ -29,6 +29,13 @@ export async function GET(_request, { params }) {
       .eq("prospect_id", id)
       .order("occurred_at", { ascending: false })
       .limit(100),
+    // Brief commercial le plus récent (DISC, triggers, accroches, entourage).
+    supabase
+      .from("prospect_briefs")
+      .select("*")
+      .eq("prospect_id", id)
+      .order("created_at", { ascending: false })
+      .limit(1),
   ]);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
@@ -38,6 +45,7 @@ export async function GET(_request, { params }) {
     research: research?.[0] || null,
     drafts: drafts?.[0] || null,
     events: events || [],
+    brief: briefs?.[0] || null,
   });
 }
 
