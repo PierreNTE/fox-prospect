@@ -14,7 +14,13 @@ import {
   Caption1,
   Badge,
   Spinner,
+  Select,
+  Switch,
 } from "@fluentui/react-components";
+import {
+  STATUS_ORDER, STATUS_LABELS,
+  dataQualityLevel, DATA_QUALITY_LABELS,
+} from "@/lib/constants";
 import {
   Search24Regular,
   Mail24Regular,
@@ -35,7 +41,7 @@ const AMBER = "#F6A623";
 const RED = "#C50F1F";
 
 const NBA_COLORS = {
-  prepare_rdv: GREEN, confirm_rdv: GREEN,
+  prepare_rdv: GREEN, avancer: GREEN, fideliser: GREEN, appeler: GREEN,
   relance_urgente: RED, relance: AMBER,
   generer: BRAND, enrichir: "#8e44ad",
   envoyer: BRAND, rechercher: BRAND,
@@ -132,6 +138,39 @@ function ContactBar({ prospect }) {
   );
 }
 
+// Barre de pilotage : statut commercial (6 niveaux), qualité de la donnée
+// (dérivée), et drapeau RGPD « ne pas contacter » (séparé du statut).
+function StatusBar({ prospect, onPatch }) {
+  const quality = dataQualityLevel(prospect);
+  const qColor = quality === "verifie" ? GREEN : quality === "a_confirmer" ? AMBER : RED;
+  return (
+    <Card style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Caption1 style={{ fontWeight: 600, color: "var(--colorNeutralForeground3)" }}>Statut</Caption1>
+        <Select value={prospect.status} onChange={(_, d) => onPatch({ status: d.value })} style={{ width: "auto" }}>
+          {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
+        </Select>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Caption1 style={{ fontWeight: 600, color: "var(--colorNeutralForeground3)" }}>Donnée</Caption1>
+        <span title="Qualité dérivée de la confiance email + présence d'un téléphone"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700,
+            color: qColor, border: `1px solid ${qColor}`, borderRadius: 12, padding: "2px 10px" }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: qColor }} />
+          {DATA_QUALITY_LABELS[quality]}
+        </span>
+      </div>
+      <div style={{ marginLeft: "auto" }}>
+        <Switch
+          checked={!!prospect.do_not_contact}
+          onChange={(_, d) => onPatch({ do_not_contact: d.checked })}
+          label="Ne pas contacter"
+        />
+      </div>
+    </Card>
+  );
+}
+
 function ScoreBar({ label, score, note }) {
   const color = score >= 70 ? BRAND : score >= 40 ? AMBER : RED;
   return (
@@ -214,7 +253,21 @@ export default function ProspectPage() {
   const nba = useMemo(() => {
     if (!data) return null;
     return computeNba({ prospect: data.prospect, research: data.research, drafts: data.drafts });
-  }, [data?.prospect?.id, data?.research?.id, data?.drafts?.id, data?.prospect?.status, data?.prospect?.email]);
+  }, [data?.prospect?.id, data?.research?.id, data?.drafts?.id, data?.prospect?.status, data?.prospect?.email, data?.prospect?.do_not_contact]);
+
+  // Mise à jour statut / drapeau « ne pas contacter » → PATCH puis recharge.
+  const patchProspect = async (fields) => {
+    setError("");
+    try {
+      const res = await fetch(`/api/prospects/${id}`, {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify(fields),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || d.error) { setError(d.error || `Erreur ${res.status}.`); return; }
+      await load();
+    } catch (e) { setError(e.message); }
+  };
 
   const run = async (endpoint, label, extraBody = {}) => {
     setBusy(label); setError("");
@@ -286,6 +339,9 @@ export default function ProspectPage() {
 
       {/* ── Coordonnées (info la plus visible) ── */}
       <ContactBar prospect={prospect} />
+
+      {/* ── Statut commercial + qualité donnée + opposition RGPD ── */}
+      <StatusBar prospect={prospect} onPatch={patchProspect} />
 
       {/* ── Error ── */}
       {error && (

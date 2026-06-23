@@ -32,6 +32,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { eur } from "@/lib/format";
+import { STATUS_ORDER, STATUS_LABELS } from "@/lib/constants";
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 
@@ -41,22 +42,14 @@ const GREEN = "#107C10";
 const RED = "#C50F1F";
 const BLUE = "#0078D4";
 
-const STATUS_ORDER = ["nouveau", "recherché", "contacté", "répondu", "rdv", "opt-out"];
-const STATUS_LABELS = {
-  nouveau: "Nouveau",
-  recherché: "Recherché",
-  contacté: "Contacté",
-  répondu: "Répondu",
-  rdv: "RDV",
-  "opt-out": "Opt-out",
-};
+// STATUS_ORDER + STATUS_LABELS importés de lib/constants (source de vérité).
 const STATUS_COLORS = {
-  nouveau: "#8079EF",
-  recherché: BLUE,
-  contacté: AMBER,
-  répondu: "#e67e22",
-  rdv: GREEN,
-  "opt-out": RED,
+  non_contacte: "#8079EF",
+  contacte: BLUE,
+  en_cours: AMBER,
+  interesse: "#E8730C",
+  refuse: RED,
+  client: GREEN,
 };
 
 const EVENT_LABELS = {
@@ -221,7 +214,7 @@ export default function AnalyticsPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch("/api/analytics")
+    fetch("/api/analytics", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => { if (d.error) setError(d.error); else setData(d); })
       .catch(() => setError("Erreur de chargement."));

@@ -28,6 +28,10 @@ import {
   ArrowImport24Regular,
 } from "@fluentui/react-icons";
 import { SkeletonLine, SkeletonTableRows, SkeletonFunnelCards } from "@/components/Skeleton";
+import {
+  STATUS_ORDER, STATUS_LABELS,
+  dataQualityLevel, DATA_QUALITY_LABELS,
+} from "@/lib/constants";
 
 const BRAND = "#5B53E6";
 const GREEN = "#107C10";
@@ -35,7 +39,6 @@ const AMBER = "#F6A623";
 const RED = "#C50F1F";
 const BLUE = "#0078D4";
 
-const STATUSES = ["nouveau", "recherché", "contacté", "répondu", "rdv", "perdu", "opt-out"];
 const SORT_OPTIONS = [
   { value: "recent", label: "Récents d'abord" },
   { value: "score", label: "Score ↓" },
@@ -43,21 +46,35 @@ const SORT_OPTIONS = [
   { value: "company", label: "Entreprise A → Z" },
 ];
 
+// Couleur de chaque étape du funnel commercial (du plus froid au plus chaud).
 const STAGE_COLORS = {
-  nouveau: "var(--colorNeutralForeground3)",
-  recherché: BLUE,
-  contacté: AMBER,
-  répondu: "#e67e22",
-  rdv: GREEN,
+  non_contacte: "var(--colorNeutralForeground3)",
+  contacte: BLUE,
+  en_cours: AMBER,
+  interesse: "#E8730C",
+  refuse: RED,
+  client: GREEN,
 };
 
 const NBA_COLORS = {
-  prepare_rdv: GREEN, confirm_rdv: GREEN,
+  prepare_rdv: GREEN, avancer: GREEN, fideliser: GREEN, appeler: GREEN,
   relance_urgente: RED, relance: AMBER,
   generer: BRAND, enrichir: "#8e44ad",
   envoyer: BRAND, rechercher: BRAND,
   opt_out: "var(--colorNeutralForeground3)", archive: "var(--colorNeutralForeground3)",
 };
+
+// Pastille de qualité de la donnée (dérivée — cf. lib/constants.dataQualityLevel).
+function QualityDot({ prospect }) {
+  const level = dataQualityLevel(prospect);
+  const color = level === "verifie" ? GREEN : level === "a_confirmer" ? AMBER : RED;
+  return (
+    <span
+      title={DATA_QUALITY_LABELS[level]}
+      style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }}
+    />
+  );
+}
 
 function ScoreBadge({ score }) {
   if (score == null) return <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>—</Caption1>;
@@ -107,7 +124,6 @@ export default function Dashboard() {
   useEffect(() => { load(); loadPriorities(); }, []);
 
   const setStatus = async (id, status) => {
-    if (status === "opt-out" && !confirm("Inscrire ce contact en opposition permanente ?")) return;
     setError("");
     const res = await fetch(`/api/prospects/${id}`, {
       method: "PATCH", headers: { "content-type": "application/json" },
@@ -120,7 +136,7 @@ export default function Dashboard() {
 
   const counts = useMemo(() => {
     const c = { tous: 0 };
-    for (const s of STATUSES) c[s] = 0;
+    for (const s of STATUS_ORDER) c[s] = 0;
     (prospects || []).forEach((p) => { c[p.status] = (c[p.status] || 0) + 1; c.tous++; });
     return c;
   }, [prospects]);
@@ -174,7 +190,7 @@ export default function Dashboard() {
 
       {/* ── Pipeline funnel ── */}
       <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
-        {prospects === null ? <SkeletonFunnelCards count={5} /> : ["nouveau", "recherché", "contacté", "répondu", "rdv"].map((s) => {
+        {prospects === null ? <SkeletonFunnelCards count={6} /> : STATUS_ORDER.map((s) => {
           const active = filterStatus === s;
           const color = STAGE_COLORS[s];
           return (
@@ -190,8 +206,8 @@ export default function Dashboard() {
               <div style={{ fontSize: 24, fontWeight: 800, color: counts[s] > 0 ? color : "var(--colorNeutralForeground3)", lineHeight: 1 }}>
                 {counts[s] ?? 0}
               </div>
-              <Caption1 style={{ color: "var(--colorNeutralForeground2)", textTransform: "capitalize", marginTop: 4, display: "block" }}>
-                {s}
+              <Caption1 style={{ color: "var(--colorNeutralForeground2)", marginTop: 4, display: "block" }}>
+                {STATUS_LABELS[s]}
               </Caption1>
             </Card>
           );
@@ -306,8 +322,16 @@ export default function Dashboard() {
               {visible.map((p) => (
                 <TableRow key={p.id} style={{ cursor: "pointer" }}>
                   <TableCell onClick={() => router.push(`/prospects/${p.id}`)}>
-                    <Body1 style={{ fontWeight: 600 }}>{p.first_name} {p.last_name}</Body1>
-                    <div style={{ marginTop: 2 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <Body1 style={{ fontWeight: 600 }}>{p.first_name} {p.last_name}</Body1>
+                      {p.do_not_contact && (
+                        <span title="Ne pas contacter" style={{ fontSize: 10, fontWeight: 700, color: RED, border: `1px solid ${RED}`, borderRadius: 4, padding: "0 4px" }}>
+                          🚫
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
+                      <QualityDot prospect={p} />
                       {p.phone ? (
                         <a href={`tel:${(p.phone || "").replace(/\s/g, "")}`} onClick={(e) => e.stopPropagation()}
                           style={{ fontSize: 12, color: GREEN, fontWeight: 600, textDecoration: "none" }}>
@@ -339,7 +363,7 @@ export default function Dashboard() {
                       onClick={(e) => e.stopPropagation()}
                       style={{ width: "auto" }}
                     >
-                      {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                      {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
                     </Select>
                   </TableCell>
                 </TableRow>

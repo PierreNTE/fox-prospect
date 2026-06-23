@@ -38,32 +38,36 @@ export async function PATCH(request, { params }) {
   const { id } = params;
   const body = await request.json();
 
-  const allowed = ["first_name", "last_name", "role", "company", "company_website", "linkedin_url", "email", "phone", "status", "notes"];
+  const allowed = ["first_name", "last_name", "role", "company", "company_website", "linkedin_url", "email", "phone", "status", "notes", "do_not_contact"];
   const update = {};
   for (const key of allowed) if (key in body) update[key] = body[key];
 
-  // Passage en opt-out ou changement de statut : fetch le prospect courant.
+  // Changement de statut ou de drapeau « ne pas contacter » : on relit l'état courant.
   let prevStatus = null;
-  if (update.status) {
-    const { data: p } = await supabase.from("prospects").select("email, status").eq("id", id).single();
+  let prevDnc = false;
+  const touchesStatus = "status" in update;
+  const touchesDnc = "do_not_contact" in update;
+  if (touchesStatus || touchesDnc) {
+    const { data: p } = await supabase.from("prospects").select("email, status, do_not_contact").eq("id", id).single();
     prevStatus = p?.status ?? null;
-    if (update.status === "opt-out") {
-      const email = update.email || p?.email;
-      if (!email) {
-        return NextResponse.json(
-          { error: "Renseigne d'abord l'email du contact : l'opposition est enregistrée par email." },
-          { status: 400 }
-        );
-      }
-      await supabase.from("optout").upsert({ email: email.toLowerCase(), reason: "demande du contact" });
+    prevDnc = p?.do_not_contact ?? false;
+
+    // Activation de l'opposition RGPD → inscription permanente en liste d'opposition
+    // (par email, si connu). Un contact « téléphone seul » est tout de même marqué.
+    if (update.do_not_contact === true && !prevDnc) {
+      const email = (update.email || p?.email || "").toLowerCase();
+      if (email) await supabase.from("optout").upsert({ email, reason: "demande du contact" });
     }
   }
 
   const { data, error } = await supabase.from("prospects").update(update).eq("id", id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  if (update.status && prevStatus !== update.status) {
+  if (touchesStatus && prevStatus !== update.status) {
     logEvent({ kind: "status_change", prospectId: id, fromStatus: prevStatus, toStatus: update.status });
+  }
+  if (update.do_not_contact === true && !prevDnc) {
+    logEvent({ kind: "opt_out", prospectId: id, note: "Marqué « ne pas contacter »" });
   }
 
   return NextResponse.json({ prospect: data });

@@ -92,5 +92,9 @@ export async function GET() {
       avg_recent: avgRecentScore,
       sample_size: recentScores.length,
     },
+  }, {
+    // Endpoint de données dynamiques : jamais mis en cache navigateur/proxy,
+    // sinon le tableau de bord peut afficher un état périmé (ex. anciens statuts).
+    headers: { "cache-control": "no-store, max-age=0" },
   });
 }

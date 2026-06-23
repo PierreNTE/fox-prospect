@@ -66,8 +66,9 @@ export async function GET(request) {
   }
 
   // Qualification autonome : auto-promotion des résultats de scraping + mise en
-  // file d'un job research_prospect par prospect « nouveau ». (AUTO_QUALIFY=off
-  // pour désactiver.) Le drain ci-dessous les qualifie, borné par le budget.
+  // file d'un job research_prospect par prospect non encore recherché
+  // (researched_at IS NULL). (AUTO_QUALIFY=off pour désactiver.) Le drain
+  // ci-dessous les qualifie, borné par le budget.
   let autoq = null;
   try {
     autoq = await enqueueAutoQualif(supabase);

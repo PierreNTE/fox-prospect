@@ -15,7 +15,7 @@ export async function GET(request) {
   const { data: prospects, error } = await supabase
     .from("prospects")
     .select("id, first_name, last_name, role, company, company_website, email, phone, linkedin_url, status, fit_score, notes, created_at, account_id")
-    .not("status", "in", '("opt-out")')
+    .eq("do_not_contact", false)
     .order("fit_score", { ascending: false, nullsFirst: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

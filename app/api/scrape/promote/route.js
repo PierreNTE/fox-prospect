@@ -5,7 +5,7 @@ import { logEvent } from "@/lib/events";
 export const dynamic = "force-dynamic";
 
 // POST /api/scrape/promote { result_id }
-// Promeut un résultat de scraping en prospect (statut 'nouveau'), avec contrôle
+// Promeut un résultat de scraping en prospect (statut 'non_contacte'), avec contrôle
 // opt-out côté serveur. La qualification 2 passes est ensuite déclenchée par le
 // client via /api/research (qui porte le cookie de session).
 export async function POST(request) {
@@ -57,7 +57,7 @@ export async function POST(request) {
       email,
       email_confidence: r.email_confidence || "",
       email_source: r.email_source || "",
-      status: "nouveau",
+      status: "non_contacte",
       account_id: r.account_id || null,
       notes: r.source ? `Importé via scraping — source : ${r.source}` : "",
     })
