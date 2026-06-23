@@ -88,6 +88,7 @@ export default function Dashboard() {
   const [sortBy, setSortBy] = useState("recent");
   const [minScore, setMinScore] = useState(0);
   const [showPriorities, setShowPriorities] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(50); // pagination « voir plus »
 
   const load = async () => {
     const res = await fetch("/api/prospects");
@@ -143,8 +144,12 @@ export default function Dashboard() {
     return sorted;
   }, [prospects, q, filterStatus, sortBy, minScore]);
 
+  // Réinitialise la pagination quand les filtres/tri changent.
+  useEffect(() => { setVisibleCount(50); }, [q, filterStatus, sortBy, minScore]);
+
   const hasFilters = q.trim() || filterStatus !== "tous" || minScore > 0;
   const topPriorities = (priorities || []).filter((p) => p.nba.priority >= 50);
+  const visible = filtered.slice(0, visibleCount);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -298,7 +303,7 @@ export default function Dashboard() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((p) => (
+              {visible.map((p) => (
                 <TableRow key={p.id} style={{ cursor: "pointer" }}>
                   <TableCell onClick={() => router.push(`/prospects/${p.id}`)}>
                     <Body1 style={{ fontWeight: 600 }}>{p.first_name} {p.last_name}</Body1>
@@ -326,6 +331,14 @@ export default function Dashboard() {
               ))}
             </TableBody>
           </Table>
+        )}
+
+        {prospects !== null && filtered.length > visibleCount && (
+          <div style={{ padding: "12px 16px", textAlign: "center", borderTop: "1px solid var(--colorNeutralStroke2)" }}>
+            <Button appearance="subtle" onClick={() => setVisibleCount((n) => n + 50)}>
+              Voir plus ({filtered.length - visibleCount} restant{filtered.length - visibleCount > 1 ? "s" : ""})
+            </Button>
+          </div>
         )}
       </Card>
     </div>

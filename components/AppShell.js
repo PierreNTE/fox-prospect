@@ -91,6 +91,14 @@ export default function AppShell({ children }) {
           </div>
           <div className="app-topbar-actions">
             <button
+              className="app-iconbtn app-search-mobile"
+              aria-label="Rechercher"
+              title="Rechercher"
+              onClick={() => setShowSearch(true)}
+            >
+              <Search24Regular />
+            </button>
+            <button
               className="app-iconbtn"
               aria-label="Activité"
               title="Activité récente"

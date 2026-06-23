@@ -75,6 +75,7 @@
 
 .app-mobile-brand { display: none; }
 .app-bottombar { display: none; }
+.app-search-mobile { display: none; }
 
 /* ---------- Search Modal (command palette) ---------- */
 .search-overlay {
@@ -148,6 +149,7 @@
   .app-rail { display: none; }
   .app-mobile-brand { display: inline-flex; align-items: center; }
   .app-search { display: none; }
+  .app-search-mobile { display: inline-flex; }
   .app-main { padding: 16px 14px 88px; }
 
   /* Tables: conteneur scrollable sur mobile */
