@@ -1,20 +1,12 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
+import { listProspects } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
+// Rafraîchissement client de la liste (le 1er rendu vient du serveur via lib/data).
 export async function GET() {
-  const supabase = getSupabase();
-  // Liste = uniquement les colonnes affichées par le tableau de bord (funnel,
-  // table, puces qualité/relance). On évite `select *` qui tire `notes` (~10 Ko)
-  // et 7 autres colonnes inutiles ici → payload ~40 % plus léger.
-  const { data, error } = await supabase
-    .from("prospects")
-    .select("id, first_name, last_name, role, company, status, fit_score, email, phone, email_confidence, do_not_contact, follow_up_at, next_action")
-    .order("created_at", { ascending: false });
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ prospects: data });
+  return NextResponse.json({ prospects: await listProspects(getSupabase()) });
 }
 
 export async function POST(request) {
