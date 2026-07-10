@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { callClaudeJson } from "@/lib/anthropic";
 import { generateSystemPrompt, generateUserPrompt } from "@/lib/prompts";
-import { validateGenerate } from "@/lib/schemas";
+import { validateGenerate, GENERATE_SCHEMA } from "@/lib/schemas";
 import { logAiRun } from "@/lib/ai-runs";
 import { logEvent } from "@/lib/events";
 import { checkMonthlyBudget } from "@/lib/budget";
@@ -51,6 +51,7 @@ export async function POST(request) {
       user: generateUserPrompt({ prospect, research, offer: settings?.offer, sender: settings || {}, triggerSignal: triggerSignal || null }),
       maxTokens: 1500,
       webSearch: false,
+      schema: GENERATE_SCHEMA,
     });
 
     const result = validateGenerate(raw);
