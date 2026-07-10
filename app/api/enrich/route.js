@@ -5,6 +5,7 @@ import { enrichSystemPrompt, enrichUserPrompt } from "@/lib/prompts-enrich";
 import { validateEnrich } from "@/lib/schemas";
 import { logAiRun } from "@/lib/ai-runs";
 import { getEnvConfig, MODEL_HAIKU } from "@/lib/constants";
+import { deterministicEnrich } from "@/lib/enrich";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // recherche web (Fluid Compute : jusqu'à 300 s même en Hobby)
@@ -25,6 +26,27 @@ export async function POST(request) {
   const { maxSearches } = getEnvConfig();
 
   try {
+    // S2 — chemin déterministe d'abord (pattern + MX, zéro token) : couvre le
+    // cas nominal. Le LLM ne sert plus qu'en repli (domaine inconnu, pas de MX).
+    const det = await deterministicEnrich(supabase, prospect);
+    if (det) {
+      const update = {
+        email_confidence: det.email_confidence,
+        email_source: det.email_source,
+      };
+      if (det.email && !prospect.email) update.email = det.email;
+
+      const { data: saved, error: updateError } = await supabase
+        .from("prospects")
+        .update(update)
+        .eq("id", prospectId)
+        .select()
+        .single();
+      if (updateError) throw new Error(updateError.message);
+
+      return NextResponse.json({ prospect: saved, enrichment: { ...det, phone: "" }, deterministic: true });
+    }
+
     const { json: raw, usage, webSearchCount } = await callClaudeJson({
       system: enrichSystemPrompt(),
       user: enrichUserPrompt({ prospect }),
