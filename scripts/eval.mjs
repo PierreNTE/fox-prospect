@@ -203,24 +203,31 @@ async function callNoSearch(system, user, model = MODEL) {
 
 // ── Vérifications qualité ─────────────────────────────────────────────────────
 
-function checkOutput(json, expect) {
+// expectHooks : true en mono-passe (le prompt historique produit des hooks) ;
+// false en 2 passes depuis S2 — les hooks sont générés à la demande dans
+// /api/generate, plus dans le jugement. Les noter ici serait une fausse
+// régression sur 100 % des cas.
+function checkOutput(json, expect, { expectHooks = true } = {}) {
   const checks = {};
   if (!json || typeof json !== "object") {
-    return {
+    const failed = {
       json_valid: false,
       signals_present: false,
       score_in_range: false,
       score_not_zero: false,
-      hooks_present: false,
       summary_long: false,
       sources_present: false,
     };
+    if (expectHooks) failed.hooks_present = false;
+    return failed;
   }
   checks.json_valid = true;
   checks.signals_present = Array.isArray(json.signals) && json.signals.length >= (expect?.min_signals ?? 1);
   checks.score_in_range = typeof json.fit_score === "number" && json.fit_score >= 0 && json.fit_score <= 100;
   checks.score_not_zero = typeof json.fit_score === "number" && json.fit_score > 0;
-  checks.hooks_present = Array.isArray(json.hooks) && json.hooks.length >= (expect?.min_hooks ?? 1);
+  if (expectHooks) {
+    checks.hooks_present = Array.isArray(json.hooks) && json.hooks.length >= (expect?.min_hooks ?? 1);
+  }
   checks.summary_long = typeof json.summary === "string" && json.summary.length >= 80;
   checks.sources_present = Array.isArray(json.sources) && json.sources.length > 0;
   return checks;
@@ -352,7 +359,7 @@ async function runCase(cas) {
   totalTokensOut += u2?.output_tokens ?? 0;
   totalSearches += s2;
 
-  const checks = checkOutput(json, expect);
+  const checks = checkOutput(json, expect, { expectHooks: false });
   printChecks(checks);
   if (json) console.log(`      ${CYAN}→ score ${json.fit_score} · ${(json.signals || []).length} signal(s) · ${(json.hooks || []).length} hook(s)${RESET}`);
 
@@ -487,7 +494,8 @@ async function _runCase(cas, pass1Only, singlePass, haikuExtract = false) {
     extraChecks.facts_count = extraction.facts.length;
   }
 
-  const checks = checkOutput(json, expect);
+  // Hooks attendus seulement si on est retombé en mono-passe (prompt historique).
+  const checks = checkOutput(json, expect, { expectHooks: !extraction });
   printChecks(checks);
   if (json) console.log(`      ${CYAN}→ score ${json.fit_score} · ${(json.signals || []).length} signal(s) · ${(json.hooks || []).length} hook(s)${RESET}`);
   const passed = countPasses(checks);
