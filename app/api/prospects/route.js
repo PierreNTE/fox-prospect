@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { listProspects } from "@/lib/data";
+import { resolveSiren, upsertCompany } from "@/lib/sirene";
 
 export const dynamic = "force-dynamic";
 
@@ -14,22 +15,34 @@ export async function POST(request) {
   const body = await request.json();
   const rows = Array.isArray(body) ? body : [body];
 
-  // Filtre la liste d'opposition : on n'importe jamais un email opt-out.
-  const { data: optouts } = await supabase.from("optout").select("email");
-  const blocked = new Set((optouts || []).map((o) => o.email.toLowerCase()));
+  // Requêtes de dédup BORNÉES par le contenu de l'import (l'ancien code
+  // chargeait toute la table prospects — O(n) mémoire, mort à l'échelle).
+  const emails = [...new Set(rows.map((r) => (r.email || "").trim().toLowerCase()).filter(Boolean))];
+  const companies = [...new Set(rows.map((r) => (r.company || "").trim()).filter(Boolean))];
 
-  // Dédoublonnage contre l'existant : même email, ou même nom + entreprise.
-  const { data: existing } = await supabase
-    .from("prospects")
-    .select("email, first_name, last_name, company");
-  const knownEmails = new Set(
-    (existing || []).filter((p) => p.email).map((p) => p.email.toLowerCase())
-  );
-  const knownPeople = new Set(
-    (existing || []).map((p) =>
-      `${p.first_name}|${p.last_name}|${p.company}`.toLowerCase()
-    )
-  );
+  const [{ data: optouts }, { data: byEmail }] = await Promise.all([
+    emails.length
+      ? supabase.from("optout").select("email").in("email", emails)
+      : Promise.resolve({ data: [] }),
+    emails.length
+      ? supabase.from("prospects").select("email").in("email", emails)
+      : Promise.resolve({ data: [] }),
+  ]);
+  const blocked = new Set((optouts || []).map((o) => o.email.toLowerCase()));
+  const knownEmails = new Set((byEmail || []).map((p) => (p.email || "").toLowerCase()));
+
+  // Dédup nom+entreprise : une requête ilike par entreprise distincte de
+  // l'import (bornée par la taille du fichier, insensible à la casse).
+  const knownPeople = new Set();
+  for (const company of companies) {
+    const { data: sameCompany } = await supabase
+      .from("prospects")
+      .select("first_name, last_name, company")
+      .ilike("company", company);
+    for (const p of sameCompany || []) {
+      knownPeople.add(`${p.first_name}|${p.last_name}|${p.company}`.toLowerCase());
+    }
+  }
 
   const normalizeUrl = (u) => {
     const v = (u || "").trim();
@@ -60,7 +73,7 @@ export async function POST(request) {
       company: (r.company || "").trim(),
       company_website: normalizeUrl(r.company_website),
       linkedin_url: normalizeUrl(r.linkedin_url),
-      email: (r.email || "").trim(),
+      email: (r.email || "").trim().toLowerCase(),
     });
   }
 
@@ -92,6 +105,21 @@ export async function POST(request) {
         .select("id")
         .single();
       accountId = created?.id || null;
+
+      // Couplage accounts→companies dès la création (fusion-lite, audit §1.2) :
+      // résolution SIREN non bloquante, le compte est rattaché quand elle aboutit.
+      if (accountId) {
+        const domain = (p.company_website || "").replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+        resolveSiren({ name: company, domain })
+          .then(async (sireneData) => {
+            if (!sireneData) return;
+            const companyId = await upsertCompany(supabase, sireneData, domain ? { domain } : {});
+            if (companyId) {
+              await supabase.from("accounts").update({ company_id: companyId }).eq("id", accountId);
+            }
+          })
+          .catch(() => {});
+      }
     }
     if (accountId) await supabase.from("prospects").update({ account_id: accountId }).eq("id", p.id);
   }
