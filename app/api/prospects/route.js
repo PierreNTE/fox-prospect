@@ -6,12 +6,19 @@ import { resolveSiren, upsertCompany } from "@/lib/sirene";
 export const dynamic = "force-dynamic";
 
 // Rafraîchissement client de la liste (le 1er rendu vient du serveur via lib/data).
-// ?offset=N&limit=M pour charger la suite (pagination serveur du « Voir plus »).
+// Pagination par curseur (S5) : ?limit=&cursor=<created_at ISO de la dernière ligne>.
+// `next_cursor` vaut null quand la page reçue est incomplète — c'est le signal
+// de fin, que l'appelant n'a donc pas à déduire d'un compte de lignes.
 export async function GET(request) {
   const sp = new URL(request.url).searchParams;
   const limit = Math.min(Number(sp.get("limit")) || 500, 1000);
-  const offset = Math.max(Number(sp.get("offset")) || 0, 0);
-  return NextResponse.json({ prospects: await listProspects(getSupabase(), { limit, offset }) });
+  const cursor = sp.get("cursor") || undefined;
+
+  const prospects = await listProspects(getSupabase(), { limit, cursor });
+  const nextCursor = prospects.length >= limit
+    ? prospects[prospects.length - 1]?.created_at ?? null
+    : null;
+  return NextResponse.json({ prospects, next_cursor: nextCursor });
 }
 
 export async function POST(request) {

@@ -229,12 +229,18 @@ export default function DashboardClient({ initialProspects = null }) {
   const [serverDone, setServerDone] = useState((initialProspects || []).length < 500);
   const loadMoreFromServer = async () => {
     setLoadingMore(true);
-    const offset = (prospects || []).length;
-    const { ok, data, error: err } = await fetchJson(`/api/prospects?offset=${offset}`, { cache: "no-store" });
+    // Curseur et non décalage : la date de la dernière ligne reçue. Un décalage
+    // se décale quand une qualification insère une ligne entre deux clics, ce
+    // qui fait sauter ou dupliquer un prospect au passage de page.
+    const cursor = (prospects || [])[(prospects || []).length - 1]?.created_at;
+    const { ok, data, error: err } = await fetchJson(
+      `/api/prospects${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+      { cache: "no-store" }
+    );
     setLoadingMore(false);
     if (!ok) { setError(err); return; }
     const fresh = data.prospects || [];
-    if (fresh.length < 500) setServerDone(true);
+    if (!data.next_cursor) setServerDone(true);
     setProspects((list) => {
       const known = new Set((list || []).map((p) => p.id));
       return [...(list || []), ...fresh.filter((p) => !known.has(p.id))];
