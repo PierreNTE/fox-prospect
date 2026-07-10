@@ -7,6 +7,7 @@ import { FoxMark, FoxLogo } from "@/components/FoxLogo";
 import SearchModal from "@/components/SearchModal";
 import {
   Board24Regular,
+  ColumnTriple24Regular,
   BuildingMultiple24Regular,
   Globe24Regular,
   ArrowImport24Regular,
@@ -19,6 +20,7 @@ import {
 
 const NAV = [
   { href: "/", label: "Piste", Icon: Board24Regular },
+  { href: "/pipeline", label: "Pipeline", Icon: ColumnTriple24Regular },
   { href: "/accounts", label: "Comptes", Icon: BuildingMultiple24Regular },
   { href: "/scraping", label: "Scraping", Icon: Globe24Regular },
   { href: "/import", label: "Importer", Icon: ArrowImport24Regular },
