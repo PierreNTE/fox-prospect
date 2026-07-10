@@ -6,8 +6,17 @@ import { resolveSiren, upsertCompany } from "@/lib/sirene";
 export const dynamic = "force-dynamic";
 
 // Rafraîchissement client de la liste (le 1er rendu vient du serveur via lib/data).
-export async function GET() {
-  return NextResponse.json({ prospects: await listProspects(getSupabase()) });
+// Pagination par curseur (S5) : ?limit=&cursor=<created_at ISO de la dernière ligne>.
+export async function GET(request) {
+  const { searchParams } = new URL(request.url);
+  const limit = Number(searchParams.get("limit")) || 1000;
+  const cursor = searchParams.get("cursor") || undefined;
+
+  const prospects = await listProspects(getSupabase(), { limit, cursor });
+  const nextCursor = prospects.length >= Math.min(limit, 1000)
+    ? prospects[prospects.length - 1]?.created_at ?? null
+    : null;
+  return NextResponse.json({ prospects, next_cursor: nextCursor });
 }
 
 export async function POST(request) {
