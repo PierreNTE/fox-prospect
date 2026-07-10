@@ -1,5 +1,14 @@
 import { NextResponse } from "next/server";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { SESSION_COOKIE, sessionToken } from "@/lib/auth";
+
+// Comparaison en temps constant : on compare les SHA-256 (longueur fixe) pour
+// ne fuiter ni le contenu ni la longueur des identifiants.
+function safeEqual(a, b) {
+  const ha = createHash("sha256").update(String(a)).digest();
+  const hb = createHash("sha256").update(String(b)).digest();
+  return timingSafeEqual(ha, hb);
+}
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +61,7 @@ export async function POST(request) {
   const { username, password } = await request.json().catch(() => ({}));
   const user = process.env.APP_USER || "pierre";
 
-  if (username !== user || password !== appPassword) {
+  if (!safeEqual(`${username}:${password}`, `${user}:${appPassword}`)) {
     return NextResponse.json(
       { error: "Identifiant ou mot de passe incorrect." },
       { status: 401 }

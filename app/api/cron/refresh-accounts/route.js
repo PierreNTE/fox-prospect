@@ -87,5 +87,13 @@ export async function GET(request) {
     queue = { error: e.message };
   }
 
-  return NextResponse.json({ refreshed: done.length, details: done, autoq, queue });
+  // Purge RGPD quotidienne (fiches opt-out > 36 mois — la liste d'opposition
+  // `optout` est conservée). Best-effort : silencieux si la RPC n'existe pas.
+  let purged = 0;
+  try {
+    const { data } = await supabase.rpc("purge_optout_prospects");
+    purged = data ?? 0;
+  } catch { /* migration v9 non appliquée */ }
+
+  return NextResponse.json({ refreshed: done.length, details: done, autoq, queue, purged });
 }

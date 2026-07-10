@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE, sessionToken } from "@/lib/auth";
+import { rateLimit } from "@/lib/ratelimit";
 
 // Protection de l'app : indispensable car l'app déployée consomme TA clé API
 // Anthropic. Sans APP_PASSWORD défini, l'app reste ouverte (pratique en local),
@@ -32,6 +33,29 @@ export async function middleware(request) {
 
   const user = process.env.APP_USER || "pierre";
   const { pathname } = request.nextUrl;
+
+  // ── Garde des mutations API (S4) ────────────────────────────────────────────
+  // 1. Anti-CSRF : si un en-tête Origin est présent, il doit correspondre à
+  //    l'hôte (sameSite=lax couvre l'essentiel ; ceci ferme le reste).
+  // 2. Anti-abus : rate-limit par IP — un cookie volé ne peut plus vider le
+  //    budget IA en rafale. Les crons (Bearer CRON_SECRET) ne passent pas ici.
+  if (pathname.startsWith("/api/") && !pathname.startsWith("/api/cron/") &&
+      pathname !== "/api/login" && request.method !== "GET") {
+    const origin = request.headers.get("origin");
+    if (origin) {
+      let originHost = null;
+      try { originHost = new URL(origin).host; } catch {}
+      if (originHost !== request.headers.get("host")) {
+        return new NextResponse("Origine non autorisée.", { status: 403 });
+      }
+    }
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
+    if (rateLimit(`${ip}:api`, { max: 120 }).limited) {
+      return new NextResponse("Trop de requêtes — réessaie dans quelques minutes.", {
+        status: 429, headers: { "retry-after": "300" },
+      });
+    }
+  }
 
   // La page de connexion et sa route restent accessibles.
   if (pathname === "/login" || pathname === "/api/login") return NextResponse.next();
