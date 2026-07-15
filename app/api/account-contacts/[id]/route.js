@@ -9,7 +9,7 @@ export async function PATCH(request, { params }) {
   const body = await request.json();
 
   const allowed = [
-    "first_name", "last_name", "role", "responsibilities",
+    "first_name", "last_name", "role", "department", "level", "responsibilities",
     "email", "phone", "linkedin_url",
     "reliability", "role_confidence", "data_date",
     "source", "manager_id", "validated",

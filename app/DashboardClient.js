@@ -10,8 +10,6 @@ import {
   Title2,
   Body1,
   Caption1,
-  Badge,
-  Spinner,
   Table,
   TableHeader,
   TableRow,
@@ -21,13 +19,10 @@ import {
 } from "@fluentui/react-components";
 import {
   Search24Regular,
-  ArrowSort24Regular,
   Dismiss24Regular,
-  Flash24Regular,
-  ArrowRight24Regular,
   ArrowImport24Regular,
 } from "@fluentui/react-icons";
-import { SkeletonLine, SkeletonTableRows, SkeletonFunnelCards } from "@/components/Skeleton";
+import { SkeletonTableRows, SkeletonFunnelCards } from "@/components/Skeleton";
 import {
   STATUS_ORDER, STATUS_LABELS,
   dataQualityLevel, DATA_QUALITY_LABELS,
@@ -54,14 +49,6 @@ const STAGE_COLORS = {
   interesse: "#E8730C",
   refuse: RED,
   client: GREEN,
-};
-
-const NBA_COLORS = {
-  prepare_rdv: GREEN, avancer: GREEN, fideliser: GREEN, appeler: GREEN,
-  relance_urgente: RED, relance: AMBER, relance_prevue: RED,
-  generer: BRAND, enrichir: "#8e44ad",
-  envoyer: BRAND, rechercher: BRAND,
-  opt_out: "var(--colorNeutralForeground3)", archive: "var(--colorNeutralForeground3)",
 };
 
 // Pastille de qualité de la donnée (dérivée — cf. lib/constants.dataQualityLevel).
@@ -96,32 +83,17 @@ function ScoreBadge({ score }) {
   return <span style={{ fontWeight: 700, fontSize: 14, color }}>{score}</span>;
 }
 
-function NbaChip({ nba }) {
-  const color = NBA_COLORS[nba.action] || BRAND;
-  return (
-    <span style={{
-      display: "inline-block", fontSize: 11, fontWeight: 700,
-      padding: "2px 8px", borderRadius: 12,
-      background: color, color: "#fff", whiteSpace: "nowrap",
-    }}>
-      {nba.label}
-    </span>
-  );
-}
-
 // Les données initiales arrivent du composant serveur (rendu SSR : déjà dans le
 // HTML, aucune attente réseau au premier affichage). Les rafraîchissements
 // (après changement de statut) repassent par l'API.
-export default function DashboardClient({ initialProspects = null, initialPriorities = null }) {
+export default function DashboardClient({ initialProspects = null }) {
   const router = useRouter();
   const [prospects, setProspects] = useState(initialProspects);
-  const [priorities, setPriorities] = useState(initialPriorities);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
   const [filterStatus, setFilterStatus] = useState("tous");
   const [sortBy, setSortBy] = useState("recent");
   const [minScore, setMinScore] = useState(0);
-  const [showPriorities, setShowPriorities] = useState(true);
   const [visibleCount, setVisibleCount] = useState(50); // pagination « voir plus »
 
   const load = async () => {
@@ -129,13 +101,6 @@ export default function DashboardClient({ initialProspects = null, initialPriori
     const data = await res.json();
     if (data.error) setError(data.error);
     else setProspects(data.prospects);
-  };
-
-  const loadPriorities = async () => {
-    const res = await fetch("/api/prospects/priorities", { cache: "no-store" }).catch(() => null);
-    if (!res?.ok) return;
-    const d = await res.json().catch(() => ({}));
-    if (d.priorities) setPriorities(d.priorities);
   };
 
   const setStatus = async (id, status) => {
@@ -146,7 +111,7 @@ export default function DashboardClient({ initialProspects = null, initialPriori
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) setError(data.error || `Erreur ${res.status}.`);
-    load(); loadPriorities();
+    load();
   };
 
   const counts = useMemo(() => {
@@ -179,7 +144,6 @@ export default function DashboardClient({ initialProspects = null, initialPriori
   useEffect(() => { setVisibleCount(50); }, [q, filterStatus, sortBy, minScore]);
 
   const hasFilters = q.trim() || filterStatus !== "tous" || minScore > 0;
-  const topPriorities = (priorities || []).filter((p) => p.nba.priority >= 50);
   const visible = filtered.slice(0, visibleCount);
 
   return (
@@ -187,9 +151,9 @@ export default function DashboardClient({ initialProspects = null, initialPriori
       {/* ── Header ── */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div>
-          <Title2>La piste</Title2>
+          <Title2>Mes prospects</Title2>
           <Body1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 2 }}>
-            Tes prospects, du sourcing au rendez-vous.
+            Du premier contact au rendez-vous.
           </Body1>
         </div>
         <Button appearance="outline" icon={<ArrowImport24Regular />} onClick={() => router.push("/import")}>
@@ -229,48 +193,6 @@ export default function DashboardClient({ initialProspects = null, initialPriori
         })}
       </div>
 
-      {/* ── Priorités du jour ── */}
-      {topPriorities.length > 0 && (
-        <Card style={{ padding: "16px 20px 20px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: showPriorities ? 12 : 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <Flash24Regular style={{ color: AMBER }} />
-              <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Priorités du jour</Body1>
-              <Badge appearance="filled" color="warning">{topPriorities.length}</Badge>
-            </div>
-            <Button appearance="subtle" size="small" onClick={() => setShowPriorities((v) => !v)}>
-              {showPriorities ? "Masquer" : "Afficher"}
-            </Button>
-          </div>
-          {showPriorities && topPriorities.slice(0, 6).map((p, i) => (
-            <div
-              key={p.id}
-              onClick={() => router.push(`/prospects/${p.id}`)}
-              style={{
-                display: "flex", alignItems: "center", gap: 8, padding: "10px 0",
-                borderTop: i > 0 ? "1px solid var(--colorNeutralStroke2)" : "none",
-                cursor: "pointer",
-              }}
-            >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <Body1 style={{ fontWeight: 700 }}>{p.first_name} {p.last_name}</Body1>
-                <Caption1 style={{ color: "var(--colorNeutralForeground3)", marginLeft: 6 }}>{p.company}</Caption1>
-                {p.nba.reason && (
-                  <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block", marginTop: 2 }}>
-                    {p.nba.reason}
-                  </Caption1>
-                )}
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                <NbaChip nba={p.nba} />
-                <ScoreBadge score={p.fit_score} />
-                <ArrowRight24Regular style={{ fontSize: 16, color: "var(--colorNeutralForeground3)" }} />
-              </div>
-            </div>
-          ))}
-        </Card>
-      )}
-
       {/* ── Prospects list ── */}
       <Card style={{ padding: "0" }}>
         <div style={{ padding: "12px 16px 12px", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", borderBottom: "1px solid var(--colorNeutralStroke2)" }}>
@@ -307,11 +229,16 @@ export default function DashboardClient({ initialProspects = null, initialPriori
         ) : prospects.length === 0 ? (
           <div style={{ padding: "40px 24px", textAlign: "center" }}>
             <Body1 style={{ color: "var(--colorNeutralForeground2)", display: "block", marginBottom: 16 }}>
-              Aucun prospect sur la piste pour l'instant.
+              Aucun prospect pour l'instant. Pars d'un compte pour identifier ses décideurs, ou importe une liste.
             </Body1>
-            <Button appearance="primary" icon={<ArrowImport24Regular />} onClick={() => router.push("/import")}>
-              Importer mes premiers prospects
-            </Button>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+              <Button appearance="primary" icon={<ArrowImport24Regular />} onClick={() => router.push("/accounts")}>
+                Voir mes comptes
+              </Button>
+              <Button appearance="outline" icon={<ArrowImport24Regular />} onClick={() => router.push("/import")}>
+                Importer des prospects
+              </Button>
+            </div>
           </div>
         ) : filtered.length === 0 ? (
           <div style={{ padding: 24, textAlign: "center" }}>
@@ -348,15 +275,15 @@ export default function DashboardClient({ initialProspects = null, initialPriori
                     </div>
                     <div style={{ marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
                       <QualityDot prospect={p} />
-                      {p.phone ? (
-                        <a href={`tel:${(p.phone || "").replace(/\s/g, "")}`} onClick={(e) => e.stopPropagation()}
-                          style={{ fontSize: 12, color: GREEN, fontWeight: 600, textDecoration: "none" }}>
-                          {p.phone}
-                        </a>
-                      ) : p.email ? (
+                      {p.email ? (
                         <a href={`mailto:${p.email}`} onClick={(e) => e.stopPropagation()}
                           style={{ fontSize: 12, color: BRAND, textDecoration: "none" }}>
                           {p.email}
+                        </a>
+                      ) : p.phone ? (
+                        <a href={`tel:${(p.phone || "").replace(/\s/g, "")}`} onClick={(e) => e.stopPropagation()}
+                          style={{ fontSize: 12, color: GREEN, fontWeight: 600, textDecoration: "none" }}>
+                          {p.phone}
                         </a>
                       ) : (
                         <Caption1 style={{ fontSize: 11, color: RED }}>⚠ sans coordonnée</Caption1>
