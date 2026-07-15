@@ -8,21 +8,20 @@ import SearchModal from "@/components/SearchModal";
 import {
   Board24Regular,
   BuildingMultiple24Regular,
-  Globe24Regular,
   ArrowImport24Regular,
-  DataTrending24Regular,
   Settings24Regular,
   Search24Regular,
   Add24Regular,
   Alert24Regular,
 } from "@fluentui/react-icons";
 
+// Navigation resserrée sur le flux commercial : le Compte est le point de
+// départ, puis les prospects, puis l'import. L'analyse reste joignable via le
+// bouton « Activité » de la barre du haut (écran secondaire).
 const NAV = [
-  { href: "/", label: "Piste", Icon: Board24Regular },
   { href: "/accounts", label: "Comptes", Icon: BuildingMultiple24Regular },
-  { href: "/scraping", label: "Scraping", Icon: Globe24Regular },
+  { href: "/", label: "Prospects", Icon: Board24Regular },
   { href: "/import", label: "Importer", Icon: ArrowImport24Regular },
-  { href: "/analytics", label: "Analyse", Icon: DataTrending24Regular },
 ];
 
 const isActive = (path, href) => (href === "/" ? path === "/" : path.startsWith(href));
