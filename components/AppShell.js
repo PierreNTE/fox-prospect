@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { FoxMark, FoxLogo } from "@/components/FoxLogo";
 import SearchModal from "@/components/SearchModal";
+import OfflineBanner from "@/components/OfflineBanner";
 import {
   Board24Regular,
   BuildingMultiple24Regular,
@@ -44,6 +45,9 @@ export default function AppShell({ children }) {
 
   return (
     <div className="app-shell">
+      {/* Lien d'évitement : premier élément focusable, visible uniquement au
+          clavier — saute le rail et la topbar (WCAG 2.4.1). */}
+      <a href="#main-content" className="skip-link">Aller au contenu</a>
       {showSearch && <SearchModal onClose={() => setShowSearch(false)} />}
 
       <nav className="app-rail" aria-label="Navigation principale">
@@ -57,6 +61,7 @@ export default function AppShell({ children }) {
             className={`app-rail-item${isActive(path, href) ? " active" : ""}`}
             title={label}
             aria-label={label}
+            aria-current={isActive(path, href) ? "page" : undefined}
           >
             <Icon />
           </Link>
@@ -66,12 +71,14 @@ export default function AppShell({ children }) {
           className={`app-rail-item app-rail-spacer${isActive(path, "/settings") ? " active" : ""}`}
           title="Réglages"
           aria-label="Réglages"
+          aria-current={isActive(path, "/settings") ? "page" : undefined}
         >
           <Settings24Regular />
         </Link>
       </nav>
 
       <div className="app-content">
+        <OfflineBanner />
         <header className="app-topbar">
           <span className="app-mobile-brand">
             <FoxLogo size={30} />
@@ -82,7 +89,13 @@ export default function AppShell({ children }) {
             tabIndex={0}
             aria-label="Rechercher"
             onClick={() => setShowSearch(true)}
-            onKeyDown={e => e.key === "Enter" && setShowSearch(true)}
+            onKeyDown={e => {
+              // Enter ET Espace : comportement standard d'un bouton (WCAG 2.1.1).
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setShowSearch(true);
+              }
+            }}
           >
             <Search24Regular />
             <span>Rechercher un compte, un contact…</span>
@@ -116,16 +129,24 @@ export default function AppShell({ children }) {
           </div>
         </header>
 
-        <main className="app-main">{children}</main>
+        <main id="main-content" className="app-main">{children}</main>
       </div>
 
       <nav className="app-bottombar" aria-label="Navigation mobile">
         {NAV.map(({ href, label, Icon }) => (
-          <Link key={href} href={href} className={isActive(path, href) ? "active" : ""} aria-label={label}>
+          <Link key={href} href={href} className={isActive(path, href) ? "active" : ""} aria-label={label}
+            aria-current={isActive(path, href) ? "page" : undefined}>
             <Icon />
             <span>{label}</span>
           </Link>
         ))}
+        {/* Réglages : présent dans le rail desktop, il manquait sur mobile —
+            l'offre et l'identité expéditeur étaient inaccessibles au téléphone. */}
+        <Link href="/settings" className={isActive(path, "/settings") ? "active" : ""} aria-label="Réglages"
+          aria-current={isActive(path, "/settings") ? "page" : undefined}>
+          <Settings24Regular />
+          <span>Réglages</span>
+        </Link>
       </nav>
     </div>
   );

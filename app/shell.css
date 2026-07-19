@@ -6,6 +6,15 @@
 
 .app-shell { display: flex; min-height: 100vh; background: var(--colorNeutralBackground2); }
 
+/* Lien d'évitement : hors écran, visible uniquement au focus clavier. */
+.skip-link {
+  position: absolute; left: -9999px; top: 8px; z-index: 200;
+  padding: 8px 14px; border-radius: var(--borderRadiusMedium);
+  background: var(--colorBrandBackground); color: var(--colorNeutralForegroundOnBrand);
+  font-size: 13px; font-weight: 600; text-decoration: none;
+}
+.skip-link:focus { left: 8px; }
+
 /* ---------- Rail latéral (desktop) ---------- */
 .app-rail {
   width: 64px; flex: none;
@@ -120,7 +129,8 @@
   color: var(--colorNeutralForeground1); font-family: inherit;
   transition: background .1s;
 }
-.search-modal-item:hover { background: var(--colorNeutralBackground1Hover); }
+.search-modal-item:hover,
+.search-modal-item.active { background: var(--colorNeutralBackground1Hover); }
 .search-modal-item svg { flex: none; color: var(--colorNeutralForeground3); }
 .search-modal-item-name { font-size: 14px; font-weight: 500; flex: 1; }
 .search-modal-item-sub { font-size: 12px; color: var(--colorNeutralForeground3); white-space: nowrap; }

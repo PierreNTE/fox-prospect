@@ -1,29 +1,14 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
+import { getAccountDetail } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
+// Rafraîchissement client de la fiche (le 1er rendu vient du serveur via lib/data).
 export async function GET(_request, { params }) {
-  const supabase = getSupabase();
-  const { id } = params;
-
-  const [{ data: account, error }, { data: contacts }, { data: prospects }] = await Promise.all([
-    supabase.from("accounts").select("*").eq("id", id).single(),
-    supabase
-      .from("account_contacts")
-      .select("*")
-      .eq("account_id", id)
-      .order("created_at", { ascending: true }),
-    supabase.from("prospects").select("id, first_name, last_name, role, fit_score, status").eq("account_id", id),
-  ]);
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 404 });
-
-  return NextResponse.json({
-    account,
-    contacts: contacts || [],
-    prospects: prospects || [],
-  });
+  const result = await getAccountDetail(getSupabase(), params.id);
+  if (result.error) return NextResponse.json({ error: result.error }, { status: 404 });
+  return NextResponse.json(result);
 }
 
 export async function PATCH(request, { params }) {
