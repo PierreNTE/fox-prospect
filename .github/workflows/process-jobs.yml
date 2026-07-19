@@ -1,0 +1,27 @@
+# Dépile la file de jobs (enrichissements de contacts, analyses en attente)
+# PLUS SOUVENT que ne le permet Vercel Hobby (1 exécution de cron/jour max).
+# Le plafond « 1/jour » n'est que celui du scheduler Vercel : la route reste
+# appelable de l'extérieur, protégée par CRON_SECRET. Toutes les dépenses IA
+# restent bornées par le kill-switch budget mensuel côté app (lib/budget.js).
+#
+# Prérequis : secret GitHub `CRON_SECRET` = même valeur que la variable
+# d'environnement CRON_SECRET du projet Vercel.
+name: process-jobs
+
+on:
+  schedule:
+    # 5 passages/jour (UTC) ≈ toutes les 3 h en journée → ~20 jobs/jour de débit
+    # potentiel (4 par passage), contre ~4-6 avec le seul cron Vercel.
+    - cron: "0 5,8,11,14,17 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  drain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Appeler /api/cron/process-jobs
+        run: |
+          curl -sS --fail-with-body --max-time 320 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://fox-prospect.vercel.app/api/cron/process-jobs"
