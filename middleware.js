@@ -64,9 +64,12 @@ export async function middleware(request) {
       headers: { "WWW-Authenticate": 'Basic realm="Fox Prospect"' },
     });
   }
+  // Deep-link préservé : on mémorise la destination pour y revenir après
+  // connexion (fiche épinglée sur l'écran d'accueil PWA, URL partagée…).
   const url = request.nextUrl.clone();
+  const dest = request.nextUrl.pathname + request.nextUrl.search;
   url.pathname = "/login";
-  url.search = "";
+  url.search = dest && dest !== "/" ? `?next=${encodeURIComponent(dest)}` : "";
   return NextResponse.redirect(url);
 }
 

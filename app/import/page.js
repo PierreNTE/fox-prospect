@@ -18,6 +18,7 @@ import {
   TableBody,
   TableHeaderCell,
 } from "@fluentui/react-components";
+import { fetchJson } from "@/lib/fetch-json";
 import {
   LinkSquare24Regular,
   PersonAdd24Regular,
@@ -32,7 +33,7 @@ const BRAND = "#5B53E6";
 const GREEN = "#107C10";
 const RED = "#C50F1F";
 
-const EMPTY = { first_name: "", last_name: "", role: "", company: "", company_website: "", linkedin_url: "", email: "" };
+const EMPTY = { first_name: "", last_name: "", role: "", company: "", company_website: "", linkedin_url: "", email: "", phone: "" };
 
 const HEADER_MAP = {
   prenom: "first_name", "prénom": "first_name", firstname: "first_name", "first name": "first_name", first_name: "first_name",
@@ -42,6 +43,7 @@ const HEADER_MAP = {
   site: "company_website", "site web": "company_website", website: "company_website", domaine: "company_website", company_website: "company_website",
   linkedin: "linkedin_url", "linkedin url": "linkedin_url", "profil linkedin": "linkedin_url", linkedin_url: "linkedin_url",
   email: "email", mail: "email", "e-mail": "email", courriel: "email",
+  telephone: "phone", "téléphone": "phone", tel: "phone", "tél": "phone", phone: "phone", mobile: "phone", portable: "phone", "phone number": "phone",
 };
 
 function parseCsv(text) {
@@ -79,33 +81,26 @@ export default function ImportPage() {
 
   const lookupLinkedin = async () => {
     setLiBusy(true); setMessage(null); setLiResult(null);
-    try {
-      const res = await fetch("/api/import-linkedin", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ linkedinUrl: liUrl }),
-      });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok || d.error) setMessage({ type: "err", text: d.error || `Erreur ${res.status}.` });
-      else {
-        setManual({ ...EMPTY, ...d.prospect });
-        setLiResult(d);
-        setMessage({ type: "ok", text: `Profil identifié (confiance ${d.confidence}). Vérifie les champs ci-dessous, complète si besoin, puis ajoute à la piste.` });
-      }
-    } catch (e) { setMessage({ type: "err", text: e.message }); }
-    finally { setLiBusy(false); }
+    const { ok, data: d, error } = await fetchJson("/api/import-linkedin", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ linkedinUrl: liUrl }),
+    });
+    setLiBusy(false);
+    if (!ok) { setMessage({ type: "err", text: error }); return; }
+    setManual({ ...EMPTY, ...d.prospect });
+    setLiResult(d);
+    setMessage({ type: "ok", text: `Profil identifié (confiance ${d.confidence}). Vérifie les champs ci-dessous, complète si besoin, puis ajoute aux prospects.` });
   };
 
   const send = async (rows) => {
-    const res = await fetch("/api/prospects", {
+    const { ok, data: d, error } = await fetchJson("/api/prospects", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify(rows),
     });
-    const d = await res.json();
-    if (d.error) setMessage({ type: "err", text: d.error });
-    else {
-      setMessage({ type: "ok", text: `${d.inserted} prospect(s) ajouté(s)${d.duplicates ? `, ${d.duplicates} doublon(s) ignoré(s)` : ""}${d.skipped - (d.duplicates || 0) > 0 ? `, ${d.skipped - (d.duplicates || 0)} ligne(s) invalide(s)` : ""}.` });
-      setTimeout(() => router.push("/"), 1100);
-    }
+    if (!ok) { setMessage({ type: "err", text: error }); return; }
+    const invalid = d.skipped - (d.duplicates || 0) - (d.no_contact || 0);
+    setMessage({ type: "ok", text: `${d.inserted} prospect(s) ajouté(s)${d.duplicates ? `, ${d.duplicates} doublon(s) ignoré(s)` : ""}${d.no_contact ? `, ${d.no_contact} sans coordonnée (non ajoutés)` : ""}${invalid > 0 ? `, ${invalid} ligne(s) invalide(s)` : ""}.` });
+    setTimeout(() => router.push("/"), 1100);
   };
 
   return (
@@ -123,7 +118,9 @@ export default function ImportPage() {
           {message.type === "ok"
             ? <CheckmarkCircle24Regular style={{ color: GREEN, flexShrink: 0 }} />
             : <ErrorCircle24Regular style={{ color: RED, flexShrink: 0 }} />}
-          <Body1 style={{ color: message.type === "ok" ? GREEN : RED }}>{message.text}</Body1>
+          <Body1 role={message.type === "ok" ? "status" : "alert"} style={{ color: message.type === "ok" ? GREEN : RED }}>
+            {message.text}
+          </Body1>
         </Card>
       )}
 
@@ -174,10 +171,16 @@ export default function ImportPage() {
             { label: "Site web", field: "company_website", placeholder: "https://…", type: "url" },
             { label: "URL LinkedIn", field: "linkedin_url", placeholder: "https://www.linkedin.com/in/…", type: "url" },
             { label: "Email pro (si connu)", field: "email", placeholder: "", type: "email" },
+            { label: "Téléphone (si connu)", field: "phone", placeholder: "+33 6…", type: "tel" },
           ].map(({ label, field, placeholder, type }) => (
             <div key={field}>
-              <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>{label}</Caption1>
+              {/* Vrai label associé (htmlFor/id) : lecteurs d'écran et
+                  gestionnaires de mots de passe identifient enfin les champs. */}
+              <label htmlFor={`manual-${field}`} style={{ display: "block", marginBottom: 4, fontWeight: 600, fontSize: 12 }}>
+                {label}
+              </label>
               <Input
+                id={`manual-${field}`}
                 type={type || "text"}
                 placeholder={placeholder}
                 value={manual[field]}
@@ -197,7 +200,7 @@ export default function ImportPage() {
             send([manual]);
           }}
         >
-          Ajouter à la piste
+          Ajouter aux prospects
         </Button>
       </Card>
 
@@ -208,7 +211,7 @@ export default function ImportPage() {
           <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Import CSV</Body1>
         </div>
         <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginBottom: 12 }}>
-          Colonnes reconnues : prénom, nom, poste, entreprise, site, linkedin, email — en français ou en anglais, séparateur , ou ;
+          Colonnes reconnues : prénom, nom, poste, entreprise, site, linkedin, email, téléphone — en français ou en anglais, séparateur , ou ;
         </Caption1>
         <Textarea
           placeholder={"prenom;nom;poste;entreprise;email\nMarie;Durand;DSI;Acme Industries;m.durand@acme.fr"}
