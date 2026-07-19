@@ -40,6 +40,15 @@ export async function POST(request) {
     }
   }
 
+  // Même règle produit que POST /api/prospects : pas de prospect injoignable
+  // (ni email, ni LinkedIn — le scraping ne fournit pas de téléphone).
+  if (!email && !(r.linkedin_url || "").trim()) {
+    return NextResponse.json(
+      { error: "Contact sans aucune coordonnée (email ou LinkedIn) : enrichis-le avant de le promouvoir." },
+      { status: 400 }
+    );
+  }
+
   const parts = (r.full_name || "").trim().split(/\s+/);
   const firstName = parts[0] || "";
   const lastName = parts.slice(1).join(" ") || firstName;
