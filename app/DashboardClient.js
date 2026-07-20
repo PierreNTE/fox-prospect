@@ -113,17 +113,6 @@ export default function DashboardClient({ initialProspects = null }) {
     window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
   }, [q, filterStatus, sortBy, minScore]);
 
-  const load = async () => {
-    const { ok, data, error: err } = await fetchJson("/api/prospects", { cache: "no-store" });
-    if (!ok) {
-      setError(err);
-      // Sortir du skeleton même en échec (liste vide + bandeau d'erreur).
-      setProspects((prev) => prev || []);
-      return;
-    }
-    setProspects(data.prospects);
-  };
-
   // Mise à jour OPTIMISTE : le Select reflète le choix immédiatement, sans
   // re-télécharger toute la liste. En cas d'échec, on restaure et on affiche.
   const setStatus = async (id, status) => {
