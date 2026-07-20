@@ -19,7 +19,14 @@ export default function SearchModal({ onClose }) {
   const abortRef = useRef(null);
   const router = useRouter();
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => {
+    // Mémorise l'élément qui avait le focus (le bouton/barre de recherche) et
+    // le lui rend à la fermeture — sinon le focus repart en haut du document
+    // (WCAG 2.4.3).
+    const opener = document.activeElement;
+    inputRef.current?.focus();
+    return () => { try { opener?.focus?.(); } catch {} };
+  }, []);
 
   useEffect(() => {
     if (!query.trim()) {
