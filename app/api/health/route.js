@@ -103,11 +103,32 @@ function checkConfig() {
   };
 }
 
+// File de jobs (jobs) : des jobs restés en échec = un blocage silencieux
+// (crédits/plafond Anthropic, cron cassé…) qui, sinon, ne se voit nulle part.
+async function checkJobs() {
+  try {
+    const supabase = getSupabase();
+    const [{ count: errCount }, { count: pendCount }] = await Promise.all([
+      supabase.from("jobs").select("*", { count: "exact", head: true }).eq("status", "error"),
+      supabase.from("jobs").select("*", { count: "exact", head: true }).eq("status", "pending"),
+    ]);
+    const errors = errCount ?? 0;
+    const pending = pendCount ?? 0;
+    if (errors > 0) {
+      return ko(`${errors} job(s) en échec, ${pending} en attente — vérifie les crédits Anthropic ou le cron.`, { errors, pending });
+    }
+    return ok(`file saine : ${pending} en attente, 0 échec.`, { errors, pending });
+  } catch (e) {
+    return ko(e.message, { errors: 0, pending: 0 });
+  }
+}
+
 export async function GET() {
-  const [supabase, anthropic, brave] = await Promise.all([
+  const [supabase, anthropic, brave, jobs] = await Promise.all([
     checkSupabase(),
     checkAnthropic(),
     checkBrave(),
+    checkJobs(),
   ]);
 
   const budget = monthlyBudgetEur();
@@ -125,7 +146,7 @@ export async function GET() {
   return NextResponse.json({
     healthy,
     checked_at: new Date().toISOString(),
-    services: { supabase, anthropic, brave },
+    services: { supabase, anthropic, brave, jobs },
     budget: {
       month_spent_eur: spent == null ? null : Math.round(spent * 100) / 100,
       month_budget_eur: budget,

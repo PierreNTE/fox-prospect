@@ -96,6 +96,9 @@ function HealthCard() {
           <HealthRow label="Supabase (base de données)" status={health.services.supabase.status} detail={health.services.supabase.detail} />
           <HealthRow label="Anthropic (crédits LLM)" status={health.services.anthropic.status} detail={health.services.anthropic.detail} />
           <HealthRow label="Brave Search (découverte)" status={health.services.brave.status} detail={health.services.brave.detail} />
+          {health.services.jobs && (
+            <HealthRow label="File de traitement (jobs)" status={health.services.jobs.status} detail={health.services.jobs.detail} />
+          )}
 
           {/* Budget du mois */}
           <div style={{ paddingTop: 12 }}>

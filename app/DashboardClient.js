@@ -99,6 +99,7 @@ export default function DashboardClient({ initialProspects = null }) {
   const [filterStatus, setFilterStatus] = useState(searchParams.get("statut") || "tous");
   const [sortBy, setSortBy] = useState(searchParams.get("tri") || "recent");
   const [minScore, setMinScore] = useState(Number(searchParams.get("score")) || 0);
+  const [noContactOnly, setNoContactOnly] = useState(false); // vue « à enrichir »
   const [visibleCount, setVisibleCount] = useState(50); // pagination « voir plus »
 
   // Synchronise l'état dans l'URL sans re-rendu serveur (replaceState : pas de
@@ -163,6 +164,7 @@ export default function DashboardClient({ initialProspects = null }) {
     }
     if (filterStatus !== "tous") list = list.filter((p) => p.status === filterStatus);
     if (minScore > 0) list = list.filter((p) => (p.fit_score || 0) >= minScore);
+    if (noContactOnly) list = list.filter((p) => !(p.email || "").trim() && !(p.phone || "").trim());
     const sorted = [...list];
     if (sortBy === "relance") {
       // Relances les plus urgentes d'abord ; sans relance → en fin de liste.
@@ -172,12 +174,12 @@ export default function DashboardClient({ initialProspects = null }) {
     else if (sortBy === "name") sorted.sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`, "fr"));
     else if (sortBy === "company") sorted.sort((a, b) => (a.company || "").localeCompare(b.company || "", "fr"));
     return sorted;
-  }, [prospects, q, filterStatus, sortBy, minScore]);
+  }, [prospects, q, filterStatus, sortBy, minScore, noContactOnly]);
 
   // Réinitialise la pagination quand les filtres/tri changent.
-  useEffect(() => { setVisibleCount(50); }, [q, filterStatus, sortBy, minScore]);
+  useEffect(() => { setVisibleCount(50); }, [q, filterStatus, sortBy, minScore, noContactOnly]);
 
-  const hasFilters = q.trim() || filterStatus !== "tous" || minScore > 0;
+  const hasFilters = q.trim() || filterStatus !== "tous" || minScore > 0 || noContactOnly;
   const visible = filtered.slice(0, visibleCount);
 
   return (
@@ -245,9 +247,17 @@ export default function DashboardClient({ initialProspects = null }) {
             <option value={70}>Score ≥ 70</option>
             <option value={40}>Score ≥ 40</option>
           </Select>
+          <Button
+            appearance={noContactOnly ? "primary" : "subtle"} size="small"
+            onClick={() => setNoContactOnly((v) => !v)}
+            aria-pressed={noContactOnly}
+            title="N'afficher que les prospects sans email ni téléphone (à enrichir)"
+          >
+            Sans coordonnée
+          </Button>
           {hasFilters && (
             <Button appearance="subtle" size="small" icon={<Dismiss24Regular />}
-              onClick={() => { setQ(""); setFilterStatus("tous"); setMinScore(0); }}>
+              onClick={() => { setQ(""); setFilterStatus("tous"); setMinScore(0); setNoContactOnly(false); }}>
               Réinitialiser
             </Button>
           )}
