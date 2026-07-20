@@ -1,0 +1,60 @@
+# Diagnostic du proxy résidentiel Decodo (SCRAPE_PROXY).
+# Ne scrape AUCUNE cible : compare l'IP directe (datacenter GitHub) à l'IP de
+# sortie via le proxy, mesure la latence, identifie l'ISP (résidentiel ?), et
+# teste si LinkedIn/Brave répondent à travers le proxy. Déclenché à la main.
+name: proxy-healthcheck
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Diagnostic proxy Decodo
+        env:
+          SCRAPE_PROXY: ${{ secrets.SCRAPE_PROXY }}
+        run: |
+          set +e
+          echo "=== 1. Secret présent ? ==="
+          if [ -z "$SCRAPE_PROXY" ]; then echo "❌ SCRAPE_PROXY vide — secret non posé"; exit 1; fi
+          echo "✅ SCRAPE_PROXY présent (valeur masquée)"
+
+          echo ""
+          echo "=== 2. IP directe (sans proxy = IP datacenter GitHub) ==="
+          DIRECT=$(curl -s --max-time 20 https://api.ipify.org)
+          echo "IP directe : ${DIRECT:-<échec>}"
+
+          echo ""
+          echo "=== 3. IP via le proxy Decodo + latence ==="
+          PROXY_IP=$(curl -s --max-time 30 -x "$SCRAPE_PROXY" https://api.ipify.org)
+          T=$(curl -s -o /dev/null --max-time 30 -x "$SCRAPE_PROXY" -w "%{time_total}" https://api.ipify.org)
+          if [ -z "$PROXY_IP" ]; then
+            echo "❌ Aucune IP renvoyée via le proxy — le tunnel NE FONCTIONNE PAS"
+            echo "   (identifiants faux, quota épuisé, ou host/port injoignable)"
+            exit 1
+          fi
+          echo "IP via proxy : $PROXY_IP"
+          echo "Latence      : ${T}s"
+          if [ "$PROXY_IP" = "$DIRECT" ]; then
+            echo "⚠️  IP identique à la directe → le proxy ne route probablement pas"
+          else
+            echo "✅ Le trafic sort bien par le proxy (IP différente)"
+          fi
+
+          echo ""
+          echo "=== 4. Nature de l'IP de sortie (résidentiel vs datacenter) ==="
+          curl -s --max-time 20 "http://ip-api.com/json/${PROXY_IP}?fields=status,country,city,isp,org,mobile,proxy,hosting" \
+            | sed 's/,/\n/g'
+          echo "   (hosting:true ou proxy:true = IP flaggable ; mobile/résidentiel = mieux)"
+
+          echo ""
+          echo "=== 5. Les cibles répondent-elles à travers le proxy ? ==="
+          for URL in https://www.linkedin.com/ https://api.search.brave.com/ ; do
+            CODE=$(curl -s -o /dev/null --max-time 30 -x "$SCRAPE_PROXY" -w "%{http_code}" -A "Mozilla/5.0" "$URL")
+            echo "  $URL → HTTP ${CODE:-timeout}"
+          done
+          echo "   (LinkedIn : 200/999 = réponse ; 403/timeout = muré. Brave : 401 attendu sans clé = normal, prouve juste l'accès réseau)"
+          echo ""
+          echo "=== Diagnostic terminé ==="
