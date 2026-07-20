@@ -40,12 +40,16 @@ export async function POST(request, { params }) {
   const { data: event, error } = await supabase.from("events").insert(insert).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // 2) Plan courant du prospect : la dernière interaction définit la prochaine
-  //    action + la date de relance (pilote la liste, les priorités et la NBA).
-  await supabase
-    .from("prospects")
-    .update({ next_action: nextAction, follow_up_at: followUpAt })
-    .eq("id", id);
+  // 2) Plan courant du prospect : on ne touche au plan de relance QUE si le
+  //    formulaire fournit une nouvelle valeur — logger un simple compte-rendu
+  //    (« messagerie vocale laissée ») ne doit jamais effacer une relance
+  //    déjà planifiée.
+  const planUpdate = {};
+  if (nextAction) planUpdate.next_action = nextAction;
+  if (followUpAt) planUpdate.follow_up_at = followUpAt;
+  if (Object.keys(planUpdate).length > 0) {
+    await supabase.from("prospects").update(planUpdate).eq("id", id);
+  }
 
   return NextResponse.json({ event });
 }

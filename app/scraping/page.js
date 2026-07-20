@@ -89,6 +89,10 @@ export default function ScrapingPage() {
   useEffect(() => {
     fetch("/api/accounts").then((r) => r.json()).then((d) => setAccounts(d.accounts || [])).catch(() => {});
     loadJobs();
+    // Entrée depuis la fiche compte : /scraping?account=<id> présélectionne le
+    // compte (lu au montage — pas de useSearchParams pour rester hors Suspense).
+    const preselect = new URLSearchParams(window.location.search).get("account");
+    if (preselect) setAccountId(preselect);
   }, []);
 
   useEffect(() => {

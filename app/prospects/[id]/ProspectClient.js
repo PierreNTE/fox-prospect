@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { computeScores } from "@/lib/scoring";
 import { computeNba } from "@/lib/nba";
+import { fetchJson } from "@/lib/fetch-json";
 import {
   Card,
   Button,
@@ -21,6 +22,8 @@ import {
   STATUS_ORDER, STATUS_LABELS, statusLabel,
   dataQualityLevel, DATA_QUALITY_LABELS,
 } from "@/lib/constants";
+import DocumentsCard from "@/components/DocumentsCard";
+import BudgetHint from "@/components/BudgetHint";
 import {
   Search24Regular,
   Mail24Regular,
@@ -80,7 +83,7 @@ function CopyButton({ text }) {
   );
 }
 
-function NbaBanner({ nba }) {
+function NbaBanner({ nba, busy, onCta }) {
   if (!nba || nba.priority === 0) return null;
   const color = NBA_COLORS[nba.action] || BRAND;
   return (
@@ -97,6 +100,13 @@ function NbaBanner({ nba }) {
         {nba.label}
       </span>
       <Caption1 style={{ color: "var(--colorNeutralForeground2)", flex: 1 }}>{nba.reason}</Caption1>
+      {/* La recommandation devient actionnable : fini le « je te dis quoi faire
+          mais débrouille-toi pour trouver le bouton plus bas ». */}
+      {nba.cta_label && onCta && (
+        <Button appearance="primary" size="small" disabled={!!busy} onClick={() => onCta(nba)} style={{ flexShrink: 0 }}>
+          {nba.cta_label}
+        </Button>
+      )}
       <span style={{ fontWeight: 800, fontSize: 17, color, flexShrink: 0 }}>{nba.priority}</span>
     </Card>
   );
@@ -209,13 +219,20 @@ function describeEvent(ev) {
   }
 }
 
-function SuiviCommercial({ prospect, events, onSaved }) {
+function SuiviCommercial({ prospect, events, onSaved, onPatchStatus }) {
   const today = new Date().toISOString().slice(0, 10);
   const [channel, setChannel] = useState("appel");
   const [occurredOn, setOccurredOn] = useState(today);
   const [note, setNote] = useState("");
-  const [nextAction, setNextAction] = useState("");
-  const [followUp, setFollowUp] = useState("");
+  // Pré-remplis avec le plan courant : écraser une relance déjà planifiée
+  // devient un geste visible et volontaire (l'API ne vide plus jamais le plan
+  // sur champ vide, mais autant montrer ce qui est en place).
+  const [nextAction, setNextAction] = useState(prospect.next_action || "");
+  const [followUp, setFollowUp] = useState(prospect.follow_up_at || "");
+  // Statut proposé dans le même geste : un premier échange sur un prospect
+  // « Non contacté » suggère « Contacté » — fini la double saisie oubliée qui
+  // fausse le funnel et la NBA.
+  const [statusAfter, setStatusAfter] = useState(prospect.status === "non_contacte" ? "contacte" : "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -228,16 +245,20 @@ function SuiviCommercial({ prospect, events, onSaved }) {
     if (!note.trim() && !nextAction.trim()) { setErr("Renseigne au moins un compte-rendu ou une prochaine action."); return; }
     setBusy(true);
     try {
-      const res = await fetch(`/api/prospects/${prospect.id}/interactions`, {
+      const { ok, error } = await fetchJson(`/api/prospects/${prospect.id}/interactions`, {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ channel, occurred_at: occurredOn || undefined, note, next_action: nextAction, follow_up_at: followUp || null }),
       });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok || d.error) { setErr(d.error || `Erreur ${res.status}.`); return; }
-      setNote(""); setNextAction(""); setFollowUp(""); setChannel("appel"); setOccurredOn(today);
+      if (!ok) { setErr(error); return; }
+      // Avancement de statut dans le même geste (si choisi).
+      if (statusAfter && statusAfter !== prospect.status && onPatchStatus) {
+        await onPatchStatus({ status: statusAfter });
+        setStatusAfter("");
+      }
+      // On garde nextAction/followUp affichés : ils SONT le plan courant.
+      setNote(""); setChannel("appel"); setOccurredOn(today);
       onSaved && onSaved();
-    } catch (e) { setErr(e.message); }
-    finally { setBusy(false); }
+    } finally { setBusy(false); }
   };
 
   return (
@@ -286,6 +307,15 @@ function SuiviCommercial({ prospect, events, onSaved }) {
           <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Date de relance</Caption1>
           <Input type="date" value={followUp} onChange={(_, d) => setFollowUp(d.value)} />
         </div>
+      </div>
+      <div style={{ marginTop: 10, maxWidth: 320 }}>
+        <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Statut après l'échange</Caption1>
+        <Select value={statusAfter} onChange={(_, d) => setStatusAfter(d.value)}>
+          <option value="">Inchangé ({statusLabel(prospect.status)})</option>
+          {STATUS_ORDER.filter((s) => s !== prospect.status).map((s) => (
+            <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+          ))}
+        </Select>
       </div>
       {err && <Caption1 style={{ color: RED, display: "block", marginTop: 8 }}>{err}</Caption1>}
       <Button appearance="primary" icon={busy ? <Spinner size="tiny" /> : <Add24Regular />} disabled={busy}
@@ -578,10 +608,9 @@ export default function ProspectClient({ id, initialData = null }) {
   const [sourceStatuses, setSourceStatuses] = useState({});
 
   const load = async () => {
-    const res = await fetch(`/api/prospects/${id}`, { cache: "no-store" });
-    const d = await res.json();
-    if (d.error) setError(d.error);
-    else setData(d);
+    const { ok, data: d, error: err } = await fetchJson(`/api/prospects/${id}`, { cache: "no-store" });
+    if (!ok) { setError(err); return null; }
+    setData(d);
     return d;
   };
 
@@ -609,33 +638,41 @@ export default function ProspectClient({ id, initialData = null }) {
   // Mise à jour statut / drapeau « ne pas contacter » → PATCH puis recharge.
   const patchProspect = async (fields) => {
     setError("");
-    try {
-      const res = await fetch(`/api/prospects/${id}`, {
-        method: "PATCH", headers: { "content-type": "application/json" },
-        body: JSON.stringify(fields),
-      });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok || d.error) { setError(d.error || `Erreur ${res.status}.`); return; }
-      await load();
-    } catch (e) { setError(e.message); }
+    const { ok, error } = await fetchJson(`/api/prospects/${id}`, {
+      method: "PATCH", headers: { "content-type": "application/json" },
+      body: JSON.stringify(fields),
+    });
+    if (!ok) { setError(error); return; }
+    await load();
   };
 
   const run = async (endpoint, label, extraBody = {}) => {
     setBusy(label); setError("");
     try {
-      const res = await fetch(`/api/${endpoint}`, {
+      const { ok, error } = await fetchJson(`/api/${endpoint}`, {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ prospectId: id, ...extraBody }),
       });
-      const d = await res.json();
-      if (d.error) setError(d.error);
+      if (!ok) setError(error);
       await load();
-    } catch (e) { setError(e.message); }
-    finally { setBusy(""); }
+    } finally { setBusy(""); }
   };
 
   const generate = () => run("generate", "generate", selectedSignal ? { triggerSignal: selectedSignal } : {});
   const toggleSignal = (s) => setSelectedSignal((prev) => prev?.detail === s.detail ? null : s);
+
+  // CTA du bandeau NBA : « Voir… » = scroll vers la section (ne relance JAMAIS
+  // un appel IA payant) ; « Lancer/Générer/Enrichir » = exécute l'action.
+  const scrollToSection = (sectionId) =>
+    document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const onNbaCta = (n) => {
+    if (n.cta_action === "research") {
+      if (data.research) scrollToSection("section-recherche");
+      else run("research", "research");
+    } else if (n.cta_action === "generate") generate();
+    else if (n.cta_action === "drafts") scrollToSection("section-brouillons");
+    else if (n.cta_action === "enrich") run("enrich", "enrich");
+  };
 
   if (!data) {
     return (
@@ -653,10 +690,10 @@ export default function ProspectClient({ id, initialData = null }) {
       {/* ── Header ── */}
       <div>
         <button
-          onClick={() => router.push("/")}
+          onClick={() => (window.history.length > 1 ? router.back() : router.push("/"))}
           style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "var(--colorNeutralForeground3)", fontSize: 13, padding: "0 0 10px", marginLeft: -4 }}
         >
-          <ArrowLeft24Regular style={{ fontSize: 16 }} /> La piste
+          <ArrowLeft24Regular style={{ fontSize: 16 }} /> Retour
         </button>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <div>
@@ -702,7 +739,7 @@ export default function ProspectClient({ id, initialData = null }) {
       )}
 
       {/* ── NBA banner ── */}
-      {nba && <NbaBanner nba={nba} />}
+      {nba && <NbaBanner nba={nba} busy={busy} onCta={onNbaCta} />}
 
       {/* ── Action buttons ── */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -728,12 +765,13 @@ export default function ProspectClient({ id, initialData = null }) {
           </Button>
         )}
         {busy === "research" && (
-          <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>Recherche web en cours, 20-40 secondes…</Caption1>
+          <Caption1 role="status" style={{ color: "var(--colorNeutralForeground3)" }}>Recherche web en cours, 20-40 secondes…</Caption1>
         )}
+        <span style={{ marginLeft: "auto" }}><BudgetHint /></span>
       </div>
 
       {/* ── Suivi commercial : historique des interactions + saisie rapide ── */}
-      <SuiviCommercial prospect={prospect} events={events || []} onSaved={load} />
+      <SuiviCommercial prospect={prospect} events={events || []} onSaved={load} onPatchStatus={patchProspect} />
 
       {/* ── Brief commercial à la demande (DISC, triggers, accroches, entourage) ── */}
       <BriefCommercial brief={brief} busy={busy === "brief"} onGenerate={() => run("brief", "brief", brief ? { force: true } : {})} />
@@ -749,7 +787,7 @@ export default function ProspectClient({ id, initialData = null }) {
 
       {/* ── Research card ── */}
       {research && (
-        <Card style={{ padding: "20px 20px 24px" }}>
+        <Card id="section-recherche" style={{ padding: "20px 20px 24px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
             <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Fiche de recherche</Body1>
             <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
@@ -848,7 +886,7 @@ export default function ProspectClient({ id, initialData = null }) {
 
       {/* ── Drafts ── */}
       {drafts && (
-        <Card style={{ padding: "20px 20px 24px" }}>
+        <Card id="section-brouillons" style={{ padding: "20px 20px 24px" }}>
           <Body1 style={{ fontWeight: 700, fontSize: 15, display: "block", marginBottom: 4 }}>Brouillons</Body1>
           <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginBottom: 16 }}>
             À relire et ajuster avant envoi manuel.
@@ -892,6 +930,9 @@ export default function ProspectClient({ id, initialData = null }) {
       {/* ── Coordonnées ── */}
       <ContactCoords prospect={prospect} onSaved={load} />
 
+      {/* ── Documents rattachés à ce prospect ── */}
+      <DocumentsCard prospectId={prospect.id} />
+
       {/* ── Notes (repliable) ── */}
       <Collapsible title="Notes" icon={DocumentBulletList24Regular} defaultOpen={!!(prospect.notes || "").trim()}>
         <NotesEditor prospect={prospect} />
@@ -910,12 +951,11 @@ function ContactCoords({ prospect, onSaved }) {
 
   const save = async (fields) => {
     setErr("");
-    const res = await fetch(`/api/prospects/${prospect.id}`, {
+    const { ok, error } = await fetchJson(`/api/prospects/${prospect.id}`, {
       method: "PATCH", headers: { "content-type": "application/json" },
       body: JSON.stringify(fields),
     });
-    const d = await res.json().catch(() => ({}));
-    if (!res.ok || d.error) { setErr(d.error || `Erreur ${res.status}.`); return false; }
+    if (!ok) { setErr(error); return false; }
     setSaved(true); setTimeout(() => setSaved(false), 1600);
     onSaved && onSaved();
     return true;
@@ -924,20 +964,16 @@ function ContactCoords({ prospect, onSaved }) {
   const enrich = async () => {
     setBusy(true); setErr(""); setEnrichment(null);
     try {
-      const res = await fetch("/api/enrich", {
+      const { ok, data: d, error } = await fetchJson("/api/enrich", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ prospectId: prospect.id }),
       });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok || d.error) setErr(d.error || `Erreur ${res.status}.`);
-      else {
-        setEnrichment(d.enrichment);
-        if (d.prospect?.email) setEmail(d.prospect.email);
-        if (d.prospect?.phone) setPhone(d.prospect.phone);
-        onSaved && onSaved();
-      }
-    } catch (e) { setErr(e.message); }
-    finally { setBusy(false); }
+      if (!ok) { setErr(error); return; }
+      setEnrichment(d.enrichment);
+      if (d.prospect?.email) setEmail(d.prospect.email);
+      if (d.prospect?.phone) setPhone(d.prospect.phone);
+      onSaved && onSaved();
+    } finally { setBusy(false); }
   };
 
   const suggestionDiffers = enrichment?.email && prospect.email &&
@@ -1030,6 +1066,7 @@ function ContactCoords({ prospect, onSaved }) {
 function NotesEditor({ prospect }) {
   const [notes, setNotes] = useState(prospect.notes || "");
   const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState("");
   return (
     <>
       <Textarea
@@ -1039,13 +1076,18 @@ function NotesEditor({ prospect }) {
         rows={4}
         style={{ width: "100%", marginBottom: 10 }}
       />
+      {err && <Caption1 style={{ color: RED, display: "block", marginBottom: 8 }}>{err}</Caption1>}
       <Button
         appearance="outline"
         onClick={async () => {
-          await fetch(`/api/prospects/${prospect.id}`, {
+          setErr("");
+          const { ok, error } = await fetchJson(`/api/prospects/${prospect.id}`, {
             method: "PATCH", headers: { "content-type": "application/json" },
             body: JSON.stringify({ notes }),
           });
+          // « Enregistré ✓ » uniquement si la sauvegarde a réellement réussi :
+          // une note perdue (401, 500, coupure réseau) doit se voir.
+          if (!ok) { setErr(error); return; }
           setSaved(true); setTimeout(() => setSaved(false), 1600);
         }}
       >

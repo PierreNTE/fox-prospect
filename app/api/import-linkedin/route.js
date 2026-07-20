@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { getSupabase } from "@/lib/supabase";
 import { callClaudeJson } from "@/lib/anthropic";
+import { checkMonthlyBudget } from "@/lib/budget";
 import { linkedinImportSystemPrompt, linkedinImportUserPrompt } from "@/lib/prompts-enrich";
 import { validateLinkedinImport } from "@/lib/schemas";
 import { logAiRun } from "@/lib/ai-runs";
@@ -20,6 +22,16 @@ export async function POST(request) {
   }
 
   const { maxSearches } = getEnvConfig();
+
+  // Kill-switch budget mensuel : coupe net si la dépense Anthropic du mois a
+  // atteint MONTHLY_BUDGET_EUR (reprise automatique au 1er du mois suivant).
+  const { exceeded, spent, budget } = await checkMonthlyBudget(getSupabase());
+  if (exceeded) {
+    return NextResponse.json(
+      { error: `Budget mensuel atteint (${spent.toFixed(2)} € / ${budget} €). Reprise le 1er du mois prochain, ou augmente MONTHLY_BUDGET_EUR.` },
+      { status: 429 }
+    );
+  }
 
   try {
     const { json: raw, usage, webSearchCount } = await callClaudeJson({
@@ -44,6 +56,7 @@ export async function POST(request) {
         company_website: result.company_website,
         linkedin_url: url,
         email: "",
+        phone: "",
       },
       confidence: result.confidence,
       notes: result.notes,

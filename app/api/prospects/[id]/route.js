@@ -17,7 +17,7 @@ export async function PATCH(request, { params }) {
   const { id } = params;
   const body = await request.json();
 
-  const allowed = ["first_name", "last_name", "role", "company", "company_website", "linkedin_url", "email", "phone", "status", "notes", "do_not_contact"];
+  const allowed = ["first_name", "last_name", "role", "company", "company_website", "linkedin_url", "email", "phone", "status", "notes", "do_not_contact", "account_id"];
   const update = {};
   for (const key of allowed) if (key in body) update[key] = body[key];
 

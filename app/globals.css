@@ -468,6 +468,7 @@ tr.clickable:hover td { background: var(--fox-soft); }
 @keyframes rot { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   .spin { animation: none; }
+  .sk-line { animation: none; } /* skeletons : shimmer coupé aussi (WCAG 2.3.3) */
   html { scroll-behavior: auto; }
   .trail-step:hover { transform: none; }
 }

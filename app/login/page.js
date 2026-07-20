@@ -27,7 +27,10 @@ export default function LoginPage() {
         setBusy(false);
         return;
       }
-      window.location.href = "/";
+      // Retour à la page demandée avant la redirection login (?next=…).
+      // Garde anti open-redirect : uniquement un chemin interne ("/…", pas "//…").
+      const next = new URLSearchParams(window.location.search).get("next") || "/";
+      window.location.href = next.startsWith("/") && !next.startsWith("//") ? next : "/";
     } catch (err) {
       setError(err.message);
       setBusy(false);
@@ -36,8 +39,10 @@ export default function LoginPage() {
 
   return (
     <div className="card" style={{ maxWidth: 420, margin: "8vh auto 0" }}>
-      <h1 style={{ textAlign: "center" }}>🦊</h1>
-      <h2 style={{ textAlign: "center" }}>Connexion à Fox Prospect</h2>
+      {/* h1 textuel (l'emoji seul faisait lire « renard » comme titre de page
+          aux lecteurs d'écran) ; l'emoji reste décoratif. */}
+      <div aria-hidden="true" style={{ textAlign: "center", fontSize: 32 }}>🦊</div>
+      <h1 style={{ textAlign: "center", fontSize: 22 }}>Connexion à Fox Prospect</h1>
 
       {error && <div className="alert alert-err">{error}</div>}
 

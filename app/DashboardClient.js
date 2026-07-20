@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Card,
   Button,
@@ -23,6 +23,7 @@ import {
   ArrowImport24Regular,
 } from "@fluentui/react-icons";
 import { SkeletonTableRows, SkeletonFunnelCards } from "@/components/Skeleton";
+import { fetchJson } from "@/lib/fetch-json";
 import {
   STATUS_ORDER, STATUS_LABELS,
   dataQualityLevel, DATA_QUALITY_LABELS,
@@ -36,6 +37,7 @@ const BLUE = "#0078D4";
 
 const SORT_OPTIONS = [
   { value: "recent", label: "Récents d'abord" },
+  { value: "relance", label: "Relance d'abord" },
   { value: "score", label: "Score ↓" },
   { value: "name", label: "Nom A → Z" },
   { value: "company", label: "Entreprise A → Z" },
@@ -88,30 +90,58 @@ function ScoreBadge({ score }) {
 // (après changement de statut) repassent par l'API.
 export default function DashboardClient({ initialProspects = null }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [prospects, setProspects] = useState(initialProspects);
   const [error, setError] = useState("");
-  const [q, setQ] = useState("");
-  const [filterStatus, setFilterStatus] = useState("tous");
-  const [sortBy, setSortBy] = useState("recent");
-  const [minScore, setMinScore] = useState(0);
+  // Filtres/tri initialisés depuis l'URL : le retour depuis une fiche
+  // (router.back) retrouve la liste exactement telle qu'on l'avait laissée.
+  const [q, setQ] = useState(searchParams.get("q") || "");
+  const [filterStatus, setFilterStatus] = useState(searchParams.get("statut") || "tous");
+  const [sortBy, setSortBy] = useState(searchParams.get("tri") || "recent");
+  const [minScore, setMinScore] = useState(Number(searchParams.get("score")) || 0);
   const [visibleCount, setVisibleCount] = useState(50); // pagination « voir plus »
 
-  const load = async () => {
-    const res = await fetch("/api/prospects", { cache: "no-store" });
-    const data = await res.json();
-    if (data.error) setError(data.error);
-    else setProspects(data.prospects);
-  };
+  // Synchronise l'état dans l'URL sans re-rendu serveur (replaceState : pas de
+  // navigation App Router, donc pas de refetch SSR à chaque frappe).
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (filterStatus !== "tous") params.set("statut", filterStatus);
+    if (sortBy !== "recent") params.set("tri", sortBy);
+    if (minScore) params.set("score", String(minScore));
+    const qs = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  }, [q, filterStatus, sortBy, minScore]);
 
+  // Mise à jour OPTIMISTE : le Select reflète le choix immédiatement, sans
+  // re-télécharger toute la liste. En cas d'échec, on restaure et on affiche.
   const setStatus = async (id, status) => {
     setError("");
-    const res = await fetch(`/api/prospects/${id}`, {
+    const before = prospects;
+    setProspects((list) => (list || []).map((p) => (p.id === id ? { ...p, status } : p)));
+    const { ok, error: err } = await fetchJson(`/api/prospects/${id}`, {
       method: "PATCH", headers: { "content-type": "application/json" },
       body: JSON.stringify({ status }),
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || data.error) setError(data.error || `Erreur ${res.status}.`);
-    load();
+    if (!ok) { setError(err); setProspects(before); }
+  };
+
+  // Pagination serveur : la liste SSR est bornée à 500 ; « Charger la suite »
+  // rapatrie les 500 suivants et les ajoute (dédup par id par sécurité).
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [serverDone, setServerDone] = useState((initialProspects || []).length < 500);
+  const loadMoreFromServer = async () => {
+    setLoadingMore(true);
+    const offset = (prospects || []).length;
+    const { ok, data, error: err } = await fetchJson(`/api/prospects?offset=${offset}`, { cache: "no-store" });
+    setLoadingMore(false);
+    if (!ok) { setError(err); return; }
+    const fresh = data.prospects || [];
+    if (fresh.length < 500) setServerDone(true);
+    setProspects((list) => {
+      const known = new Set((list || []).map((p) => p.id));
+      return [...(list || []), ...fresh.filter((p) => !known.has(p.id))];
+    });
   };
 
   const counts = useMemo(() => {
@@ -134,7 +164,11 @@ export default function DashboardClient({ initialProspects = null }) {
     if (filterStatus !== "tous") list = list.filter((p) => p.status === filterStatus);
     if (minScore > 0) list = list.filter((p) => (p.fit_score || 0) >= minScore);
     const sorted = [...list];
-    if (sortBy === "score") sorted.sort((a, b) => (b.fit_score || 0) - (a.fit_score || 0));
+    if (sortBy === "relance") {
+      // Relances les plus urgentes d'abord ; sans relance → en fin de liste.
+      sorted.sort((a, b) => (a.follow_up_at || "9999-12-31").localeCompare(b.follow_up_at || "9999-12-31"));
+    }
+    else if (sortBy === "score") sorted.sort((a, b) => (b.fit_score || 0) - (a.fit_score || 0));
     else if (sortBy === "name") sorted.sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`, "fr"));
     else if (sortBy === "company") sorted.sort((a, b) => (a.company || "").localeCompare(b.company || "", "fr"));
     return sorted;
@@ -319,6 +353,13 @@ export default function DashboardClient({ initialProspects = null }) {
           <div style={{ padding: "12px 16px", textAlign: "center", borderTop: "1px solid var(--colorNeutralStroke2)" }}>
             <Button appearance="subtle" onClick={() => setVisibleCount((n) => n + 50)}>
               Voir plus ({filtered.length - visibleCount} restant{filtered.length - visibleCount > 1 ? "s" : ""})
+            </Button>
+          </div>
+        )}
+        {prospects !== null && filtered.length <= visibleCount && !serverDone && (
+          <div style={{ padding: "12px 16px", textAlign: "center", borderTop: "1px solid var(--colorNeutralStroke2)" }}>
+            <Button appearance="subtle" disabled={loadingMore} onClick={loadMoreFromServer}>
+              {loadingMore ? "Chargement…" : "Charger les prospects plus anciens"}
             </Button>
           </div>
         )}

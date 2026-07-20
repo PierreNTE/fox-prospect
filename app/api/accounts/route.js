@@ -1,16 +1,12 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
+import { listAccounts } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
+// Rafraîchissement client de la liste (le 1er rendu vient du serveur via lib/data).
 export async function GET() {
-  const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from("accounts")
-    .select("*")
-    .order("name", { ascending: true });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ accounts: data });
+  return NextResponse.json({ accounts: await listAccounts(getSupabase()) });
 }
 
 export async function POST(request) {
