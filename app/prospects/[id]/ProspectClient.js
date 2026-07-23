@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { computeScores } from "@/lib/scoring";
 import { computeNba } from "@/lib/nba";
 import { fetchJson } from "@/lib/fetch-json";
+import { SEQUENCE_TEMPLATES } from "@/lib/sequences";
 import {
   Card,
   Button,
@@ -641,6 +642,53 @@ function ScoreBreakdown({ scores, prospect }) {
   );
 }
 
+// ── Séquences de relance (FV5) : lance une cadence = crée des tâches datées ──
+function SequencesCard({ prospectId, accountId, onError }) {
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState("");
+
+  const enroll = async (tpl) => {
+    setBusy(tpl.key); setMsg(""); onError("");
+    const { ok, data, error } = await fetchJson("/api/sequences/enroll", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prospect_id: prospectId, account_id: accountId || null, template_key: tpl.key }),
+    });
+    setBusy("");
+    if (!ok) { onError(error); return; }
+    setMsg(`Séquence « ${tpl.label} » lancée — ${data.created} tâche(s) créée(s) dans l'agenda.`);
+  };
+
+  return (
+    <Card style={{ padding: "20px 20px 22px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <CalendarLtr24Regular style={{ color: BRAND }} />
+        <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Séquences de relance</Body1>
+      </div>
+      <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginBottom: 12 }}>
+        Lance une cadence multicanal : les tâches datées apparaissent dans ton agenda. Aucun envoi automatique.
+      </Caption1>
+      {msg && <Caption1 style={{ color: GREEN, display: "block", marginBottom: 10 }}>{msg}</Caption1>}
+      <div>
+        {SEQUENCE_TEMPLATES.map((tpl) => (
+          <div key={tpl.key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: "1px solid var(--colorNeutralStroke2)" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Body1 style={{ fontWeight: 600, fontSize: 13 }}>{tpl.label}</Body1>
+              <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block" }}>
+                {tpl.description} · {tpl.steps.length} étapes sur {tpl.steps[tpl.steps.length - 1].day} j
+              </Caption1>
+            </div>
+            <Button appearance="outline" size="small" disabled={!!busy}
+              icon={busy === tpl.key ? <Spinner size="tiny" /> : <Add24Regular />}
+              onClick={() => enroll(tpl)}>
+              Lancer
+            </Button>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 /* ── Page (composant client) ── */
 
 // Les données initiales viennent du composant serveur (SSR : déjà dans le HTML).
@@ -819,6 +867,9 @@ export default function ProspectClient({ id, initialData = null }) {
 
       {/* ── Suivi commercial : historique des interactions + saisie rapide ── */}
       <SuiviCommercial prospect={prospect} events={events || []} onSaved={load} onPatchStatus={patchProspect} />
+
+      {/* ── Séquences de relance (FV5) : lance une cadence de tâches ── */}
+      <SequencesCard prospectId={prospect.id} accountId={prospect.account_id} onError={setError} />
 
       {/* ── Brief commercial à la demande (DISC, triggers, accroches, entourage) ── */}
       <BriefCommercial brief={brief} busy={busy === "brief"} onGenerate={() => run("brief", "brief", brief ? { force: true } : {})} />
