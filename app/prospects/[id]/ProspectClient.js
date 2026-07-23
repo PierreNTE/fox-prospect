@@ -892,12 +892,30 @@ export default function ProspectClient({ id, initialData = null }) {
             À relire et ajuster avant envoi manuel.
           </Caption1>
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8, flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <Mail24Regular style={{ color: BRAND, fontSize: 16 }} />
               <Body1 style={{ fontWeight: 600, fontSize: 13 }}>Email · {drafts.email_subject}</Body1>
             </div>
-            <CopyButton text={`Objet : ${drafts.email_subject}\n\n${drafts.email_body}`} />
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {/* QW3 — email en 1 clic : ouvre la messagerie par défaut avec
+                  destinataire, objet et corps pré-remplis. Remplace le tunnel
+                  copier-objet → copier-corps → ouvrir Outlook → coller. */}
+              <Button
+                appearance="primary" size="small" icon={<Mail24Regular />}
+                disabled={!prospect.email}
+                title={prospect.email ? "Ouvrir dans ta messagerie avec l'objet et le corps pré-remplis" : "Renseigne un email d'abord"}
+                onClick={() => {
+                  const to = encodeURIComponent(prospect.email || "");
+                  const su = encodeURIComponent(drafts.email_subject || "");
+                  const bo = encodeURIComponent(drafts.email_body || "");
+                  window.location.href = `mailto:${to}?subject=${su}&body=${bo}`;
+                }}
+              >
+                Ouvrir dans ma messagerie
+              </Button>
+              <CopyButton text={`Objet : ${drafts.email_subject}\n\n${drafts.email_body}`} />
+            </div>
           </div>
           <div style={{ padding: "12px 14px", background: "var(--colorNeutralBackground3)", borderRadius: 6, marginBottom: 16, fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap", color: "var(--colorNeutralForeground2)" }}>
             {drafts.email_body}
