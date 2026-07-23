@@ -176,6 +176,43 @@ export default function AccountsClient({ initialAccounts = null }) {
         </div>
       </Card>
 
+      {/* ── Next Best Account (IA5, déterministe) : chaleur + joignabilité ── */}
+      {(() => {
+        const scored = (accounts || [])
+          .filter((a) => a.last_refreshed_at)
+          .map((a) => ({ a, score: (a.heat || 0) + Math.min(a.reachable_contacts || 0, 3) * 8 }))
+          .filter((x) => x.score > 0)
+          .sort((x, y) => y.score - x.score)
+          .slice(0, 3);
+        if (scored.length === 0) return null;
+        return (
+          <Card style={{ padding: "18px 20px", borderLeft: `3px solid ${BRAND}` }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+              <Body1 style={{ fontWeight: 800, fontSize: 15 }}>À travailler en priorité</Body1>
+              <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>comptes chauds avec des décideurs joignables</Caption1>
+            </div>
+            {scored.map(({ a }) => {
+              const hm = heatMeta(a.heat || 0);
+              const fresh = daysAgo(a.last_news_date);
+              const rc = a.reachable_contacts || 0;
+              return (
+                <div key={a.id} onClick={() => router.push(`/accounts/${a.id}`)}
+                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: "1px solid var(--colorNeutralStroke2)", cursor: "pointer" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: hm.color, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <Body1 style={{ fontWeight: 600 }}>{a.name}</Body1>
+                    <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block" }}>
+                      {hm.label}{a.news_count ? ` · ${a.news_count} actu${a.news_count > 1 ? "s" : ""}${fresh ? ` (${fresh})` : ""}` : ""} · {rc} décideur{rc > 1 ? "s" : ""} joignable{rc > 1 ? "s" : ""}
+                    </Caption1>
+                  </div>
+                  <ChevronRight24Regular style={{ flexShrink: 0, color: "var(--colorNeutralForeground3)", fontSize: 18 }} />
+                </div>
+              );
+            })}
+          </Card>
+        );
+      })()}
+
       {/* ── Liste ── */}
       {accounts === null ? (
         <Card style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
