@@ -88,6 +88,56 @@ function initials(c) {
   return (a + b).toUpperCase() || "?";
 }
 
+// ── FV4 — timeline au niveau compte ─────────────────────────────────────────
+const TL_CHANNEL = { appel: "Appel", email: "E-mail", linkedin: "LinkedIn", autre: "Échange" };
+function tlFmt(s) {
+  if (!s) return "";
+  try { return new Date(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" }); }
+  catch { return String(s); }
+}
+function tlLine(ev) {
+  switch (ev.kind) {
+    case "interaction": return { label: TL_CHANNEL[ev.channel] || "Échange", detail: ev.note || ev.next_action || "", color: BRAND };
+    case "status_change": return { label: "Changement de statut", detail: `${statusLabel(ev.from_status)} → ${statusLabel(ev.to_status)}`, color: "var(--colorNeutralForeground3)" };
+    case "research_done": return { label: "Recherche IA", detail: "Qualification", color: BRAND };
+    case "draft_generated": return { label: "Brouillons générés", detail: "", color: "#8B5CF6" };
+    case "enrich_done": return { label: "Enrichissement", detail: ev.note || "", color: "#8B5CF6" };
+    case "opt_out": return { label: "Ne pas contacter", detail: ev.note || "", color: RED };
+    default: return { label: ev.kind, detail: ev.note || "", color: "var(--colorNeutralForeground3)" };
+  }
+}
+
+// Agrège l'activité de tous les contacts du compte : la mémoire du compte en un
+// seul endroit, plutôt qu'éparpillée sur chaque fiche prospect.
+function AccountTimeline({ events, prospectById }) {
+  if (!events || events.length === 0) return null;
+  return (
+    <Card style={{ padding: "20px 20px 22px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Historique du compte</Body1>
+        <Badge appearance="outline">{events.length}</Badge>
+      </div>
+      {events.map((ev) => {
+        const l = tlLine(ev);
+        const who = prospectById.get(ev.prospect_id);
+        return (
+          <div key={ev.id} style={{ display: "flex", gap: 10, padding: "9px 0", borderTop: "1px solid var(--colorNeutralStroke2)" }}>
+            <span style={{ flexShrink: 0, marginTop: 6, width: 8, height: 8, borderRadius: "50%", background: l.color }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Body1 style={{ fontWeight: 600, fontSize: 13 }}>
+                {l.label}
+                {who && <span style={{ fontWeight: 400, color: "var(--colorNeutralForeground3)" }}> · {who}</span>}
+              </Body1>
+              {l.detail && <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block" }}>{l.detail}</Caption1>}
+            </div>
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)", flexShrink: 0, whiteSpace: "nowrap", fontSize: 11 }}>{tlFmt(ev.occurred_at)}</Caption1>
+          </div>
+        );
+      })}
+    </Card>
+  );
+}
+
 /* ── Petits éléments ── */
 
 function RelDot({ value }) {
@@ -860,6 +910,12 @@ export default function AccountClient({ id, initialData = null }) {
           ))}
         </Card>
       )}
+
+      {/* ── Historique du compte (FV4) : activité agrégée de tous les contacts ── */}
+      <AccountTimeline
+        events={data.events || []}
+        prospectById={new Map((prospects || []).map((p) => [p.id, `${p.first_name} ${p.last_name}`.trim()]))}
+      />
 
       {/* ── Documents (compte + contacts + prospects rattachés) ── */}
       <DocumentsCard accountId={id} />

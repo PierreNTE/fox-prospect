@@ -193,6 +193,16 @@ const CHANNEL_META = {
   autre:    { label: "Autre",    Icon: Chat24Regular,       color: "var(--colorNeutralForeground3)" },
 };
 
+// QW4 — presets « résultat d'appel » : un tap consigne l'échange, planifie la
+// relance et fait avancer le statut (sans jamais le rétrograder).
+const CALL_PRESETS = [
+  { key: "repondeur", label: "Répondeur",   note: "Appel — message sur répondeur",       next: "Rappeler",         days: 2,    status: "contacte" },
+  { key: "pas_dispo", label: "Pas dispo",   note: "Appel — interlocuteur indisponible",  next: "Rappeler",         days: 3,    status: "contacte" },
+  { key: "rappeler",  label: "Rappeler J+3", note: "Appel — à rappeler",                 next: "Rappeler",         days: 3,    status: "contacte" },
+  { key: "rdv",       label: "RDV pris",     note: "Appel — rendez-vous obtenu",         next: "Préparer le RDV",  days: null, status: "interesse" },
+];
+const STATUS_RANK = { non_contacte: 0, contacte: 1, en_cours: 2, interesse: 3, refuse: 9, client: 9 };
+
 function fmtDate(s) {
   if (!s) return "";
   try { return new Date(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" }); }
@@ -235,6 +245,29 @@ function SuiviCommercial({ prospect, events, onSaved, onPatchStatus }) {
   const [statusAfter, setStatusAfter] = useState(prospect.status === "non_contacte" ? "contacte" : "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [quickBusy, setQuickBusy] = useState("");
+
+  // QW4 — un tap = interaction consignée + relance planifiée + statut avancé.
+  const quickLog = async (preset) => {
+    setErr(""); setQuickBusy(preset.key);
+    try {
+      const follow = preset.days != null
+        ? new Date(Date.now() + preset.days * 86400000).toISOString().slice(0, 10)
+        : null;
+      const { ok, error } = await fetchJson(`/api/prospects/${prospect.id}/interactions`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ channel: "appel", occurred_at: today, note: preset.note, next_action: preset.next, follow_up_at: follow }),
+      });
+      if (!ok) { setErr(error); return; }
+      // Statut : uniquement vers l'avant, jamais de rétrogradation, et on ne
+      // touche pas à un prospect refusé / client.
+      const cur = STATUS_RANK[prospect.status] ?? 0;
+      if (onPatchStatus && cur < 9 && (STATUS_RANK[preset.status] ?? 0) > cur) {
+        await onPatchStatus({ status: preset.status });
+      }
+      onSaved && onSaved();
+    } finally { setQuickBusy(""); }
+  };
 
   const followUpAt = prospect.follow_up_at;
   const overdue = followUpAt && followUpAt < today;
@@ -278,6 +311,20 @@ function SuiviCommercial({ prospect, events, onSaved, onPatchStatus }) {
           </Caption1>
         </div>
       )}
+
+      {/* QW4 — résultat d'appel en 1 tap : consigne + relance + statut d'un geste */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 14 }}>
+        <Caption1 style={{ width: "100%", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--colorNeutralForeground3)" }}>
+          Résultat d'appel rapide
+        </Caption1>
+        {CALL_PRESETS.map((q) => (
+          <Button key={q.key} appearance="outline" size="small" disabled={!!quickBusy}
+            icon={quickBusy === q.key ? <Spinner size="tiny" /> : <Phone24Regular />}
+            onClick={() => quickLog(q)}>
+            {q.label}
+          </Button>
+        ))}
+      </div>
 
       {/* Saisie rapide */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 14 }}>
