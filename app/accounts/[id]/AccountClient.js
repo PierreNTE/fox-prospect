@@ -33,6 +33,7 @@ import {
 } from "@fluentui/react-icons";
 import Link from "next/link";
 import { NEWS_CATEGORY_LABELS, statusLabel } from "@/lib/constants";
+import { OPP_STAGES, OPP_STAGE_LABEL, OPP_STAGE_COLOR, effectiveProbability } from "@/lib/opportunities";
 import { fetchJson } from "@/lib/fetch-json";
 import DocumentsCard from "@/components/DocumentsCard";
 import BudgetHint from "@/components/BudgetHint";
@@ -134,6 +135,108 @@ function AccountTimeline({ events, prospectById }) {
           </div>
         );
       })}
+    </Card>
+  );
+}
+
+// ── FV2 — opportunités du compte (créer / suivre une affaire) ────────────────
+function fmtEurShort(n) {
+  const v = Number(n) || 0;
+  if (!v) return "—";
+  if (v >= 1000) return `${Math.round(v / 1000).toLocaleString("fr-FR")} k€`;
+  return `${v.toLocaleString("fr-FR")} €`;
+}
+
+function OpportunitiesCard({ accountId, opportunities, onChange, onError }) {
+  const [adding, setAdding] = useState(false);
+  const [f, setF] = useState({ title: "", amount_eur: "", stage: "qualification", expected_close_date: "" });
+  const [busy, setBusy] = useState(false);
+
+  const create = async () => {
+    if (!f.title.trim()) return;
+    setBusy(true); onError("");
+    const { ok, error } = await fetchJson("/api/opportunities", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ account_id: accountId, ...f }),
+    });
+    setBusy(false);
+    if (!ok) { onError(error); return; }
+    setF({ title: "", amount_eur: "", stage: "qualification", expected_close_date: "" });
+    setAdding(false);
+    onChange();
+  };
+
+  const move = async (opp, stage) => {
+    const { ok, error } = await fetchJson(`/api/opportunities/${opp.id}`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ stage }),
+    });
+    if (!ok) { onError(error); return; }
+    onChange();
+  };
+
+  const remove = async (opp) => {
+    if (!confirm("Supprimer cette opportunité ?")) return;
+    const { ok, error } = await fetchJson(`/api/opportunities/${opp.id}`, { method: "DELETE" });
+    if (!ok) { onError(error); return; }
+    onChange();
+  };
+
+  return (
+    <Card style={{ padding: "20px 20px 22px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+        <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Opportunités</Body1>
+        {!adding && (
+          <Button appearance="outline" size="small" icon={<PersonAdd24Regular />} onClick={() => setAdding(true)}>
+            Nouvelle opportunité
+          </Button>
+        )}
+      </div>
+
+      {adding && (
+        <Card style={{ padding: 14, borderLeft: `3px solid ${BRAND}`, marginBottom: 12 }}>
+          <Input value={f.title} onChange={(_, d) => setF({ ...f, title: d.value })} placeholder="Ex. Renouvellement pare-feu" style={{ width: "100%", marginBottom: 10 }} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
+            <div>
+              <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Montant (€)</Caption1>
+              <Input type="number" value={f.amount_eur} onChange={(_, d) => setF({ ...f, amount_eur: d.value })} placeholder="45000" />
+            </div>
+            <div>
+              <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Étape</Caption1>
+              <Select value={f.stage} onChange={(_, d) => setF({ ...f, stage: d.value })}>
+                {OPP_STAGES.map((s) => <option key={s} value={s}>{OPP_STAGE_LABEL[s]}</option>)}
+              </Select>
+            </div>
+            <div>
+              <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Closing</Caption1>
+              <Input type="date" value={f.expected_close_date} onChange={(_, d) => setF({ ...f, expected_close_date: d.value })} />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button appearance="primary" disabled={busy || !f.title.trim()} onClick={create}>Créer</Button>
+            <Button appearance="outline" onClick={() => setAdding(false)}>Annuler</Button>
+          </div>
+        </Card>
+      )}
+
+      {opportunities.length === 0 ? (
+        <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>Aucune affaire sur ce compte. Crée-en une pour la suivre dans le pipeline.</Caption1>
+      ) : (
+        opportunities.map((o) => (
+          <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: "1px solid var(--colorNeutralStroke2)" }}>
+            <span style={{ flexShrink: 0, width: 8, height: 8, borderRadius: "50%", background: OPP_STAGE_COLOR[o.stage] }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Body1 style={{ fontWeight: 600, fontSize: 13 }}>{o.title}</Body1>
+              <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
+                {fmtEurShort(o.amount_eur)} · {effectiveProbability(o)}%{o.expected_close_date ? ` · ${new Date(o.expected_close_date).toLocaleDateString("fr-FR", { month: "short", year: "2-digit" })}` : ""}
+              </Caption1>
+            </div>
+            <Select value={o.stage} onChange={(_, d) => move(o, d.value)} style={{ width: "auto", flexShrink: 0 }}>
+              {OPP_STAGES.map((s) => <option key={s} value={s}>{OPP_STAGE_LABEL[s]}</option>)}
+            </Select>
+            <Button appearance="subtle" size="small" icon={<Delete24Regular />} onClick={() => remove(o)} title="Supprimer" />
+          </div>
+        ))
+      )}
     </Card>
   );
 }
@@ -910,6 +1013,9 @@ export default function AccountClient({ id, initialData = null }) {
           ))}
         </Card>
       )}
+
+      {/* ── Opportunités (FV2) : affaires du compte ── */}
+      <OpportunitiesCard accountId={id} opportunities={data.opportunities || []} onChange={load} onError={setError} />
 
       {/* ── Historique du compte (FV4) : activité agrégée de tous les contacts ── */}
       <AccountTimeline

@@ -15,6 +15,7 @@ import {
   Add24Regular,
   Alert24Regular,
   CalendarLtr24Regular,
+  DataTrending24Regular,
 } from "@fluentui/react-icons";
 
 // Navigation resserrée sur le flux commercial : le Compte est le point de
@@ -24,6 +25,7 @@ const NAV = [
   { href: "/accounts", label: "Comptes", Icon: BuildingMultiple24Regular },
   { href: "/", label: "Prospects", Icon: Board24Regular },
   { href: "/agenda", label: "Agenda", Icon: CalendarLtr24Regular },
+  { href: "/pipeline", label: "Pipeline", Icon: DataTrending24Regular },
   { href: "/import", label: "Importer", Icon: ArrowImport24Regular },
 ];
 
