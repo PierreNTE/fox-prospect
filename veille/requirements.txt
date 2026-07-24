@@ -4,3 +4,4 @@
 # GLiNER, trafilatura) vivent dans requirements-nlp.txt et ne seront ajoutees
 # au passage quotidien qu'une fois le banc d'essai d'embedding validé.
 PyYAML>=6.0
+feedparser>=6.0   # flux RSS/Atom : tolerant aux flux malformes

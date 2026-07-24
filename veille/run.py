@@ -24,7 +24,7 @@ from config import (FENETRE_JOURS, MAX_DOCS_PAR_SOURCE, PAYS_MVP, RUN_REF,
                     exiger_supabase)
 from pipeline import filtre
 from pipeline.resolve import Annuaire
-from sources import ted
+from sources import rss, ted
 
 # Type de signal déduit de la catégorie du filtre. La dimension produit est
 # portée séparément par product_line : « projet » peut être CSG ou ISG.
@@ -41,31 +41,39 @@ TYPE_PAR_CATEGORIE = {
 }
 
 
-# Source de repli, utilisée uniquement en dry-run sans identifiants Supabase.
-# Permet d'éprouver un connecteur en local sans toucher à la base — le cas
-# d'usage le plus fréquent quand on met au point une requête TED.
-SOURCE_LOCALE = {
-    "id": None,
-    "label": "TED (configuration locale de test)",
-    "config": {"notice_types": ["cn-standard", "can-standard"]},
+# Connecteurs disponibles. Ajouter une source revient à écrire un module dans
+# sources/ et une ligne ici — le pipeline n'a pas à être touché.
+COLLECTEURS = {
+    "ted": ted.collecter,
+    "rss": rss.collecter,
 }
 
+# Sources de repli, utilisées uniquement en dry-run sans identifiants Supabase.
+# Permet d'éprouver un connecteur en local sans toucher à la base.
+SOURCES_LOCALES = [
+    {"id": None, "kind": "ted", "label": "TED (test local)",
+     "config": {"notice_types": ["cn-standard", "can-standard"]}},
+    {"id": None, "kind": "rss", "label": "Le Monde Informatique (test local)",
+     "url": "https://www.lemondeinformatique.fr/rss/rss.xml",
+     "country_code": "FR", "config": {"lang": "fr"}},
+]
 
-def _sources_ted():
+
+def _sources():
     from config import SB_URL
     if not SB_URL:
-        print("  (pas d'identifiants Supabase : source de test intégrée)")
-        return [SOURCE_LOCALE]
-    return db.charger_sources(kind="ted")
+        print("  (pas d'identifiants Supabase : sources de test intégrées)")
+        return SOURCES_LOCALES
+    return [s for s in db.charger_sources() if s.get("kind") in COLLECTEURS]
 
 
 def collecter(dry_run=False):
     """Étage de collecte. Renvoie les lignes prêtes pour veille_documents."""
     collectes = []
-    for source in _sources_ted():
+    for source in _sources():
         debut = time.time()
         try:
-            documents, curseur = ted.collecter(
+            documents, curseur = COLLECTEURS[source["kind"]](
                 source, depuis_jours=FENETRE_JOURS,
                 pays=PAYS_MVP, plafond=MAX_DOCS_PAR_SOURCE,
             )
@@ -101,7 +109,7 @@ def traiter(dry_run=False, documents=None):
 
     if documents is None:
         documents = db.documents_a_traiter(["collecte", "extrait"], limite=1000)
-    retenus = signaux = 0
+    retenus = signaux = candidats = 0
     ecartes = {}
 
     for doc in documents:
@@ -115,11 +123,28 @@ def traiter(dry_run=False, documents=None):
 
         compte, methode, confiance = _rattacher(doc, annuaire)
         if not compte:
-            # Hors périmètre : le document reste en base, mesurable, mais ne
-            # pollue pas les fiches compte.
-            ecartes["aucun compte suivi"] = ecartes.get("aucun compte suivi", 0) + 1
-            if not dry_run:
-                db.ecarter_document(doc["id"], "aucun compte suivi correspondant")
+            # Mesuré sur données réelles : AUCUN des avis TED ne correspond aux
+            # comptes suivis, parce que TED est de la commande publique et que
+            # le portefeuille est composé de groupes privés. Les écarter tous
+            # reviendrait à jeter la valeur de la source.
+            #
+            # Un acheteur public identifié devient donc un CANDIDAT À LA
+            # PROSPECTION — statut « classe », visible dans la vue veille — et
+            # non un signal sur une fiche existante. Le secteur public fait
+            # partie du périmètre commercial.
+            acheteur = (doc.get("raw") or {}).get("buyer_name")
+            if acheteur:
+                candidats += 1
+                ecartes["candidat prospection (acheteur public)"] = \
+                    ecartes.get("candidat prospection (acheteur public)", 0) + 1
+                if not dry_run:
+                    db.maj_document(doc["id"], status="classe",
+                                    reject_reason=f"candidat: {acheteur[:150]}",
+                                    processed_at="now()")
+            else:
+                ecartes["aucun compte suivi"] = ecartes.get("aucun compte suivi", 0) + 1
+                if not dry_run:
+                    db.ecarter_document(doc["id"], "aucun compte suivi correspondant")
             continue
 
         signal = _construire_signal(doc, compte, categories, ligne, methode, confiance)
@@ -135,6 +160,9 @@ def traiter(dry_run=False, documents=None):
     for motif, n in sorted(ecartes.items(), key=lambda kv: -kv[1]):
         print(f"  écarté · {motif} : {n}")
 
+    if candidats:
+        print(f"  {candidats} acheteurs publics identifiés comme candidats à la prospection")
+
     if not dry_run:
         db.journaliser_run("traitement", collected=len(documents), kept=retenus,
                            signals=signaux, run_ref=RUN_REF,
@@ -143,7 +171,16 @@ def traiter(dry_run=False, documents=None):
 
 
 def _rattacher(doc, annuaire):
+    """Rattache un document, selon la stratégie déclarée par sa source.
+
+    · « acheteur » (TED)  : l'entité est connue, on la résout.
+    · « mention » (presse) : l'entité est inconnue, on balaie le texte à la
+      recherche des comptes du portefeuille.
+    """
     raw = doc.get("raw") or {}
+    if raw.get("strategie_rattachement") == "mention":
+        texte = f"{doc.get('title', '')} {doc.get('excerpt', '')}"
+        return annuaire.chercher_dans_texte(texte)
     return annuaire.resoudre(nom=raw.get("buyer_name"), domaine=raw.get("buyer_domain"))
 
 

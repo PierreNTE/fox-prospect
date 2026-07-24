@@ -145,7 +145,7 @@ def construire_query(config, depuis_jours, pays):
     return " AND ".join(morceaux)
 
 
-def collecter(source, depuis_jours=2, pays=None, plafond=400):
+def collecter(source, depuis_jours=2, pays=None, plafond=400, **_):
     """Collecte les avis TED récents. Renvoie (documents, nouveau_cursor)."""
     config = source.get("config") or {}
     query = construire_query(config, depuis_jours, pays)
@@ -222,6 +222,10 @@ def _vers_document(avis, source_id):
             "winner_name": gagnant,
             "winner_country": avis.get("winner-country"),
             "place_of_performance": sorted(set(avis.get("place-of-performance") or [])),
+            # Le rattachement passe par l'ACHETEUR, jamais par le titulaire :
+            # quand un intégrateur gagne chez un hôpital, le compte concerné
+            # est l'hôpital.
+            "strategie_rattachement": "acheteur",
             "conclusion_date": _premiere_date(avis.get("contract-conclusion-date")),
             "contract_end_date": fin,
             "estimated_value": avis.get("estimated-value-proc"),

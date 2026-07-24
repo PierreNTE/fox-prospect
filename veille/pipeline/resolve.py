@@ -19,15 +19,28 @@ import unicodedata
 
 from config import SEUIL_RAPPROCHEMENT_NOM
 
-# Formes juridiques et mots vides qui n'apportent rien à l'identification.
-# « Société Générale SA » et « Societe Generale » doivent se rapprocher.
-BRUIT = {
+# Formes juridiques : toujours retirées. « Société Générale SA » et
+# « Societe Generale » doivent se rapprocher.
+FORMES_JURIDIQUES = {
     "sa", "sas", "sarl", "sasu", "se", "sca", "snc", "eurl", "scop",
     "gmbh", "ag", "kg", "mbh", "ug", "ohg",
     "ltd", "plc", "llp", "limited", "inc", "corp",
-    "groupe", "group", "holding", "france", "deutschland", "uk",
-    "et", "and", "de", "du", "des", "la", "le", "les",
+    "groupe", "group", "holding",
 }
+
+# Articles et qualificatifs géographiques : retirés pour la COMPARAISON de deux
+# raisons sociales, mais conservés pour la RECHERCHE dans un texte.
+#
+# La distinction n'est pas cosmétique : « La Poste », dépouillé de son article,
+# devient « poste » — un mot omniprésent en français (« poste de travail »).
+# Mesuré sur un échantillon de presse réel, cette seule confusion produisait
+# cinq faux rattachements sur six signaux.
+MOTS_FAIBLES = {
+    "et", "and", "de", "du", "des", "la", "le", "les", "the",
+    "france", "deutschland", "uk",
+}
+
+BRUIT = FORMES_JURIDIQUES | MOTS_FAIBLES
 
 
 def normaliser(texte):
@@ -40,8 +53,18 @@ def normaliser(texte):
 
 
 def cle_nom(nom):
-    """Forme comparable d'une raison sociale, débarrassée du bruit juridique."""
+    """Forme comparable d'une raison sociale, pour rapprocher deux noms."""
     mots = [m for m in normaliser(nom).split() if m not in BRUIT and len(m) > 1]
+    return " ".join(mots)
+
+
+def forme_recherche(nom):
+    """Forme à chercher dans un texte : on ne retire QUE la forme juridique.
+
+    « La Poste SA » → « la poste ». L'article est conservé : c'est lui qui
+    distingue l'entreprise du nom commun.
+    """
+    mots = [m for m in normaliser(nom).split() if m not in FORMES_JURIDIQUES and len(m) > 1]
     return " ".join(mots)
 
 
@@ -73,6 +96,54 @@ class Annuaire:
             if k:
                 self.par_nom[k] = c
         self._cles = list(self.par_nom)
+
+    def chercher_dans_texte(self, texte_brut):
+        """Cherche un compte suivi CITÉ dans un texte de presse.
+
+        Stratégie inverse de `resoudre` : on ne connaît pas l'entreprise à
+        l'avance, on balaie le texte à la recherche des comptes du portefeuille.
+
+        Le piège est le faux positif sur les raisons sociales d'un seul mot :
+        « Orange » désigne aussi un fruit, « Carrefour » un croisement. Pour ces
+        noms, on exige la forme EXACTEMENT CAPITALISÉE dans le texte d'origine —
+        une majuscule en milieu de phrase distingue de façon fiable la marque du
+        mot commun, pour un coût nul.
+        """
+        if not texte_brut:
+            return None, None, 0.0
+        texte_norm = normaliser(texte_brut)
+        trouve, longueur_max, confiance = None, 0, 0.0
+
+        for compte in self.comptes:
+            nom = (compte.get("name") or "").strip()
+            recherche = forme_recherche(nom)      # article conservé
+            cle = cle_nom(nom)                    # article retiré
+            if len(recherche) < 4:
+                continue
+
+            score = None
+            if " " in recherche:
+                # Raison sociale composée : suffisamment spécifique.
+                # « la poste » ne matche pas « poste de travail ».
+                if re.search(rf"\b{re.escape(recherche)}\b", texte_norm):
+                    score = 0.90
+            elif len(cle) >= 4:
+                # Nom d'un seul mot signifiant (« Atos », « Orange ») : exiger
+                # la CAPITALISATION dans le texte d'origine. Une majuscule en
+                # milieu de phrase distingue la marque du nom commun, pour un
+                # coût nul.
+                if re.search(rf"\b{re.escape(cle.capitalize())}\b", texte_brut):
+                    score = 0.78
+
+            if score is None:
+                continue
+
+            # Le nom le plus long l'emporte : « Crédit Agricole Assurances »
+            # doit primer sur « Crédit Agricole » si les deux sont suivis.
+            if len(recherche) > longueur_max:
+                trouve, longueur_max, confiance = compte, len(recherche), score
+
+        return trouve, ("mention" if trouve else None), confiance
 
     def resoudre(self, nom=None, domaine=None):
         """Renvoie (compte|None, methode, confiance)."""
