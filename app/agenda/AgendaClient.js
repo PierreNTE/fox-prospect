@@ -7,6 +7,7 @@ import {
 } from "@fluentui/react-components";
 import {
   Add24Regular, Delete24Regular, CalendarLtr24Regular, ArrowClockwise24Regular,
+  Sparkle24Regular, Building24Regular,
 } from "@fluentui/react-icons";
 import { fetchJson } from "@/lib/fetch-json";
 
@@ -26,6 +27,11 @@ function fmt(d) {
   catch { return d; }
 }
 
+// Jour et heure d'un événement d'agenda, dans le fuseau du navigateur (le tien).
+// « sv-SE » est le raccourci le plus court vers un YYYY-MM-DD localisé.
+const localDay = (iso) => { try { return new Date(iso).toLocaleDateString("sv-SE"); } catch { return ""; } };
+const hhmm = (iso) => { try { return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } };
+
 function bucketOf(date, t) {
   if (!date) return "nodate";
   if (date < t) return "overdue";
@@ -43,19 +49,41 @@ const BUCKETS = [
   { key: "nodate", label: "Sans échéance", color: "var(--colorNeutralForeground3)" },
 ];
 
-export default function AgendaClient({ initial }) {
+export default function AgendaClient({ initial, calendar }) {
   const router = useRouter();
   const [tasks, setTasks] = useState(initial?.tasks || []);
   const relances = initial?.relances || [];
+  const [cal, setCal] = useState(calendar || { configured: false, events: [], error: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [preparing, setPreparing] = useState("");
   const [title, setTitle] = useState("");
   const [due, setDue] = useState(todayStr());
   const [kind, setKind] = useState("appel");
 
   const refresh = async () => {
-    const { ok, data, error: err } = await fetchJson("/api/tasks", { cache: "no-store" });
-    if (ok) setTasks(data.tasks || []); else setError(err);
+    setError("");
+    const [tasksRes, calRes] = await Promise.all([
+      fetchJson("/api/tasks", { cache: "no-store" }),
+      // `refresh=1` force le retéléchargement du flux ICS (cache de 10 min).
+      cal.configured ? fetchJson("/api/calendar?refresh=1", { cache: "no-store" }) : null,
+    ]);
+    if (tasksRes.ok) setTasks(tasksRes.data.tasks || []); else setError(tasksRes.error);
+    if (calRes?.ok) setCal(calRes.data);
+  };
+
+  // IA1 — prépare le RDV depuis l'agenda : génère le briefing du compte puis
+  // ouvre la fiche. Un seul clic entre « j'ai un RDV » et « je suis prêt ».
+  const prepare = async (ev) => {
+    if (!ev.account_id) return;
+    setPreparing(ev.id); setError("");
+    const { ok, error: err } = await fetchJson("/api/rdv-brief", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ accountId: ev.account_id }),
+    });
+    setPreparing("");
+    if (!ok) { setError(err); return; }
+    router.push(`/accounts/${ev.account_id}`);
   };
 
   const add = async () => {
@@ -109,12 +137,22 @@ export default function AgendaClient({ initial }) {
         date: p.follow_up_at, kind: "relance", link: `/prospects/${p.id}`, sub: p.next_action || "Relance prévue",
       });
     }
+    // RDV de l'agenda Outlook (lecture seule). Ils portent une heure, et un
+    // compte quand le rapprochement a réussi → bouton « Préparer ».
+    for (const ev of cal.events || []) {
+      items.push({
+        itemType: "rdv", id: `c-${ev.uid || ev.start}-${ev.start}`, raw: ev,
+        title: ev.title, date: localDay(ev.start), kind: "rdv",
+        link: ev.account_id ? `/accounts/${ev.account_id}` : null,
+        sub: [ev.allDay ? "Journée" : hhmm(ev.start), ev.location].filter(Boolean).join(" · "),
+      });
+    }
     const by = {};
     for (const b of BUCKETS) by[b.key] = [];
     for (const it of items) by[bucketOf(it.date, t)].push(it);
     for (const k of Object.keys(by)) by[k].sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
     return by;
-  }, [tasks, relances]);
+  }, [tasks, relances, cal]);
 
   const doneTasks = tasks.filter((t) => t.done);
   const openCount = BUCKETS.reduce((n, b) => n + grouped[b.key].length, 0);
@@ -125,7 +163,7 @@ export default function AgendaClient({ initial }) {
         <div>
           <Title2>Agenda</Title2>
           <Body1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 2 }}>
-            Toutes tes échéances au même endroit — tâches et relances.
+            Toutes tes échéances au même endroit — tâches, relances et rendez-vous.
           </Body1>
         </div>
         <Button appearance="subtle" icon={<ArrowClockwise24Regular />} onClick={refresh}>Rafraîchir</Button>
@@ -134,6 +172,28 @@ export default function AgendaClient({ initial }) {
       {error && (
         <Card style={{ borderLeft: `3px solid ${RED}`, padding: "12px 16px" }}>
           <Body1 style={{ color: RED }}>{error}</Body1>
+        </Card>
+      )}
+
+      {/* Agenda Outlook — état de la connexion. Jamais bloquant : les tâches et
+          les relances fonctionnent sans lui. */}
+      {!cal.configured && (
+        <Card style={{ padding: "14px 16px", borderLeft: `3px solid ${BRAND}` }}>
+          <Body1 style={{ fontWeight: 600, fontSize: 13, display: "block", marginBottom: 4 }}>
+            Brancher ton agenda Outlook (lecture seule)
+          </Body1>
+          <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block", lineHeight: 1.55 }}>
+            Dans Outlook web : <strong>Paramètres → Calendrier → Calendriers partagés → Publier un calendrier</strong>,
+            autorisation « Afficher tous les détails », puis copie le lien <strong>ICS</strong>.
+            Colle-le dans la variable d&apos;environnement <code>OUTLOOK_ICS_URL</code> sur Vercel.
+            Aucune autorisation d&apos;administrateur n&apos;est requise, et Fox Prospect n&apos;écrit jamais dans ton agenda.
+            Traite ce lien comme un mot de passe : il donne accès à ton calendrier.
+          </Caption1>
+        </Card>
+      )}
+      {cal.configured && cal.error && (
+        <Card style={{ padding: "12px 16px", borderLeft: `3px solid ${AMBER}` }}>
+          <Body1 style={{ fontSize: 13 }}>Agenda Outlook indisponible — {cal.error}</Body1>
         </Card>
       )}
 
@@ -187,7 +247,10 @@ export default function AgendaClient({ initial }) {
               {it.itemType === "task" ? (
                 <Checkbox checked={false} onChange={() => toggle(it.raw)} aria-label="Marquer comme faite" />
               ) : (
-                <span title="Relance planifiée" style={{ width: 20, flexShrink: 0, display: "inline-flex", justifyContent: "center", color: AMBER }}>
+                <span
+                  title={it.itemType === "rdv" ? "Rendez-vous (agenda Outlook)" : "Relance planifiée"}
+                  style={{ width: 20, flexShrink: 0, display: "inline-flex", justifyContent: "center", color: it.itemType === "rdv" ? KIND_COLOR.rdv : AMBER }}
+                >
                   <CalendarLtr24Regular style={{ fontSize: 16 }} />
                 </span>
               )}
@@ -197,10 +260,31 @@ export default function AgendaClient({ initial }) {
                   {it.title}
                 </Body1>
                 {it.sub && <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block" }}>{it.sub}</Caption1>}
+                {it.itemType === "rdv" && it.raw.account_name && (
+                  <Caption1 style={{ display: "inline-flex", alignItems: "center", gap: 3, color: BRAND, fontWeight: 600 }}>
+                    <Building24Regular style={{ fontSize: 12 }} />
+                    {it.raw.account_name}
+                    {/* Le mode de rapprochement est affiché : « titre » est une
+                        heuristique, l'utilisateur doit pouvoir en douter. */}
+                    {it.raw.match === "titre" && (
+                      <span style={{ color: "var(--colorNeutralForeground3)", fontWeight: 400 }}>· rapproché par le titre</span>
+                    )}
+                  </Caption1>
+                )}
               </div>
               <Caption1 style={{ color: b.key === "overdue" ? RED : "var(--colorNeutralForeground3)", flexShrink: 0, whiteSpace: "nowrap", fontSize: 11 }}>
                 {fmt(it.date)}
               </Caption1>
+              {it.itemType === "rdv" && it.raw.account_id && (
+                <Button
+                  appearance="subtle" size="small"
+                  icon={preparing === it.id ? <Spinner size="tiny" /> : <Sparkle24Regular />}
+                  disabled={!!preparing} onClick={() => prepare({ id: it.id, account_id: it.raw.account_id })}
+                  title="Générer le briefing de préparation puis ouvrir la fiche compte"
+                >
+                  Préparer
+                </Button>
+              )}
               {it.itemType === "task" && (
                 <Button appearance="subtle" size="small" icon={<Delete24Regular />} onClick={() => remove(it.raw)} title="Supprimer" />
               )}
