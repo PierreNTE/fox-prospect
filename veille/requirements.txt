@@ -1,0 +1,6 @@
+# Dependances du passage quotidien de veille.
+# Volontairement minimal : sur un budget de minutes GitHub Actions, chaque
+# dependance installee se paie. Les briques NLP (torch, sentence-transformers,
+# GLiNER, trafilatura) vivent dans requirements-nlp.txt et ne seront ajoutees
+# au passage quotidien qu'une fois le banc d'essai d'embedding validé.
+PyYAML>=6.0

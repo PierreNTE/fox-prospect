@@ -1,0 +1,151 @@
+# Dictionnaires multilingues du filtre lexical (étage 1 de la cascade).
+#
+# C'est l'étage qui écarte ~80 % du volume AVANT tout calcul coûteux : c'est
+# lui qui permet au passage quotidien de tenir dans son budget de minutes.
+# Logique métier versionnée, comme cpv.yaml.
+#
+# Les termes sont comparés en minuscules, sans accents, sur titre + extrait.
+
+concurrents:
+  # Détection de la veille concurrentielle. Les variantes comptent : les avis
+  # d'attribution TED nomment l'entité juridique locale, pas la marque.
+  hpe:
+    - "hewlett packard enterprise"
+    - "hewlett-packard enterprise"
+    - "hpe"
+  hp_inc:
+    - "hp inc"
+    - "hp france"
+    - "hp deutschland"
+  lenovo:
+    - "lenovo"
+  # Utile de se reconnaître soi-même : un marché gagné par Dell n'est pas un
+  # signal concurrentiel, c'est un compte client à suivre.
+  dell:
+    - "dell technologies"
+    - "dell "
+    - "emc"
+
+categories:
+  # Renouvellement de parc et migration poste de travail → CSG
+  parc_client:
+    ligne: csg
+    termes:
+      - "windows 11"
+      - "windows 10"
+      - "renouvellement du parc"
+      - "renouvellement de parc"
+      - "parc informatique"
+      - "postes de travail"
+      - "poste de travail"
+      - "ordinateurs portables"
+      - "arbeitsplatzrechner"
+      - "clientmanagement"
+      - "endgeraete"
+      - "workplace refresh"
+      - "device refresh"
+      - "end user computing"
+
+  # Datacenter, serveurs, stockage → ISG
+  datacenter:
+    ligne: isg
+    termes:
+      - "datacenter"
+      - "data center"
+      - "centre de donnees"
+      - "rechenzentrum"
+      - "serveurs"
+      - "baie de stockage"
+      - "stockage unifie"
+      - "virtualisation"
+      - "vmware"
+      - "nutanix"
+      - "hyperconverge"
+      - "hyperkonvergent"
+      - "san "
+      - "nas "
+      - "sauvegarde"
+      - "plan de reprise"
+
+  # IA et GPU → ISG, angle Dell AI Factory
+  ia_gpu:
+    ligne: isg
+    termes:
+      - "intelligence artificielle"
+      - "kuenstliche intelligenz"
+      - "artificial intelligence"
+      - "gpu"
+      - "nvidia"
+      - "calcul haute performance"
+      - "hochleistungsrechnen"
+      - "hpc"
+      - "cluster de calcul"
+      - "modeles de langage"
+      - "llm"
+      - "ai factory"
+
+  # Croissance et implantation → CSG surtout
+  croissance:
+    ligne: csg
+    termes:
+      - "ouverture de site"
+      - "nouveau site"
+      - "nouveau siege"
+      - "demenagement"
+      - "standorteroeffnung"
+      - "recrutement massif"
+      - "plan de recrutement"
+      - "creation de postes"
+      - "hiring spree"
+
+  # Nominations de décideurs IT — attention RGPD, voir person_name
+  nomination:
+    ligne: both
+    termes:
+      - "nomme directeur des systemes"
+      - "nouveau dsi"
+      - "directeur des systemes d'information"
+      - "directeur informatique"
+      - "chief information officer"
+      - "chief technology officer"
+      - "chief digital officer"
+      - "responsable de la securite des systemes"
+      - "rssi"
+      - "ciso"
+      - "it-leiter"
+      - "cio"
+
+  # Cybersécurité et conformité
+  cyber:
+    ligne: both
+    termes:
+      - "cyberattaque"
+      - "ransomware"
+      - "rancongiciel"
+      - "cyberangriff"
+      - "nis2"
+      - "dora"
+      - "securite des systemes d'information"
+      - "souverainete numerique"
+
+  # Opérations financières
+  financement:
+    ligne: both
+    termes:
+      - "levee de fonds"
+      - "tour de table"
+      - "finanzierungsrunde"
+      - "acquisition de"
+      - "rachat de"
+      - "fusion avec"
+      - "introduction en bourse"
+
+# Termes qui disqualifient un document même s'il contient un mot-clé retenu.
+# Évite le bruit marketing qui pollue la veille sans jamais produire de rendez-vous.
+exclusions:
+  - "offre d'emploi stage"
+  - "jeu concours"
+  - "sponsoring"
+  - "partenariat sportif"
+  - "prix du meilleur"
+  - "classement des"

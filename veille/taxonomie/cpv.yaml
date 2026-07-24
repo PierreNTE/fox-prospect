@@ -1,0 +1,61 @@
+# Codes CPV (Common Procurement Vocabulary) → ligne de produit Dell.
+#
+# Cette table est de la LOGIQUE MÉTIER VERSIONNÉE, pas de la configuration :
+# modifier une ligne change ce que le système considère comme un signal d'achat.
+# Elle vit donc dans Git, avec revue et historique — contrairement aux sources,
+# qui vivent en base et se modifient sans déploiement.
+#
+# Règle de résolution : le PRÉFIXE LE PLUS LONG l'emporte. « 30213000 » est donc
+# classé csg par la règle « 30213 », même si « 302 » existe aussi.
+#
+# csg  = Client Solutions Group (poste de travail, PC, écrans, périphériques)
+# isg  = Infrastructure Solutions Group (serveurs, stockage, réseau, datacenter)
+# both = pertinent pour les deux, l'angle se décide au contact
+# none = hors périmètre Dell, sert à écarter explicitement
+
+prefixes:
+  # ── Poste de travail ────────────────────────────────────────────
+  "302":     csg      # machines de bureau et matériel informatique
+  "30213":   csg      # ordinateurs personnels, portables, tablettes
+  "30231":   csg      # écrans et consoles
+  "30232":   csg      # périphériques (imprimantes, scanners)
+  "30237":   csg      # pièces et accessoires informatiques
+  "48624":   csg      # systèmes d'exploitation pour PC
+
+  # ── Infrastructure ──────────────────────────────────────────────
+  "30233":   isg      # unités de stockage et de lecture
+  "48820":   isg      # serveurs
+  "48821":   isg      # serveurs de réseau
+  "32420":   isg      # matériel de réseau
+  "32421":   isg      # câblage réseau
+  "48800":   isg      # systèmes et serveurs d'information
+  "72300":   isg      # services de données
+  "72310":   isg      # traitement de données
+  "72315":   isg      # gestion de réseau de données
+  "72317":   isg      # stockage de données
+  "72500":   isg      # services informatiques d'infogérance
+  "72514":   isg      # gestion d'installations informatiques
+  "51600":   isg      # installation d'ordinateurs et de matériel de bureau
+  "50312":   isg      # maintenance de matériel informatique
+
+  # ── Ambivalent ──────────────────────────────────────────────────
+  "48":      both     # logiciels — l'angle dépend du contexte
+  "72":      both     # services informatiques
+  "72222":   both     # planification de systèmes d'information
+  "79994":   both     # gestion de contrats
+
+  # ── Hors périmètre, écarté explicitement ────────────────────────
+  "722122":  none     # développement de logiciels métier spécifiques
+  "48180":   none     # logiciels médicaux
+  "48490":   none     # logiciels d'approvisionnement
+
+# Familles CPV considérées comme « informatique » au sens large. Sert de
+# garde-fou : un avis dont aucun CPV ne commence par l'un de ces préfixes est
+# écarté avant tout traitement coûteux.
+familles_it:
+  - "30"    # matériel de bureau et informatique
+  - "32"    # équipements de radio, télévision, communication
+  - "48"    # logiciels
+  - "50312" # maintenance informatique
+  - "51600" # installation informatique
+  - "72"    # services informatiques
