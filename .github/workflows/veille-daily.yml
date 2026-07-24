@@ -66,6 +66,11 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Étage de jugement. Sans cette clé, le passage tourne à l'identique
+          # sans jugement IA : les signaux fragiles sont écrits tels quels, avec
+          # leur provenance affichée « à vérifier ».
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MONTHLY_BUDGET_EUR: ${{ vars.MONTHLY_BUDGET_EUR }}
           # Plafonds — seconde barrière derrière le kill-switch mensuel.
           VEILLE_MAX_LLM: ${{ vars.VEILLE_MAX_LLM }}
           VEILLE_MAX_DOCS: ${{ vars.VEILLE_MAX_DOCS }}
@@ -73,6 +78,30 @@ jobs:
           VEILLE_PAYS: ${{ vars.VEILLE_PAYS }}
         run: |
           python veille/run.py ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      # ── Vectorisation ────────────────────────────────────────────────────
+      # Étape SÉPARÉE, et après la collecte, pour deux raisons : torch pèse plus
+      # de 2 Go (on ne l'installe qu'une fois le contenu du jour déjà en base),
+      # et `continue-on-error` garantit qu'une roue Python cassée ne fait pas
+      # échouer un passage dont l'essentiel — la collecte — a réussi.
+      #
+      # Ce que l'on perd alors est la recherche sémantique du jour, pas les
+      # signaux : l'anti-jointure rattrape les vecteurs manquants au passage
+      # suivant.
+      - name: Installer les briques NLP
+        if: ${{ !inputs.dry_run }}
+        continue-on-error: true
+        run: pip install -r veille/requirements-nlp.txt
+
+      - name: Vectorisation
+        if: ${{ !inputs.dry_run }}
+        continue-on-error: true
+        timeout-minutes: 15
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VEILLE_MAX_EMBED: ${{ vars.VEILLE_MAX_EMBED }}
+        run: python veille/run.py --embed
 
       # Signal de vie : un service de surveillance de tâches planifiées alerte
       # quand le ping CESSE d'arriver — ce qu'aucune alerte d'échec ne peut

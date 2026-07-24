@@ -9,6 +9,7 @@ scripts/contact-sources/worker.py et pour garder l'installation légère : sur
 un budget de minutes GitHub Actions, chaque dépendance se paie.
 """
 
+import datetime
 import json
 import urllib.error
 import urllib.parse
@@ -142,6 +143,72 @@ def creer_signal(signal):
         if "23505" in str(e):
             return False
         raise
+
+
+def maj_signal(signal_id, **champs):
+    sb(f"company_signals?id=eq.{signal_id}", "PATCH", champs, prefer="return=minimal")
+
+
+# ── Étage IA ────────────────────────────────────────────────────────────────
+
+def signaux_sans_embedding(limite=200):
+    """Anti-jointure signaux / vecteurs — inexprimable en PostgREST, d'où la RPC."""
+    return sb("rpc/veille_signaux_sans_embedding", "POST", {"p_limite": limite}) or []
+
+
+def enregistrer_embeddings(lignes):
+    """Écrit les vecteurs. `embedding` est une chaîne « [0.1,…] », forme d'entrée
+    native de pgvector : PostgREST transmet du JSON, Postgres fait la conversion.
+
+    Upsert et non insert : un signal dont le texte a été enrichi par le résumé
+    mérite un vecteur recalculé, sans qu'il faille d'abord supprimer l'ancien.
+    """
+    if not lignes:
+        return 0
+    sb("signal_embeddings?on_conflict=signal_id", "POST", lignes,
+       prefer="resolution=merge-duplicates,return=minimal")
+    return len(lignes)
+
+
+def themes_a_vectoriser():
+    """Thèmes actifs dont le vecteur manque — nouveaux, ou requête modifiée
+    (le trigger de la migration v16 remet alors l'embedding à NULL)."""
+    return sb("veille_themes?enabled=eq.true&embedding=is.null&select=id,label,query") or []
+
+
+def maj_theme_vecteur(theme_id, vecteur):
+    sb(f"veille_themes?id=eq.{theme_id}", "PATCH",
+       {"embedding": vecteur, "embedded_at": "now()"}, prefer="return=minimal")
+
+
+def cout_mois_courant():
+    """Dépense Anthropic du mois en cours, en euros — MÊME source que lib/budget.js.
+
+    La somme est faite ici plutôt qu'en SQL par symétrie avec l'application :
+    une seule règle de calcul, appliquée aux mêmes lignes, quel que soit le
+    demandeur. Le volume est de l'ordre de quelques centaines de lignes.
+    """
+    debut = datetime.datetime.now(datetime.timezone.utc).replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0
+    ).isoformat()
+    lignes = sb(f"ai_runs?select=cost_eur&created_at=gte.{urllib.parse.quote(debut)}") or []
+    return sum(float(l.get("cost_eur") or 0) for l in lignes)
+
+
+def journaliser_ai_run(route, input_tokens=0, output_tokens=0, cost_eur=0, account_id=None):
+    """Journalise un appel LLM dans la table de l'application.
+
+    Le pipeline n'a pas sa propre comptabilité : la jauge de budget affichée
+    dans Réglages doit voir la veille, sinon le plafond mensuel protège une
+    moitié du système et ignore l'autre.
+    """
+    sb("ai_runs", "POST", [{
+        "route": route,
+        "account_id": account_id,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cost_eur": cost_eur,
+    }], prefer="return=minimal")
 
 
 # ── Supervision ─────────────────────────────────────────────────────────────

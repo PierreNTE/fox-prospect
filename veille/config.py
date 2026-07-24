@@ -39,3 +39,31 @@ PAYS_MVP = os.environ.get("VEILLE_PAYS", "FRA,DEU,GBR").split(",")
 
 # Identifiant d'exécution GitHub Actions, journalisé dans pipeline_runs.
 RUN_REF = os.environ.get("GITHUB_RUN_ID", "local")
+
+
+# ── Étage IA ────────────────────────────────────────────────────────────────
+# Le pipeline partage la facture Anthropic de l'application : même clé, même
+# table ai_runs, même plafond mensuel que lib/budget.js. Deux compteurs
+# séparés donneraient deux vérités sur une seule facture.
+
+ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY")
+
+# Haiku et non Sonnet : la tâche est de trancher un oui/non sur un texte court
+# et de le résumer. Mesuré côté application, l'écart de tarif est d'un facteur
+# dix pour un gain nul sur ce type de jugement.
+MODELE_LLM = os.environ.get("VEILLE_MODELE_LLM", "claude-haiku-4-5-20251001")
+
+# Tarifs en euros par million de jetons, alignés sur ANTHROPIC_TARIF de
+# lib/constants.js. À corriger AUX DEUX ENDROITS si les tarifs changent.
+TARIF_LLM = {"entree_par_m_eur": 0.25, "sortie_par_m_eur": 1.25}
+
+BUDGET_MENSUEL_EUR = float(os.environ.get("MONTHLY_BUDGET_EUR", "15"))
+
+# BGE-M3 : multilingue, 1024 dimensions — la valeur déclarée par la migration
+# v12 (halfvec(1024)). Changer de modèle impose de changer la colonne.
+MODELE_EMBED = os.environ.get("VEILLE_MODELE_EMBED", "BAAI/bge-m3")
+
+# Plafond de volume par passage, qui est en réalité un plafond de temps : le
+# runner dispose d'une trentaine de minutes, et c'est la seule étape dont la
+# durée croît avec le volume collecté.
+MAX_EMBED_PAR_PASSAGE = int(os.environ.get("VEILLE_MAX_EMBED", "400"))

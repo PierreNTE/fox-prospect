@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import db
 from config import (FENETRE_JOURS, MAX_DOCS_PAR_SOURCE, PAYS_MVP, RUN_REF,
                     exiger_supabase)
-from pipeline import filtre
+from pipeline import embed, filtre, juger
 from pipeline.resolve import Annuaire
 from sources import rss, ted
 
@@ -131,6 +131,11 @@ def traiter(dry_run=False, documents=None, comptes=None):
         documents = db.documents_a_traiter(["collecte", "extrait"], limite=1000)
     retenus = signaux = candidats = 0
     ecartes = {}
+    # Les signaux ne sont plus écrits dans cette boucle : l'étage de jugement a
+    # un plafond de dépense, et le dépenser dans l'ordre d'arrivée des documents
+    # reviendrait à le laisser à la première source venue. On collecte donc les
+    # candidats, on les ordonne par fragilité, puis on écrit.
+    a_creer = []
 
     for doc in documents:
         garde, motif, categories, ligne = filtre.evaluer(doc)
@@ -167,13 +172,33 @@ def traiter(dry_run=False, documents=None, comptes=None):
                     db.ecarter_document(doc["id"], "aucun compte suivi correspondant")
             continue
 
-        signal = _construire_signal(doc, compte, categories, ligne, methode, confiance)
+        a_creer.append((doc, compte, categories, ligne, methode, confiance))
+
+    # ── Jugement puis écriture ──────────────────────────────────────────────
+    juge = juger.Juge(dry_run)
+    for doc, compte, categories, ligne, methode, confiance in sorted(a_creer, key=_priorite_jugement):
+        verdict = juge.juger(doc, compte, categories, methode) if juge.a_juger(methode) else None
+
+        # Le modèle peut REFUSER un rattachement que le filtre lexical avait
+        # laissé passer. C'est son seul vrai pouvoir, et la raison d'être de
+        # l'étage : écrire une information fausse sur une fiche client coûte
+        # plus cher que de manquer un signal.
+        if verdict and not verdict["pertinent"]:
+            motif = f"IA : {verdict['raison'] or 'hors périmètre'}"
+            ecartes[motif[:60]] = ecartes.get(motif[:60], 0) + 1
+            if not dry_run:
+                db.ecarter_document(doc["id"], motif)
+            continue
+
+        signal = _construire_signal(doc, compte, categories, ligne, methode, confiance, verdict)
         print(f"  → {compte['name']} : {signal['type']}/{signal['product_line']} "
               f"({methode} {confiance}) — {signal['title'][:60]}")
         if not dry_run:
             db.creer_signal(signal)
             db.maj_document(doc["id"], status="rattache", processed_at="now()")
         signaux += 1
+
+    print(f"  {juge.bilan()}")
 
     # Le détail des rejets est ce qui rend le filtre réglable : sans lui, on ne
     # sait pas s'il est trop sévère ou trop laxiste.
@@ -185,9 +210,25 @@ def traiter(dry_run=False, documents=None, comptes=None):
 
     if not dry_run:
         db.journaliser_run("traitement", collected=len(documents), kept=retenus,
-                           signals=signaux, run_ref=RUN_REF,
+                           signals=signaux, llm_calls=juge.appels, run_ref=RUN_REF,
                            duration_ms=int((time.time() - debut) * 1000))
     return len(documents), retenus, signaux
+
+
+def _priorite_jugement(candidat):
+    """Ordre de passage devant le modèle : le plus fragile d'abord.
+
+    Le plafond d'appels est une ressource rare ; le dépenser sur un flux de
+    salle de presse — dont le rattachement est certain par construction — au
+    détriment d'une mention repérée dans un article généraliste serait le
+    dépenser à l'envers.
+    """
+    _doc, _compte, _categories, _ligne, methode, _confiance = candidat
+    rang = {"mention": 0, "nom": 1}.get(methode, 2)
+    # À fragilité égale, l'étranger passe devant : c'est là que le résumé
+    # français apporte le plus (le commercial ne lit pas un avis allemand).
+    langue = 0 if (_doc.get("lang") or "fr") != "fr" else 1
+    return (rang, langue)
 
 
 def _rattacher(doc, annuaire):
@@ -213,7 +254,13 @@ def _rattacher(doc, annuaire):
     return annuaire.resoudre(nom=raw.get("buyer_name"), domaine=raw.get("buyer_domain"))
 
 
-def _construire_signal(doc, compte, categories, ligne, methode, confiance):
+def _construire_signal(doc, compte, categories, ligne, methode, confiance, verdict=None):
+    """Assemble le signal. `verdict` est le jugement du modèle, ou None.
+
+    Le verdict ENRICHIT, il n'écrase pas : `detail` reste le texte de la source
+    et `summary` porte la reformulation française. Le jour où le jugement se
+    révèle mauvais, on vide une colonne sans avoir perdu la source.
+    """
     raw = doc.get("raw") or {}
     categorie = categories[0] if categories else "appel_offres"
 
@@ -223,7 +270,7 @@ def _construire_signal(doc, compte, categories, ligne, methode, confiance):
     if raw.get("contract_end_date"):
         detail += f" · Renouvellement à prévoir avant {raw['contract_end_date']}"
 
-    return {
+    signal = {
         "account_id": compte["id"],
         "company_id": compte.get("company_id"),
         # `.get` et non `[...]` : en dry-run les documents n'ont jamais été
@@ -245,6 +292,23 @@ def _construire_signal(doc, compte, categories, ligne, methode, confiance):
         "status": "nouveau",
     }
 
+    if verdict:
+        from config import MODELE_LLM
+        signal["summary"] = verdict["resume"]
+        signal["relevance"] = verdict["pertinence"]
+        signal["judged_model"] = MODELE_LLM
+        signal["judged_at"] = "now()"
+        if verdict["type"]:
+            signal["type"] = verdict["type"]
+        if verdict["ligne"]:
+            signal["product_line"] = verdict["ligne"]
+        # Colonne dédiée, et non noyée dans le texte : c'est ce qui rend le
+        # droit d'opposition RGPD applicable à une nomination (voir v12).
+        if verdict["personne"] and signal["type"] == "nomination":
+            signal["person_name"] = verdict["personne"]
+
+    return signal
+
 
 def _pays(raw):
     """Code pays ISO-2 depuis les codes NUTS/ISO-3 renvoyés par TED."""
@@ -259,6 +323,7 @@ def main():
     ap = argparse.ArgumentParser(description="Passage quotidien de veille.")
     ap.add_argument("--collecte", action="store_true", help="collecte seule")
     ap.add_argument("--traitement", action="store_true", help="traitement seul")
+    ap.add_argument("--embed", action="store_true", help="vectorisation seule (briques NLP)")
     ap.add_argument("--dry-run", action="store_true", help="n'écrit rien")
     ap.add_argument("--comptes", help="JSON de comptes, pour éprouver hors ligne")
     args = ap.parse_args()
@@ -266,7 +331,10 @@ def main():
     if not args.dry_run:
         exiger_supabase()
 
-    tout = not (args.collecte or args.traitement)
+    # La vectorisation est HORS du passage par défaut : elle exige torch, que le
+    # workflow n'installe que dans une étape séparée. Ainsi une roue Python
+    # cassée ne fait jamais tomber la collecte, qui est l'étage irremplaçable.
+    tout = not (args.collecte or args.traitement or args.embed)
     debut = time.time()
     collectes = None
 
@@ -285,6 +353,12 @@ def main():
         )
         taux = (100 * retenus / vus) if vus else 0
         print(f"  {vus} vus · {retenus} retenus ({taux:.0f} %) · {signaux} signaux")
+
+    if args.embed:
+        print("Vectorisation…")
+        themes = embed.vectoriser_themes(args.dry_run)
+        signaux_vus = embed.vectoriser_signaux(args.dry_run)
+        print(f"  {themes} thème(s) · {signaux_vus} signal(aux)")
 
     print(f"Terminé en {time.time() - debut:.1f} s")
 
