@@ -22,7 +22,7 @@ import json
 import urllib.request
 from datetime import date, timedelta
 
-from .base import Document
+from .base import Document, texte_propre
 
 API = "https://api.ted.europa.eu/v3/notices/search"
 
@@ -146,33 +146,59 @@ def construire_query(config, depuis_jours, pays):
 
 
 def collecter(source, depuis_jours=2, pays=None, plafond=400, **_):
-    """Collecte les avis TED récents. Renvoie (documents, nouveau_cursor)."""
-    config = source.get("config") or {}
-    query = construire_query(config, depuis_jours, pays)
+    """Collecte les avis TED récents. Renvoie (documents, nouveau_cursor).
 
-    documents, page = [], 1
+    UNE REQUÊTE PAR PAYS, chacune avec sa part du plafond. Une requête unique
+    couvrant FRA+DEU+GBR paraît plus économique, mais l'API renvoie les avis par
+    date de publication : le pays qui publie le plus remplit le quota et les
+    autres n'apparaissent jamais. Mesuré au passage du 24 juillet — sur 594
+    acheteurs publics identifiés, la quasi-totalité étaient allemands, non parce
+    que le marché allemand est plus actif pour ce commercial, mais parce que
+    l'Allemagne publie davantage d'avis.
+    """
+    config = source.get("config") or {}
+    liste_pays = list(pays) if pays else [None]
+    part = max(1, plafond // len(liste_pays))
+
+    documents = []
+    for p in liste_pays:
+        lot = _collecter_query(construire_query(config, depuis_jours, [p] if p else None),
+                               source["id"], part)
+        if p:
+            print(f"    {p} : {len(lot)}")
+        documents.extend(lot)
+
+    # Le reliquat d'un pays peu actif n'est PAS redistribué aux autres : ce
+    # serait rendre au pays dominant la place qu'on vient de lui retirer.
+    dates = [d.published_at for d in documents if d.published_at]
+    return documents, (max(dates) if dates else None)
+
+
+def _collecter_query(query, source_id, plafond):
+    documents, page, vus = [], 1, 0
     while len(documents) < plafond:
-        data = _requete(query, limite=min(250, plafond - len(documents)), page=page)
+        demande = min(250, plafond - len(documents))   # 250 = maximum côté TED
+        data = _requete(query, limite=demande, page=page)
         if data.get("message"):                       # erreur de syntaxe de requête
             raise RuntimeError(f"TED: {data['message'][:200]}")
         avis = data.get("notices") or []
         if not avis:
             break
 
+        vus += len(avis)
         for a in avis:
-            doc = _vers_document(a, source["id"])
+            doc = _vers_document(a, source_id)
             if doc:
                 documents.append(doc)
 
-        # `totalNoticeCount` borne la pagination ; PAGE_NUMBER plafonne à 15 000.
-        if len(avis) < 250 or page * 250 >= (data.get("totalNoticeCount") or 0):
+        # Page incomplète, ou total atteint : il n'y a plus rien à demander.
+        # La comparaison porte sur ce qui a été DEMANDÉ, pas sur une taille de
+        # page supposée : depuis le quota par pays, la demande vaut rarement 250.
+        if len(avis) < demande or vus >= (data.get("totalNoticeCount") or 0):
             break
         page += 1
 
-    # Curseur : date de publication la plus récente vue. Purement informatif —
-    # l'incrémentalité réelle est garantie par l'unicité de url_hash.
-    dates = [d.published_at for d in documents if d.published_at]
-    return documents, (max(dates) if dates else None)
+    return documents
 
 
 def _vers_document(avis, source_id):
@@ -186,9 +212,12 @@ def _vers_document(avis, source_id):
         if titre:
             break
 
-    acheteur = _texte_multilingue(avis.get("buyer-name"))
+    # Décodés au même titre que le titre : le nom de l'acheteur est AFFICHÉ
+    # (carte des candidats, extrait du signal), il subit donc le même nettoyage.
+    # `en_ligne()` ne touche que title et excerpt, pas le contenu de `raw`.
+    acheteur = texte_propre(_texte_multilingue(avis.get("buyer-name")))
     type_avis = avis.get("notice-type") or ""
-    gagnant = _texte_multilingue(avis.get("winner-name"))
+    gagnant = texte_propre(_texte_multilingue(avis.get("winner-name")))
 
     # Titre de repli : de nombreux avis n'ont aucun champ titre peuplé. Mieux
     # vaut une ligne construite à partir de l'acheteur qu'un document sans nom.

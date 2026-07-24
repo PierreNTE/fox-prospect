@@ -9,7 +9,10 @@ import {
   Target24Regular,
   PlugConnected24Regular,
 } from "@fluentui/react-icons";
-import { provenance, NIVEAU_COULEUR, LIGNES, TYPES_SIGNAL, dateCourte, estCollectable } from "@/lib/veille";
+import {
+  provenance, NIVEAU_COULEUR, LIGNES, TYPES_SIGNAL, dateCourte, estCollectable,
+  equilibrerParPays, labelPays,
+} from "@/lib/veille";
 
 const BRAND = "#5B53E6";
 
@@ -267,18 +270,36 @@ function SourcesCard({ sources }) {
 }
 
 function CandidatsCard({ candidats }) {
+  const [pays, setPays] = useState("tout");
   if (!candidats.length) return null;
+
   // Un même acheteur publie plusieurs avis : on compte les occurrences plutôt
   // que d'aligner cinquante lignes redondantes. Un acheteur récurrent est un
   // meilleur candidat qu'un acheteur ponctuel.
   const parAcheteur = new Map();
   for (const c of candidats) {
     if (!c.acheteur) continue;
-    const e = parAcheteur.get(c.acheteur) || { nom: c.acheteur, n: 0, url: c.url, date: c.published_at };
+    const e = parAcheteur.get(c.acheteur)
+      || { nom: c.acheteur, n: 0, url: c.url, date: c.published_at, pays: c.pays };
     e.n += 1;
+    e.pays = e.pays || c.pays;
     parAcheteur.set(c.acheteur, e);
   }
-  const liste = [...parAcheteur.values()].sort((a, b) => b.n - a.n).slice(0, 12);
+
+  const tous = [...parAcheteur.values()].sort((a, b) => b.n - a.n);
+
+  // Décompte par pays, affiché : c'est ce qui rend visible le déséquilibre de
+  // la collecte, et donc mesurable l'effet du quota par pays côté pipeline.
+  const parPays = new Map();
+  for (const c of tous) parPays.set(c.pays || "??", (parPays.get(c.pays || "??") || 0) + 1);
+  const paysPresents = [...parPays.entries()].sort((a, b) => b[1] - a[1]);
+
+  // Trié par fréquence, mais servi en tourniquet entre pays : sinon le pays qui
+  // publie le plus d'avis occupe les douze lignes, ce qui dit quelque chose du
+  // volume de publication et rien du potentiel commercial.
+  const liste = pays === "tout"
+    ? equilibrerParPays(tous, 12)
+    : tous.filter((c) => (c.pays || "??") === pays).slice(0, 12);
 
   return (
     <Card style={{ padding: "18px 20px" }}>
@@ -286,14 +307,33 @@ function CandidatsCard({ candidats }) {
         <Target24Regular style={{ color: BRAND }} />
         <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Candidats à la prospection</Body1>
       </div>
-      <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginBottom: 12 }}>
+      <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginBottom: 10 }}>
         Acheteurs publics avec un marché informatique en cours, absents du portefeuille.
+        {pays === "tout" && paysPresents.length > 1 && " Liste équilibrée entre pays."}
       </Caption1>
+
+      {paysPresents.length > 1 && (
+        <div style={{ marginBottom: 12 }}>
+          <Onglets
+            options={[
+              { cle: "tout", label: `Tous · ${tous.length}` },
+              ...paysPresents.map(([p, n]) => ({ cle: p, label: `${labelPays(p)} · ${n}` })),
+            ]}
+            valeur={pays}
+            onChange={setPays}
+            aria="Pays des candidats"
+          />
+        </div>
+      )}
+
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
         {liste.map((c) => (
           <div key={c.nom} style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
             <Caption1 style={{ fontWeight: 700, color: BRAND, minWidth: 26 }}>{c.n}×</Caption1>
             <Caption1 style={{ minWidth: 0 }}>
+              {pays === "tout" && c.pays && (
+                <span style={{ color: "var(--colorNeutralForeground3)" }}>{c.pays} · </span>
+              )}
               {c.url ? (
                 <a href={c.url} target="_blank" rel="noreferrer"
                    style={{ color: "inherit", textDecoration: "none" }}>{c.nom} ↗</a>
