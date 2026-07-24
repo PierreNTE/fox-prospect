@@ -6,8 +6,12 @@ ce dossier, sans toucher au pipeline.
 """
 
 import hashlib
+import html
+import re
 import urllib.parse
 from dataclasses import dataclass, field, asdict
+
+ESPACES = re.compile(r"\s+")
 
 # Paramètres de suivi publicitaire : deux URLs qui n'en diffèrent que par ces
 # clés désignent le même document et ne doivent pas produire deux entrées.
@@ -51,6 +55,20 @@ def empreinte(url):
     return hashlib.sha256(normaliser_url(url).encode()).hexdigest()
 
 
+def texte_propre(valeur):
+    """Décode les entités HTML et normalise les espaces.
+
+    Appliqué ICI, au contrat commun, et non dans chaque connecteur : la
+    correction n'avait d'abord été faite que côté RSS, et un titre TED est
+    ressorti tel quel sur la fiche client — « Programme Vision 2035 » encadré
+    de &quot; littéraux. Ce que le pipeline stocke est ce que le commercial
+    lira ; le nettoyage appartient donc au point de passage obligé.
+    """
+    if not valeur:
+        return ""
+    return ESPACES.sub(" ", html.unescape(str(valeur))).strip()
+
+
 @dataclass
 class Document:
     """Un document collecté, avant tout traitement.
@@ -71,7 +89,7 @@ class Document:
         d = asdict(self)
         d["url"] = normaliser_url(self.url)
         d["url_hash"] = empreinte(self.url)
-        d["title"] = (self.title or "")[:500]
-        d["excerpt"] = (self.excerpt or "")[:1000]
+        d["title"] = texte_propre(self.title)[:500]
+        d["excerpt"] = texte_propre(self.excerpt)[:1000]
         d["status"] = "collecte"
         return d

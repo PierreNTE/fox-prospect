@@ -33,6 +33,16 @@ UA = "FoxProspect/1.0 (veille commerciale; +https://github.com/PierreNTE/fox-pro
 BALISES_HTML = re.compile(r"<[^>]+>")
 ESPACES = re.compile(r"\s+")
 
+# Mentions ajoutées automatiquement par les CMS en fin de résumé. Elles
+# n'apportent rien et occupent la place utile sur une fiche compte — le résumé
+# est lu avant un rendez-vous, pas parcouru dans un agrégateur.
+OURS = re.compile(
+    r"\s*(the post .+? appeared first on .+?|l[’']article .+? est apparu en premier sur .+?|"
+    r"cet article .+? est apparu en premier sur .+?|"
+    r"(continue|weiterlesen|lire la suite|read more)\b.*)$",
+    re.I | re.S,
+)
+
 
 def _texte(brut):
     """Résumé d'un flux, débarrassé du balisage et des entités.
@@ -127,7 +137,7 @@ def collecter(source, depuis_jours=2, plafond=200, **_):
         if publie and publie < limite:
             continue
 
-        resume = _texte(entree.get("summary") or entree.get("description"))[:1000]
+        resume = OURS.sub("", _texte(entree.get("summary") or entree.get("description")))[:1000]
 
         # Beaucoup de salles de presse diffusent le MÊME communiqué en
         # plusieurs langues dans un flux unique, sous des URL distinctes :

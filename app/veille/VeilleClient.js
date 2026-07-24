@@ -9,7 +9,7 @@ import {
   Target24Regular,
   PlugConnected24Regular,
 } from "@fluentui/react-icons";
-import { provenance, NIVEAU_COULEUR, LIGNES, TYPES_SIGNAL, dateCourte } from "@/lib/veille";
+import { provenance, NIVEAU_COULEUR, LIGNES, TYPES_SIGNAL, dateCourte, estCollectable } from "@/lib/veille";
 
 const BRAND = "#5B53E6";
 
@@ -133,13 +133,19 @@ function joursDepuis(iso) {
 }
 
 function SourcesCard({ sources }) {
-  const enPanne = sources.filter((s) => s.enabled && s.last_error);
-  const muettes = sources.filter((s) => {
+  // Une source configurée sans connecteur n'est pas en panne : elle attend son
+  // implémentation. Les mélanger ferait passer six fonctionnalités à venir pour
+  // six incidents, et noierait les vraies pannes.
+  const actives = sources.filter((s) => s.enabled && estCollectable(s.kind));
+  const aVenir = sources.filter((s) => s.enabled && !estCollectable(s.kind));
+
+  const enPanne = actives.filter((s) => s.last_error);
+  const muettes = actives.filter((s) => {
     const j = joursDepuis(s.last_ok_at);
-    return s.enabled && !s.last_error && (j === null || j > 3);
+    return !s.last_error && (j === null || j > 3);
   });
-  const saines = sources.filter(
-    (s) => s.enabled && !s.last_error && joursDepuis(s.last_ok_at) !== null && joursDepuis(s.last_ok_at) <= 3
+  const saines = actives.filter(
+    (s) => !s.last_error && joursDepuis(s.last_ok_at) !== null && joursDepuis(s.last_ok_at) <= 3
   );
 
   return (
@@ -154,7 +160,11 @@ function SourcesCard({ sources }) {
         </Caption1>
       </div>
 
-      {sources.length === 0 ? (
+      {actives.length === 0 && sources.length > 0 ? (
+        <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
+          Aucune source collectable : seuls TED et les flux RSS ont un connecteur.
+        </Caption1>
+      ) : sources.length === 0 ? (
         // Distinct de « tout va bien » : aucune source lue n'est un problème,
         // pas un état sain.
         <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
@@ -190,8 +200,9 @@ function SourcesCard({ sources }) {
       )}
 
       <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 12 }}>
-        {sources.filter((s) => s.account_id).length} flux rattachés à un compte ·
-        {" "}{sources.filter((s) => !s.account_id && s.enabled).length} sources généralistes
+        {actives.filter((s) => s.account_id).length} flux rattachés à un compte ·
+        {" "}{actives.filter((s) => !s.account_id).length} généralistes
+        {aVenir.length > 0 && ` · ${aVenir.length} sans connecteur`}
       </Caption1>
     </Card>
   );
