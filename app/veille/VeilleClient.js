@@ -73,7 +73,7 @@ function Provenance({ methode, confiance }) {
   );
 }
 
-function SignalRow({ s }) {
+function SignalRow({ s, proches, onProches, chargementProches }) {
   const l = LIGNES[s.product_line];
   let domaine = "";
   try { domaine = s.source_url ? new URL(s.source_url).hostname.replace(/^www\./, "") : ""; } catch { domaine = ""; }
@@ -91,6 +91,16 @@ function SignalRow({ s }) {
             borderRadius: 6, padding: "2px 8px",
           }}>{l.label}</span>
         )}
+        {typeof s.priority === "number" && (
+          // Le tri n'est plus chronologique : sans ce chiffre, l'ordre des
+          // lignes paraîtrait arbitraire.
+          <Caption1
+            title="Priorité : impact du type × fraîcheur × fiabilité du rattachement"
+            style={{ display: "block", marginTop: 6, color: "var(--colorNeutralForeground3)" }}
+          >
+            priorité {s.priority}
+          </Caption1>
+        )}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         {s.account_id ? (
@@ -102,19 +112,67 @@ function SignalRow({ s }) {
           <Caption1 style={{ fontWeight: 700 }}>{s.account_name}</Caption1>
         )}
         <Body1 style={{ display: "block", marginTop: 2 }}>{s.title || s.detail}</Body1>
+        {s.summary && (
+          // Le résumé du modèle, distinct du titre de la source : c'est la
+          // seule phrase française d'un avis allemand, et elle répond à
+          // « pourquoi appeler ce compte maintenant ».
+          <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block", marginTop: 3 }}>
+            {s.summary}
+          </Caption1>
+        )}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 5 }}>
           <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
             {TYPES_SIGNAL[s.type] || s.type}
             {s.observed_at && ` · ${dateCourte(s.observed_at)}`}
           </Caption1>
           <Provenance methode={s.match_method} confiance={s.match_confidence} />
+          {typeof s.similarite === "number" && (
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
+              proximité {s.similarite} %
+            </Caption1>
+          )}
           {domaine && (
             <Caption1>
               <a href={s.source_url} target="_blank" rel="noreferrer"
                  style={{ color: BRAND, textDecoration: "none" }}>{domaine} ↗</a>
             </Caption1>
           )}
+          {onProches && (
+            <button
+              type="button"
+              onClick={() => onProches(s.id)}
+              style={{
+                border: "none", background: "none", padding: 0, cursor: "pointer",
+                color: BRAND, fontSize: 11, fontWeight: 600,
+              }}
+            >
+              {chargementProches ? "recherche…" : "signaux proches"}
+            </button>
+          )}
         </div>
+
+        {proches && (
+          <div style={{
+            marginTop: 8, paddingLeft: 12,
+            borderLeft: "2px solid var(--colorNeutralStroke2)",
+          }}>
+            {proches.length === 0 ? (
+              <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
+                Aucun signal proche — soit c&apos;est un cas isolé, soit les vecteurs
+                de comparaison ne sont pas encore calculés.
+              </Caption1>
+            ) : proches.map((p) => (
+              <Caption1 key={p.id} style={{ display: "block", marginTop: 3 }}>
+                <span style={{ color: "var(--colorNeutralForeground3)" }}>{p.similarite} % · </span>
+                {p.account_name ? <b>{p.account_name} — </b> : null}
+                {p.source_url ? (
+                  <a href={p.source_url} target="_blank" rel="noreferrer"
+                     style={{ color: "inherit", textDecoration: "none" }}>{p.title} ↗</a>
+                ) : p.title}
+              </Caption1>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -249,18 +307,67 @@ function CandidatsCard({ candidats }) {
 }
 
 export default function VeilleClient({ initialData }) {
-  const { signals = [], sources = [], candidats = [], erreurs = [] } = initialData || {};
+  const { signals = [], sources = [], candidats = [], themes = [], erreurs = [] } = initialData || {};
   const [ligne, setLigne] = useState("tout");
   const [fiabilite, setFiabilite] = useState("tout");
   const [type, setType] = useState("tout");
 
+  // ── Recherche sémantique ────────────────────────────────────────────────
+  // Un thème est une phrase de recherche vectorisée par le passage quotidien.
+  // Le sélectionner remplace la liste par les signaux les plus proches, quelle
+  // que soit leur langue — c'est ce qu'un filtre par mot-clé ne sait pas faire.
+  const [theme, setTheme] = useState(null);
+  const [resultats, setResultats] = useState(null);
+  const [chargement, setChargement] = useState(false);
+  const [erreurRecherche, setErreurRecherche] = useState("");
+  const [proches, setProches] = useState({});
+  const [procheEnCours, setProcheEnCours] = useState(null);
+
+  async function choisirTheme(id) {
+    if (id === theme) { setTheme(null); setResultats(null); setErreurRecherche(""); return; }
+    setTheme(id);
+    setChargement(true);
+    setErreurRecherche("");
+    try {
+      const res = await fetch(`/api/veille/recherche?theme=${id}`, { cache: "no-store" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || `Erreur ${res.status}`);
+      setResultats(json.signals || []);
+    } catch (e) {
+      // Affiché, jamais avalé : une recherche muette se confondrait avec une
+      // absence de résultat, c'est-à-dire avec « rien ne se passe ».
+      setErreurRecherche(e.message);
+      setResultats([]);
+    } finally {
+      setChargement(false);
+    }
+  }
+
+  async function chercherProches(id) {
+    if (proches[id]) { setProches((p) => ({ ...p, [id]: null })); return; }
+    setProcheEnCours(id);
+    try {
+      const res = await fetch(`/api/veille/recherche?proche=${id}`, { cache: "no-store" });
+      const json = await res.json();
+      setProches((p) => ({ ...p, [id]: res.ok ? (json.signals || []) : [] }));
+    } catch {
+      setProches((p) => ({ ...p, [id]: [] }));
+    } finally {
+      setProcheEnCours(null);
+    }
+  }
+
+  // La liste affichée est celle de la recherche sémantique quand un thème est
+  // actif, sinon celle du serveur. Les filtres locaux s'appliquent aux deux.
+  const base = resultats || signals;
+
   const typesPresents = useMemo(() => {
-    const vus = [...new Set(signals.map((s) => s.type))];
+    const vus = [...new Set(base.map((s) => s.type))];
     return [{ cle: "tout", label: "Tous types" },
             ...vus.map((t) => ({ cle: t, label: TYPES_SIGNAL[t] || t }))];
-  }, [signals]);
+  }, [base]);
 
-  const filtres = useMemo(() => signals.filter((s) => {
+  const filtres = useMemo(() => base.filter((s) => {
     if (ligne !== "tout" && s.product_line !== ligne && s.product_line !== "both") return false;
     if (type !== "tout" && s.type !== type) return false;
     if (fiabilite !== "tout") {
@@ -270,7 +377,7 @@ export default function VeilleClient({ initialData }) {
       if (fiabilite === "a_verifier" && sur) return false;
     }
     return true;
-  }), [signals, ligne, type, fiabilite]);
+  }), [base, ligne, type, fiabilite]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 1100 }}>
@@ -314,9 +421,30 @@ export default function VeilleClient({ initialData }) {
                 <Onglets options={typesPresents} valeur={type} onChange={setType} aria="Type de signal" />
                 <Onglets options={FILTRES_FIABILITE} valeur={fiabilite} onChange={setFiabilite} aria="Fiabilité" />
               </div>
+
+              {themes.length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>Thème :</Caption1>
+                  <Onglets
+                    options={themes.map((t) => ({ cle: t.id, label: t.label }))}
+                    valeur={theme}
+                    onChange={choisirTheme}
+                    aria="Recherche par thème"
+                  />
+                  {theme && (
+                    <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
+                      {chargement ? "recherche…" : "recherche sémantique — toutes langues"}
+                    </Caption1>
+                  )}
+                </div>
+              )}
+
+              {erreurRecherche && (
+                <Caption1 style={{ color: "#C50F1F" }}>{erreurRecherche}</Caption1>
+              )}
             </div>
 
-            {signals.length === 0 ? (
+            {base.length === 0 && !theme ? (
               <div style={{ padding: "26px 0", textAlign: "center" }}>
                 <Body1 style={{ display: "block", fontWeight: 600 }}>Aucun signal pour le moment</Body1>
                 <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 6 }}>
@@ -326,22 +454,34 @@ export default function VeilleClient({ initialData }) {
             ) : filtres.length === 0 ? (
               <div style={{ padding: "22px 0", textAlign: "center" }}>
                 <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
-                  Aucun signal ne correspond à ces filtres.
+                  {theme
+                    ? "Aucun signal proche de ce thème."
+                    : "Aucun signal ne correspond à ces filtres."}
                 </Caption1>
                 <div style={{ marginTop: 10 }}>
                   <Button size="small" appearance="secondary" onClick={() => {
                     setLigne("tout"); setType("tout"); setFiabilite("tout");
+                    setTheme(null); setResultats(null); setErreurRecherche("");
                   }}>Tout afficher</Button>
                 </div>
               </div>
             ) : (
               <>
                 <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 8 }}>
-                  {filtres.length} signal{filtres.length > 1 ? "s" : ""}
-                  {filtres.length !== signals.length && ` sur ${signals.length}`}
+                  {filtres.length} {filtres.length > 1 ? "signaux" : "signal"}
+                  {filtres.length !== base.length && ` sur ${base.length}`}
+                  {theme && " · classés par priorité, pas par proximité"}
                 </Caption1>
                 <div style={{ marginTop: 2 }}>
-                  {filtres.map((s) => <SignalRow key={s.id} s={s} />)}
+                  {filtres.map((s) => (
+                    <SignalRow
+                      key={s.id}
+                      s={s}
+                      proches={proches[s.id]}
+                      onProches={chercherProches}
+                      chargementProches={procheEnCours === s.id}
+                    />
+                  ))}
                 </div>
               </>
             )}

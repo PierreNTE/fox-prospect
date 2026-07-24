@@ -167,6 +167,12 @@ comment on function public.veille_signaux_sans_embedding is
 -- côté Vercel — et c'est aussi la plus utile au quotidien : « ce marché
 -- ressemble-t-il à quelque chose que j'ai déjà vu ailleurs ? ».
 
+-- `create or replace` ne sait pas modifier les COLONNES DE SORTIE d'une
+-- fonction : toute évolution de la table renvoyée exige une suppression
+-- préalable. Sans ce drop, réappliquer la migration après avoir ajouté une
+-- colonne échoue avec « cannot change return type ».
+drop function if exists public.veille_signaux_proches(bigint, int, float);
+
 create or replace function public.veille_signaux_proches(
   p_signal_id bigint,
   p_limite    int   default 5,
@@ -183,6 +189,8 @@ returns table (
   observed_at    date,
   source_url     text,
   match_method   text,
+  match_confidence numeric(3,2),
+  relevance      numeric(3,2),
   similarite     float
 )
 language sql
@@ -192,7 +200,7 @@ as $$
     select embedding from public.signal_embeddings where signal_id = p_signal_id
   )
   select s.id, s.account_id, a.name, s.type, s.product_line, s.title, s.summary,
-         s.observed_at, s.source_url, s.match_method,
+         s.observed_at, s.source_url, s.match_method, s.match_confidence, s.relevance,
          1 - (e.embedding <=> depart.embedding) as similarite
   from depart
   join public.signal_embeddings e on true
@@ -215,6 +223,8 @@ comment on function public.veille_signaux_proches is
 -- plus bas : comparer une phrase de recherche à un titre d'avis produit des
 -- similarités structurellement plus faibles que comparer deux titres entre eux.
 
+drop function if exists public.veille_signaux_par_theme(bigint, int, float);
+
 create or replace function public.veille_signaux_par_theme(
   p_theme_id bigint,
   p_limite   int   default 30,
@@ -231,6 +241,8 @@ returns table (
   observed_at    date,
   source_url     text,
   match_method   text,
+  match_confidence numeric(3,2),
+  relevance      numeric(3,2),
   similarite     float
 )
 language sql
@@ -241,7 +253,7 @@ as $$
     where id = p_theme_id and embedding is not null
   )
   select s.id, s.account_id, a.name, s.type, s.product_line, s.title, s.summary,
-         s.observed_at, s.source_url, s.match_method,
+         s.observed_at, s.source_url, s.match_method, s.match_confidence, s.relevance,
          1 - (e.embedding <=> theme.embedding) as similarite
   from theme
   join public.signal_embeddings e on true

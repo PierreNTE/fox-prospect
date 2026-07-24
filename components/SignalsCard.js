@@ -62,7 +62,15 @@ function SignalRow({ s }) {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <Body1 style={{ fontWeight: 600, display: "block" }}>{s.title || s.detail}</Body1>
-        {s.title && s.detail && (
+        {/* Le résumé du modèle passe DEVANT le texte de la source : c'est la
+            phrase française d'un avis allemand, et elle dit pourquoi appeler
+            maintenant. Le texte d'origine reste dessous, vérifiable. */}
+        {s.summary && (
+          <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block", marginTop: 3 }}>
+            {s.summary}
+          </Caption1>
+        )}
+        {s.title && s.detail && !s.summary && (
           <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block", marginTop: 2 }}>
             {s.detail}
           </Caption1>
@@ -110,7 +118,7 @@ export default function SignalsCard({ signals = [] }) {
         <Pulse24Regular style={{ color: BRAND }} />
         <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Signaux de veille</Body1>
         <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
-          {signals.length} signal{signals.length > 1 ? "s" : ""} collecté{signals.length > 1 ? "s" : ""}
+          {signals.length} {signals.length > 1 ? "signaux collectés" : "signal collecté"}
           {aVerifier > 0 && ` · ${aVerifier} à vérifier avant citation`}
         </Caption1>
       </div>
