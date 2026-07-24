@@ -35,6 +35,32 @@ create index if not exists veille_sources_account_idx
 
 
 -- ─────────────────────────────────────────────────────────────
+-- Méthodes de rattachement : deux valeurs manquantes
+-- ─────────────────────────────────────────────────────────────
+-- La contrainte posée en v12 n'admettait que les méthodes issues d'un
+-- identifiant ou d'un nom. Les connecteurs de presse en ajoutent deux, aux
+-- extrémités opposées de l'échelle de confiance :
+--
+--   · « source »  — la source ne parle que de ce compte (salle de presse).
+--                   C'est le rattachement le PLUS sûr de tous : il ne repose
+--                   sur aucune comparaison de chaînes.
+--   · « mention » — le nom du compte a été trouvé dans un texte de presse
+--                   généraliste. Le MOINS sûr : à afficher comme tel.
+--
+-- Sans cet élargissement, toute insertion de signal de presse échouerait.
+
+alter table public.company_signals
+  drop constraint if exists company_signals_match_method_check;
+
+alter table public.company_signals
+  add constraint company_signals_match_method_check check (match_method in (
+    'lei','siren','registre','domaine','nom','manuel',
+    'source',    -- flux dédié à un compte : certitude structurelle
+    'mention'    -- nom repéré dans un texte : à pondérer
+  ));
+
+
+-- ─────────────────────────────────────────────────────────────
 -- Flux découverts et VALIDÉS le 24/07/2026
 -- ─────────────────────────────────────────────────────────────
 -- Produits par veille/decouvrir_flux.py, qui lit la balise <link rel="alternate">

@@ -36,6 +36,7 @@ import { NEWS_CATEGORY_LABELS, statusLabel } from "@/lib/constants";
 import { OPP_STAGES, OPP_STAGE_LABEL, OPP_STAGE_COLOR, effectiveProbability } from "@/lib/opportunities";
 import { fetchJson } from "@/lib/fetch-json";
 import DocumentsCard from "@/components/DocumentsCard";
+import SignalsCard from "@/components/SignalsCard";
 import BudgetHint from "@/components/BudgetHint";
 
 const BRAND = "#5B53E6";
@@ -981,7 +982,7 @@ export default function AccountClient({ id, initialData = null }) {
     );
   }
 
-  const { account, contacts, prospects } = data;
+  const { account, contacts, prospects, signals } = data;
   const news = (account.news || []).slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const analyzed = !!account.last_refreshed_at;
   // Prospects du compte absents de l'organigramme (import/scraping crée le
@@ -1082,7 +1083,13 @@ export default function AccountClient({ id, initialData = null }) {
         </Card>
       )}
 
-      {/* ── 1. Actualités ── */}
+      {/* ── 1. Signaux de veille ──
+          Placés AVANT les actualités : ils portent un lien vérifiable et une
+          méthode de rattachement traçable, là où les actualités viennent de
+          l'analyse LLM. Ce sont ceux qu'on peut citer devant un client. */}
+      <SignalsCard signals={signals} />
+
+      {/* ── 2. Actualités ── */}
       {analyzed && (
         <Card style={{ padding: "20px 20px 22px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>

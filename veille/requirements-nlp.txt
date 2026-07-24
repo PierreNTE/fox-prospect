@@ -4,4 +4,3 @@ sentence-transformers>=3.0
 torch>=2.2
 trafilatura>=1.12
 feedparser>=6.0
-lingua-language-detector>=2.0

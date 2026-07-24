@@ -46,6 +46,14 @@ def main():
     except ImportError:
         sys.exit("pip install -r veille/requirements-nlp.txt d'abord.")
 
+    # Sans le nombre de cœurs, le débit n'est pas interprétable : une mesure sur
+    # poste de développeur (24 cœurs) surestime un runner GitHub (4 vCPU) d'un
+    # facteur trois à quatre. Le chiffre est noté avec sa machine.
+    import os
+    import torch
+    print(f"machine : {os.cpu_count()} cœurs logiques, "
+          f"{torch.get_num_threads()} threads torch")
+
     textes = echantillon_reel()
     if not textes:
         sys.exit("Aucun texte récupéré — l'API TED est-elle joignable ?")
