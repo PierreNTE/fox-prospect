@@ -56,6 +56,12 @@ SOURCES_LOCALES = [
     {"id": None, "kind": "rss", "label": "Le Monde Informatique (test local)",
      "url": "https://www.lemondeinformatique.fr/rss/rss.xml",
      "country_code": "FR", "config": {"lang": "fr"}},
+    # Flux rattaché à un compte : éprouve la stratégie « source », celle qui ne
+    # peut pas produire de faux positif.
+    {"id": None, "kind": "rss", "label": "TotalEnergies — newsroom (test local)",
+     "url": "https://totalenergies.com/newsroom/feed/",
+     "country_code": "FR", "config": {"portee": "compte", "lang": "fr"},
+     "account_id": "8ec098ac-1881-432e-aac1-9a3cefba7649"},
 ]
 
 
@@ -96,7 +102,21 @@ def collecter(dry_run=False):
     return collectes
 
 
-def traiter(dry_run=False, documents=None):
+def _comptes(chemin=None):
+    """Annuaire des comptes suivis, ou repli sur un fichier en dry-run.
+
+    Symétrique de `_sources` : sans ce repli, aucun étage de rattachement n'est
+    éprouvable hors ligne, et c'est précisément l'étage où les régressions
+    coûtent le plus cher — un faux rattachement écrit une information fausse
+    sur une fiche client.
+    """
+    if chemin:
+        import json
+        return json.loads(Path(chemin).read_text(encoding="utf-8"))
+    return db.comptes_suivis()
+
+
+def traiter(dry_run=False, documents=None, comptes=None):
     """Étages filtre → rattachement → signal.
 
     `documents` permet d'enchaîner en mémoire en dry-run : sans écriture en
@@ -104,7 +124,7 @@ def traiter(dry_run=False, documents=None):
     régler le filtre lexical sans polluer la base.
     """
     debut = time.time()
-    annuaire = Annuaire(db.comptes_suivis())
+    annuaire = Annuaire(_comptes(comptes))
     print(f"  annuaire : {len(annuaire.comptes)} comptes suivis")
 
     if documents is None:
@@ -173,12 +193,21 @@ def traiter(dry_run=False, documents=None):
 def _rattacher(doc, annuaire):
     """Rattache un document, selon la stratégie déclarée par sa source.
 
-    · « acheteur » (TED)  : l'entité est connue, on la résout.
-    · « mention » (presse) : l'entité est inconnue, on balaie le texte à la
-      recherche des comptes du portefeuille.
+    · « source »   (salle de presse) : la source EST le compte. Certain.
+    · « acheteur » (TED)             : l'entité est nommée, on la résout.
+    · « mention »  (presse générale) : l'entité est inconnue, on balaie le
+      texte — la seule des trois qui puisse se tromper.
     """
     raw = doc.get("raw") or {}
-    if raw.get("strategie_rattachement") == "mention":
+    strategie = raw.get("strategie_rattachement")
+
+    if strategie == "source":
+        compte = annuaire.par_id.get(str(raw.get("account_id")))
+        # Un compte retiré de la veille (auto_watch décoché) sort de l'annuaire
+        # alors que sa source reste active : on n'invente pas de rattachement.
+        return (compte, "source", 1.0) if compte else (None, None, 0.0)
+
+    if strategie == "mention":
         texte = f"{doc.get('title', '')} {doc.get('excerpt', '')}"
         return annuaire.chercher_dans_texte(texte)
     return annuaire.resoudre(nom=raw.get("buyer_name"), domaine=raw.get("buyer_domain"))
@@ -197,7 +226,10 @@ def _construire_signal(doc, compte, categories, ligne, methode, confiance):
     return {
         "account_id": compte["id"],
         "company_id": compte.get("company_id"),
-        "document_id": doc["id"],
+        # `.get` et non `[...]` : en dry-run les documents n'ont jamais été
+        # insérés, donc pas d'identifiant. Le signal reste constructible, ce
+        # qui est tout l'intérêt du mode.
+        "document_id": doc.get("id"),
         "type": TYPE_PAR_CATEGORIE.get(categorie, "autre"),
         "product_line": ligne or "both",
         "title": (doc.get("title") or "")[:300],
@@ -228,6 +260,7 @@ def main():
     ap.add_argument("--collecte", action="store_true", help="collecte seule")
     ap.add_argument("--traitement", action="store_true", help="traitement seul")
     ap.add_argument("--dry-run", action="store_true", help="n'écrit rien")
+    ap.add_argument("--comptes", help="JSON de comptes, pour éprouver hors ligne")
     args = ap.parse_args()
 
     if not args.dry_run:
@@ -248,6 +281,7 @@ def main():
         vus, retenus, signaux = traiter(
             args.dry_run,
             documents=collectes if (args.dry_run and tout) else None,
+            comptes=args.comptes,
         )
         taux = (100 * retenus / vus) if vus else 0
         print(f"  {vus} vus · {retenus} retenus ({taux:.0f} %) · {signaux} signaux")

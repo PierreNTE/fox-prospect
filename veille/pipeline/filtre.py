@@ -9,6 +9,7 @@ sans elle, on ne peut pas mesurer si le réglage est bon.
 Aucune dépendance lourde ici : de la comparaison de chaînes.
 """
 
+import re
 import unicodedata
 from functools import lru_cache
 from pathlib import Path
@@ -31,6 +32,36 @@ def normaliser(texte):
     sans_accent = unicodedata.normalize("NFD", str(texte))
     sans_accent = "".join(c for c in sans_accent if unicodedata.category(c) != "Mn")
     return " ".join(sans_accent.lower().split())
+
+
+@lru_cache(maxsize=1024)
+def _motif(terme):
+    """Terme du dictionnaire → motif à FRONTIÈRES DE MOT.
+
+    La comparaison par sous-chaîne est le piège classique du filtre lexical, et
+    il s'est refermé : « san » (Storage Area Network) se trouve à l'intérieur
+    de mots français courants, ce qui a fait classer un communiqué de résultats
+    trimestriels de TotalEnergies en « projet datacenter ». Sur une fiche
+    client, ce signal aurait été lu comme une opportunité ISG.
+
+    Les frontières sont exprimées en lookaround plutôt qu'en \\b : certains
+    termes du dictionnaire se terminent par un caractère non alphanumérique
+    (« .net », « c# »), pour lesquels \\b ne se place pas où l'on croit.
+    """
+    n = normaliser(terme)
+    # Le « s » optionnel évite la régression inverse : sans lui, « datacenter »
+    # cesserait de reconnaître « datacenters », que la comparaison par
+    # sous-chaîne attrapait. Resserrer la détection ne doit pas la trouer.
+    #
+    # Mais il ne vaut PAS pour les termes courts : accordé aux acronymes, il
+    # faisait reconnaître « san » (Storage Area Network) dans « sans ». Un
+    # sigle de trois lettres n'a de toute façon pas de pluriel utile.
+    pluriel = "s?" if len(n) >= 5 else ""
+    return re.compile(rf"(?<![a-z0-9]){re.escape(n)}{pluriel}(?![a-z0-9])")
+
+
+def _contient(texte_normalise, termes):
+    return any(_motif(t).search(texte_normalise) for t in termes)
 
 
 # ── Codes CPV ───────────────────────────────────────────────────────────────
@@ -82,12 +113,12 @@ def categoriser(texte):
     t = normaliser(texte)
     if not t:
         return []
-    if any(normaliser(x) in t for x in d.get("exclusions", [])):
+    if _contient(t, d.get("exclusions", [])):
         return []
     return [
         (nom, bloc.get("ligne"))
         for nom, bloc in d["categories"].items()
-        if any(normaliser(terme) in t for terme in bloc["termes"])
+        if _contient(t, bloc["termes"])
     ]
 
 
@@ -101,7 +132,7 @@ def detecter_concurrent(texte):
     if not t:
         return None
     for marque, variantes in _charger("dictionnaires.yaml")["concurrents"].items():
-        if any(normaliser(v) in t for v in variantes):
+        if _contient(t, variantes):
             return marque
     return None
 

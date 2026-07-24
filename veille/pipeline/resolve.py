@@ -69,12 +69,36 @@ def forme_recherche(nom):
 
 
 def domaine_de(url_ou_domaine):
-    """« https://www.acme.fr/contact » → « acme.fr »."""
-    if not url_ou_domaine:
-        return ""
-    d = re.sub(r"^https?://", "", str(url_ou_domaine).strip().lower())
-    d = d.split("/")[0].split("?")[0]
-    return d[4:] if d.startswith("www.") else d
+    """« https://www.acme.fr/contact » → « acme.fr ».
+
+    Le champ `accounts.domain` est saisi à la main et contient des variantes :
+    « axa.com / axa.fr », « renaultgroup.com (corporate) / renault.fr (marque) ».
+    Découper naïvement sur « / » donnait « axa.com » suivi d'un espace, qui ne
+    correspondait à rien — le rattachement par domaine échouait en silence sur
+    ces comptes, sans qu'aucune erreur ne le signale.
+    """
+    tous = tous_domaines(url_ou_domaine)
+    return tous[0] if tous else ""
+
+
+def tous_domaines(champ):
+    """Tous les domaines valides d'un champ, dans l'ordre de saisie.
+
+    « axa.com / axa.fr » en déclare DEUX, et les deux appartiennent au compte.
+    N'indexer que le premier laissait axa.fr non résolu — un signal aurait été
+    perdu sans qu'aucune erreur ne le signale.
+    """
+    if not champ:
+        return []
+    brut = re.sub(r"^https?://", "", str(champ).strip().lower())
+    trouves = []
+    for morceau in re.split(r"[/,;\s]", brut):
+        d = re.sub(r"\([^)]*\)", " ", morceau).strip().split("?")[0]
+        if d.startswith("www."):
+            d = d[4:]
+        if re.fullmatch(r"[a-z0-9-]+(\.[a-z0-9-]+)+", d) and d not in trouves:
+            trouves.append(d)
+    return trouves
 
 
 class Annuaire:
@@ -88,10 +112,10 @@ class Annuaire:
         self.comptes = comptes
         self.par_domaine = {}
         self.par_nom = {}
+        self.par_id = {str(c.get("id")): c for c in comptes}
         for c in comptes:
-            d = domaine_de(c.get("domain"))
-            if d:
-                self.par_domaine[d] = c
+            for d in tous_domaines(c.get("domain")):
+                self.par_domaine.setdefault(d, c)
             k = cle_nom(c.get("name"))
             if k:
                 self.par_nom[k] = c
