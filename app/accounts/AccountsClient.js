@@ -96,7 +96,7 @@ function AccountRow({ account, onClick }) {
 }
 
 // Les données initiales arrivent du composant serveur (rendu SSR).
-export default function AccountsClient({ initialAccounts = null }) {
+export default function AccountsClient({ initialAccounts = null, veille = [] }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [accounts] = useState(initialAccounts);
@@ -175,6 +175,31 @@ export default function AccountsClient({ initialAccounts = null }) {
           </Button>
         </div>
       </Card>
+
+      {/* ── Veille (IA3) : actus à fort impact, tous comptes. Zéro coût IA. ── */}
+      {veille.length > 0 && (
+        <Card style={{ padding: "18px 20px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+            <Body1 style={{ fontWeight: 800, fontSize: 15 }}>Veille</Body1>
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>actualités à fort impact sur tes comptes (90 j)</Caption1>
+          </div>
+          {veille.map((v, i) => (
+            <div key={i} onClick={() => router.push(`/accounts/${v.account_id}`)}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: "1px solid var(--colorNeutralStroke2)", cursor: "pointer" }}>
+              <span style={{ fontSize: 10, fontWeight: 700, flexShrink: 0, color: AMBER, border: `1px solid ${AMBER}`, borderRadius: 4, padding: "1px 6px" }}>
+                {v.category}
+              </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Body1 style={{ fontWeight: 600, fontSize: 13 }}>{v.title}</Body1>
+                <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block" }}>
+                  {v.account_name}{v.date ? ` · ${v.date}` : ""}
+                </Caption1>
+              </div>
+              <ChevronRight24Regular style={{ flexShrink: 0, color: "var(--colorNeutralForeground3)", fontSize: 18 }} />
+            </div>
+          ))}
+        </Card>
+      )}
 
       {/* ── Next Best Account (IA5, déterministe) : chaleur + joignabilité ── */}
       {(() => {

@@ -346,6 +346,17 @@ function SuiviCommercial({ prospect, events, onSaved, onPatchStatus }) {
       <Caption1 style={{ display: "block", margin: "10px 0 4px", fontWeight: 600 }}>Compte-rendu / retour du prospect</Caption1>
       <Textarea value={note} onChange={(_, d) => setNote(d.value)} rows={2}
         placeholder="Points abordés, retour, objections…" style={{ width: "100%" }} />
+      {/* IA2 — met au propre les notes brutes et pré-remplit action + relance */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+        <SyntheseButton
+          prospectId={prospect.id} channel={channel} note={note} onError={setErr}
+          onApply={(s) => {
+            if (s.compte_rendu) setNote(s.compte_rendu);
+            if (s.next_action) setNextAction(s.next_action);
+            if (s.follow_up_at) setFollowUp(s.follow_up_at);
+          }}
+        />
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
         <div>
           <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Prochaine action</Caption1>
@@ -639,6 +650,30 @@ function ScoreBreakdown({ scores, prospect }) {
       </Caption1>
       {bars.map((b) => <ScoreBar key={b.label} {...b} />)}
     </Collapsible>
+  );
+}
+
+// ── IA2 — synthèse d'échange : notes brutes → compte-rendu + action + relance ──
+function SyntheseButton({ prospectId, channel, note, onApply, onError }) {
+  const [busy, setBusy] = useState(false);
+
+  const run = async () => {
+    if (!(note || "").trim()) { onError("Écris d'abord quelques notes à mettre au propre."); return; }
+    setBusy(true); onError("");
+    const { ok, data, error } = await fetchJson("/api/synthese", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prospectId, raw: note, channel }),
+    });
+    setBusy(false);
+    if (!ok) { onError(error); return; }
+    onApply(data.synthese || {});
+  };
+
+  return (
+    <Button appearance="subtle" size="small" disabled={busy}
+      icon={busy ? <Spinner size="tiny" /> : <Sparkle24Regular />} onClick={run}>
+      {busy ? "Mise au propre…" : "Mettre au propre (IA)"}
+    </Button>
   );
 }
 

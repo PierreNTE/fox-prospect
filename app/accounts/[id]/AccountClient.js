@@ -139,6 +139,165 @@ function AccountTimeline({ events, prospectById }) {
   );
 }
 
+// ── IA1 — préparation de RDV (briefing à la demande, mis en cache) ──────────
+function RdvBriefCard({ accountId, brief, generatedAt, onDone, onError }) {
+  const [busy, setBusy] = useState(false);
+
+  const run = async (force) => {
+    setBusy(true); onError("");
+    const { ok, error } = await fetchJson("/api/rdv-brief", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ accountId, force: !!force }),
+    });
+    setBusy(false);
+    if (!ok) { onError(error); return; }
+    onDone();
+  };
+
+  return (
+    <Card style={{ padding: "20px 20px 22px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Sparkle24Regular style={{ color: BRAND }} />
+          <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Préparation de RDV</Body1>
+        </div>
+        <Button appearance={brief ? "outline" : "primary"} size="small" disabled={busy}
+          icon={busy ? <Spinner size="tiny" /> : <Sparkle24Regular />}
+          onClick={() => run(!!brief)}>
+          {busy ? "Analyse…" : brief ? "Régénérer" : "Préparer mon RDV (IA)"}
+        </Button>
+      </div>
+
+      {!brief && !busy && (
+        <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block", marginTop: 10, lineHeight: 1.6 }}>
+          Compile un briefing : contexte, actus exploitables, qui voir et sous quel angle, où en est la relation,
+          questions à poser et points de vigilance. Synthèse de tes données CRM — sans recherche web, coût minimal.
+        </Caption1>
+      )}
+
+      {brief && (
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
+          {brief.objectif_suggere && (
+            <div style={{ padding: "12px 14px", borderRadius: 8, background: `color-mix(in srgb, ${BRAND} 6%, var(--colorNeutralBackground1))`, borderLeft: `3px solid ${BRAND}` }}>
+              <Caption1 style={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--colorNeutralForeground3)" }}>Objectif du RDV</Caption1>
+              <Body1 style={{ display: "block", marginTop: 4 }}>{brief.objectif_suggere}</Body1>
+            </div>
+          )}
+          {brief.contexte && <Body1 style={{ color: "var(--colorNeutralForeground2)", lineHeight: 1.6 }}>{brief.contexte}</Body1>}
+          {brief.ou_on_en_est && <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block" }}>{brief.ou_on_en_est}</Caption1>}
+
+          {(brief.actus_cles || []).length > 0 && (
+            <div>
+              <Body1 style={{ fontWeight: 700, fontSize: 14, display: "block", marginBottom: 6 }}>Actus exploitables</Body1>
+              {brief.actus_cles.map((a, i) => (
+                <div key={i} style={{ padding: "8px 0", borderTop: i > 0 ? "1px solid var(--colorNeutralStroke2)" : "none" }}>
+                  <Body1 style={{ fontWeight: 600, fontSize: 13 }}>{a.titre}{a.date ? ` · ${a.date}` : ""}</Body1>
+                  {a.pourquoi && <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block" }}>{a.pourquoi}</Caption1>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {(brief.interlocuteurs || []).length > 0 && (
+            <div>
+              <Body1 style={{ fontWeight: 700, fontSize: 14, display: "block", marginBottom: 6 }}>Qui voir</Body1>
+              {brief.interlocuteurs.map((p, i) => (
+                <div key={i} style={{ padding: "8px 0", borderTop: i > 0 ? "1px solid var(--colorNeutralStroke2)" : "none" }}>
+                  <Body1 style={{ fontWeight: 600, fontSize: 13 }}>
+                    {p.nom}<span style={{ fontWeight: 400, color: "var(--colorNeutralForeground3)" }}> · {p.role}</span>
+                  </Body1>
+                  {p.angle && <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block" }}>{p.angle}</Caption1>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {(brief.questions || []).length > 0 && (
+            <div>
+              <Body1 style={{ fontWeight: 700, fontSize: 14, display: "block", marginBottom: 6 }}>Questions à poser</Body1>
+              {brief.questions.map((q, i) => (
+                <Caption1 key={i} style={{ display: "block", color: "var(--colorNeutralForeground2)", padding: "3px 0" }}>· {q}</Caption1>
+              ))}
+            </div>
+          )}
+
+          {(brief.risques || []).length > 0 && (
+            <div>
+              <Body1 style={{ fontWeight: 700, fontSize: 14, display: "block", marginBottom: 6, color: RED }}>Points de vigilance</Body1>
+              {brief.risques.map((r, i) => (
+                <Caption1 key={i} style={{ display: "block", color: "var(--colorNeutralForeground2)", padding: "3px 0" }}>· {r}</Caption1>
+              ))}
+            </div>
+          )}
+
+          {generatedAt && (
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
+              Généré le {new Date(generatedAt).toLocaleString("fr-FR")}
+            </Caption1>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ── IA4 — suivi des décideurs (contrôle de poste à la demande) ──────────────
+const JOB_STATUS_META = {
+  en_poste: { label: "En poste", color: "#107C10" },
+  change_de_poste: { label: "A changé de poste", color: "#E8730C" },
+  parti: { label: "A quitté l'entreprise", color: RED },
+  incertain: { label: "Incertain", color: "var(--colorNeutralForeground3)" },
+};
+
+function JobCheckCard({ contacts, onDone, onError }) {
+  const [busy, setBusy] = useState("");
+
+  const check = async (c) => {
+    setBusy(c.id); onError("");
+    const { ok, error } = await fetchJson(`/api/account-contacts/${c.id}/job-check`, { method: "POST" });
+    setBusy("");
+    if (!ok) { onError(error); return; }
+    onDone();
+  };
+
+  const list = (contacts || []).filter((c) => c.first_name || c.last_name);
+  if (list.length === 0) return null;
+
+  return (
+    <Card style={{ padding: "20px 20px 22px" }}>
+      <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Suivi des décideurs</Body1>
+      <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", margin: "4px 0 10px" }}>
+        Vérifie si un décideur occupe encore son poste. Un départ = un contact perdu et une opportunité ailleurs ;
+        une arrivée = une revue fournisseurs à venir.
+      </Caption1>
+      {list.map((c) => {
+        const m = JOB_STATUS_META[c.job_check_status] || null;
+        return (
+          <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: "1px solid var(--colorNeutralStroke2)" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Body1 style={{ fontWeight: 600, fontSize: 13 }}>
+                {c.first_name} {c.last_name}
+                {c.role && <span style={{ fontWeight: 400, color: "var(--colorNeutralForeground3)" }}> · {c.role}</span>}
+              </Body1>
+              {m && (
+                <Caption1 style={{ display: "block", color: m.color, fontWeight: 600 }}>
+                  {m.label}
+                  {c.job_check_note && <span style={{ fontWeight: 400, color: "var(--colorNeutralForeground2)" }}> — {c.job_check_note}</span>}
+                </Caption1>
+              )}
+            </div>
+            <Button appearance="subtle" size="small" disabled={!!busy}
+              icon={busy === c.id ? <Spinner size="tiny" /> : <Search24Regular />}
+              onClick={() => check(c)}>
+              Vérifier
+            </Button>
+          </div>
+        );
+      })}
+    </Card>
+  );
+}
+
 // ── FV2 — opportunités du compte (créer / suivre une affaire) ────────────────
 function fmtEurShort(n) {
   const v = Number(n) || 0;
@@ -1013,6 +1172,12 @@ export default function AccountClient({ id, initialData = null }) {
           ))}
         </Card>
       )}
+
+      {/* ── Préparation de RDV (IA1) : briefing à la demande, mis en cache ── */}
+      <RdvBriefCard accountId={id} brief={account.rdv_brief} generatedAt={account.rdv_brief_at} onDone={load} onError={setError} />
+
+      {/* ── Suivi des décideurs (IA4) : contrôle de poste à la demande ── */}
+      <JobCheckCard contacts={contacts} onDone={load} onError={setError} />
 
       {/* ── Opportunités (FV2) : affaires du compte ── */}
       <OpportunitiesCard accountId={id} opportunities={data.opportunities || []} onChange={load} onError={setError} />
