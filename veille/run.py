@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import db
 from config import (FENETRE_JOURS, FENETRE_JOURS_PRESSE, MAX_DOCS_PAR_SOURCE,
-                    PAYS_MVP, RUN_REF,
+                    MODELE_LLM, PAYS_MVP, RUN_REF,
                     exiger_supabase)
 from pipeline import embed, filtre, juger
 from pipeline.resolve import Annuaire
@@ -212,6 +212,9 @@ def traiter(dry_run=False, documents=None, comptes=None):
         signaux += 1
 
     print(f"  {juge.bilan()}")
+    rejuges = rejuger(juge, dry_run)
+    if rejuges:
+        print(f"  {rejuges} signal(aux) plus ancien(s) rejugé(s)")
 
     # Le détail des rejets est ce qui rend le filtre réglable : sans lui, on ne
     # sait pas s'il est trop sévère ou trop laxiste.
@@ -226,6 +229,65 @@ def traiter(dry_run=False, documents=None, comptes=None):
                            signals=signaux, llm_calls=juge.appels, run_ref=RUN_REF,
                            duration_ms=int((time.time() - debut) * 1000))
     return len(documents), retenus, signaux
+
+
+def rejuger(juge, dry_run=False):
+    """Reprend les signaux restés sans jugement, avec le plafond qui reste.
+
+    Volontairement APRÈS les signaux du jour, et sur le même juge : le plafond
+    d'appels est unique, et un signal que le commercial va lire ce matin passe
+    avant un rattrapage. Les jours ordinaires il ne reste rien à faire ici — la
+    reprise ne coûte que le jour d'après une panne.
+
+    Un signal jugé non pertinent n'est PAS supprimé mais passé en « écarté » :
+    l'interface cesse de l'afficher, la ligne reste en base. La décision est
+    ainsi auditable et réversible — une suppression ne l'aurait pas été, et
+    laisser le signal visible aurait encombré la fiche d'un bruit dont on sait
+    désormais qu'il n'en est pas.
+    """
+    if not juge.disponible():
+        return 0
+
+    reste = []
+    try:
+        reste = db.signaux_non_juges(limite=juge.restant)
+    except Exception as e:
+        print(f"  reprise des non-jugés impossible : {e}")
+        return 0
+
+    rejuges = 0
+    for signal in reste:
+        if not juge.disponible():
+            break
+        document = signal.get("veille_documents") or {}
+        compte = signal.get("accounts") or {}
+        if not document or not compte:
+            continue
+
+        verdict = juge.juger(document, compte, [], signal.get("match_method"))
+        if not verdict:
+            continue
+
+        champs = {
+            "summary": verdict["resume"],
+            "relevance": verdict["pertinence"],
+            "judged_model": MODELE_LLM,
+            "judged_at": "now()",
+        }
+        if verdict["type"]:
+            champs["type"] = verdict["type"]
+        if verdict["ligne"]:
+            champs["product_line"] = verdict["ligne"]
+        # Le refus se consigne dans la pertinence, pas par une suppression.
+        if not verdict["pertinent"]:
+            champs["relevance"] = 0
+            champs["status"] = "écarté"
+
+        if not dry_run:
+            db.maj_signal(signal["id"], **champs)
+        rejuges += 1
+
+    return rejuges
 
 
 def _priorite_jugement(candidat):
@@ -307,7 +369,6 @@ def _construire_signal(doc, compte, categories, ligne, methode, confiance, verdi
     }
 
     if verdict:
-        from config import MODELE_LLM
         signal["summary"] = verdict["resume"]
         signal["relevance"] = verdict["pertinence"]
         signal["judged_model"] = MODELE_LLM

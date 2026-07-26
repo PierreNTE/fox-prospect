@@ -75,6 +75,9 @@ jobs:
           VEILLE_MAX_LLM: ${{ vars.VEILLE_MAX_LLM }}
           VEILLE_MAX_DOCS: ${{ vars.VEILLE_MAX_DOCS }}
           VEILLE_FENETRE_JOURS: ${{ vars.VEILLE_FENETRE_JOURS }}
+          # Fenêtre des salles de presse, bien plus large : elles publient
+          # quelques fois par mois là où TED publie tous les jours.
+          VEILLE_FENETRE_PRESSE: ${{ vars.VEILLE_FENETRE_PRESSE }}
           VEILLE_PAYS: ${{ vars.VEILLE_PAYS }}
         run: |
           python veille/run.py ${{ inputs.dry_run && '--dry-run' || '' }}

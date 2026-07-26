@@ -157,6 +157,28 @@ def maj_signal(signal_id, **champs):
     sb(f"company_signals?id=eq.{signal_id}", "PATCH", champs, prefer="return=minimal")
 
 
+def signaux_non_juges(limite=50):
+    """Signaux écrits sans jugement, avec leur document et leur compte.
+
+    Une panne du fournisseur — ou un plafond atteint — n'empêche pas le passage
+    d'écrire ses signaux : ils sortent simplement non jugés. Sans cette reprise,
+    ils le resteraient définitivement, puisque le jugement n'a lieu qu'à la
+    création. C'est le trou qu'une indisponibilité de plusieurs jours creuse en
+    silence.
+
+    Les plus récents d'abord : un signal de la semaine mérite le peu de plafond
+    disponible plus qu'un signal du mois dernier.
+    """
+    return sb(
+        "company_signals?judged_at=is.null&document_id=not.is.null"
+        "&account_id=not.is.null"
+        "&select=id,type,match_method,account_id,"
+        "accounts(id,name,domain,company_id),"
+        "veille_documents(title,excerpt,lang,published_at,raw)"
+        f"&order=observed_at.desc.nullslast&limit={limite}"
+    ) or []
+
+
 # ── Étage IA ────────────────────────────────────────────────────────────────
 
 def signaux_sans_embedding(limite=200):

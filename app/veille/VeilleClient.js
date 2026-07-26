@@ -169,8 +169,8 @@ function SignalRow({ s, proches, onProches, chargementProches }) {
           }}>
             {proches.length === 0 ? (
               <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
-                Aucun signal proche — soit c&apos;est un cas isolé, soit les vecteurs
-                de comparaison ne sont pas encore calculés.
+                Aucun signal au-dessus de 55 % de proximité. Sur un historique
+                encore court, c&apos;est le cas le plus fréquent.
               </Caption1>
             ) : proches.map((p) => (
               <Caption1 key={p.id} style={{ display: "block", marginTop: 3 }}>
