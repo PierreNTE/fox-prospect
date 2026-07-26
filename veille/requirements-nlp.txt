@@ -1,0 +1,6 @@
+# Briques NLP — installees uniquement par le banc d'essai, PAS par le passage
+# quotidien tant que le cout en minutes n'est pas mesure (voir bench_embed.py).
+sentence-transformers>=3.0
+torch>=2.2
+trafilatura>=1.12
+feedparser>=6.0

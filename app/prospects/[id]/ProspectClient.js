@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { computeScores } from "@/lib/scoring";
 import { computeNba } from "@/lib/nba";
 import { fetchJson } from "@/lib/fetch-json";
+import { SEQUENCE_TEMPLATES } from "@/lib/sequences";
 import {
   Card,
   Button,
@@ -193,6 +194,16 @@ const CHANNEL_META = {
   autre:    { label: "Autre",    Icon: Chat24Regular,       color: "var(--colorNeutralForeground3)" },
 };
 
+// QW4 — presets « résultat d'appel » : un tap consigne l'échange, planifie la
+// relance et fait avancer le statut (sans jamais le rétrograder).
+const CALL_PRESETS = [
+  { key: "repondeur", label: "Répondeur",   note: "Appel — message sur répondeur",       next: "Rappeler",         days: 2,    status: "contacte" },
+  { key: "pas_dispo", label: "Pas dispo",   note: "Appel — interlocuteur indisponible",  next: "Rappeler",         days: 3,    status: "contacte" },
+  { key: "rappeler",  label: "Rappeler J+3", note: "Appel — à rappeler",                 next: "Rappeler",         days: 3,    status: "contacte" },
+  { key: "rdv",       label: "RDV pris",     note: "Appel — rendez-vous obtenu",         next: "Préparer le RDV",  days: null, status: "interesse" },
+];
+const STATUS_RANK = { non_contacte: 0, contacte: 1, en_cours: 2, interesse: 3, refuse: 9, client: 9 };
+
 function fmtDate(s) {
   if (!s) return "";
   try { return new Date(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" }); }
@@ -235,6 +246,29 @@ function SuiviCommercial({ prospect, events, onSaved, onPatchStatus }) {
   const [statusAfter, setStatusAfter] = useState(prospect.status === "non_contacte" ? "contacte" : "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [quickBusy, setQuickBusy] = useState("");
+
+  // QW4 — un tap = interaction consignée + relance planifiée + statut avancé.
+  const quickLog = async (preset) => {
+    setErr(""); setQuickBusy(preset.key);
+    try {
+      const follow = preset.days != null
+        ? new Date(Date.now() + preset.days * 86400000).toISOString().slice(0, 10)
+        : null;
+      const { ok, error } = await fetchJson(`/api/prospects/${prospect.id}/interactions`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ channel: "appel", occurred_at: today, note: preset.note, next_action: preset.next, follow_up_at: follow }),
+      });
+      if (!ok) { setErr(error); return; }
+      // Statut : uniquement vers l'avant, jamais de rétrogradation, et on ne
+      // touche pas à un prospect refusé / client.
+      const cur = STATUS_RANK[prospect.status] ?? 0;
+      if (onPatchStatus && cur < 9 && (STATUS_RANK[preset.status] ?? 0) > cur) {
+        await onPatchStatus({ status: preset.status });
+      }
+      onSaved && onSaved();
+    } finally { setQuickBusy(""); }
+  };
 
   const followUpAt = prospect.follow_up_at;
   const overdue = followUpAt && followUpAt < today;
@@ -279,6 +313,20 @@ function SuiviCommercial({ prospect, events, onSaved, onPatchStatus }) {
         </div>
       )}
 
+      {/* QW4 — résultat d'appel en 1 tap : consigne + relance + statut d'un geste */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 14 }}>
+        <Caption1 style={{ width: "100%", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--colorNeutralForeground3)" }}>
+          Résultat d'appel rapide
+        </Caption1>
+        {CALL_PRESETS.map((q) => (
+          <Button key={q.key} appearance="outline" size="small" disabled={!!quickBusy}
+            icon={quickBusy === q.key ? <Spinner size="tiny" /> : <Phone24Regular />}
+            onClick={() => quickLog(q)}>
+            {q.label}
+          </Button>
+        ))}
+      </div>
+
       {/* Saisie rapide */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 14 }}>
         <div>
@@ -298,6 +346,17 @@ function SuiviCommercial({ prospect, events, onSaved, onPatchStatus }) {
       <Caption1 style={{ display: "block", margin: "10px 0 4px", fontWeight: 600 }}>Compte-rendu / retour du prospect</Caption1>
       <Textarea value={note} onChange={(_, d) => setNote(d.value)} rows={2}
         placeholder="Points abordés, retour, objections…" style={{ width: "100%" }} />
+      {/* IA2 — met au propre les notes brutes et pré-remplit action + relance */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+        <SyntheseButton
+          prospectId={prospect.id} channel={channel} note={note} onError={setErr}
+          onApply={(s) => {
+            if (s.compte_rendu) setNote(s.compte_rendu);
+            if (s.next_action) setNextAction(s.next_action);
+            if (s.follow_up_at) setFollowUp(s.follow_up_at);
+          }}
+        />
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
         <div>
           <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Prochaine action</Caption1>
@@ -594,6 +653,77 @@ function ScoreBreakdown({ scores, prospect }) {
   );
 }
 
+// ── IA2 — synthèse d'échange : notes brutes → compte-rendu + action + relance ──
+function SyntheseButton({ prospectId, channel, note, onApply, onError }) {
+  const [busy, setBusy] = useState(false);
+
+  const run = async () => {
+    if (!(note || "").trim()) { onError("Écris d'abord quelques notes à mettre au propre."); return; }
+    setBusy(true); onError("");
+    const { ok, data, error } = await fetchJson("/api/synthese", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prospectId, raw: note, channel }),
+    });
+    setBusy(false);
+    if (!ok) { onError(error); return; }
+    onApply(data.synthese || {});
+  };
+
+  return (
+    <Button appearance="subtle" size="small" disabled={busy}
+      icon={busy ? <Spinner size="tiny" /> : <Sparkle24Regular />} onClick={run}>
+      {busy ? "Mise au propre…" : "Mettre au propre (IA)"}
+    </Button>
+  );
+}
+
+// ── Séquences de relance (FV5) : lance une cadence = crée des tâches datées ──
+function SequencesCard({ prospectId, accountId, onError }) {
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState("");
+
+  const enroll = async (tpl) => {
+    setBusy(tpl.key); setMsg(""); onError("");
+    const { ok, data, error } = await fetchJson("/api/sequences/enroll", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prospect_id: prospectId, account_id: accountId || null, template_key: tpl.key }),
+    });
+    setBusy("");
+    if (!ok) { onError(error); return; }
+    setMsg(`Séquence « ${tpl.label} » lancée — ${data.created} tâche(s) créée(s) dans l'agenda.`);
+  };
+
+  return (
+    <Card style={{ padding: "20px 20px 22px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <CalendarLtr24Regular style={{ color: BRAND }} />
+        <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Séquences de relance</Body1>
+      </div>
+      <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginBottom: 12 }}>
+        Lance une cadence multicanal : les tâches datées apparaissent dans ton agenda. Aucun envoi automatique.
+      </Caption1>
+      {msg && <Caption1 style={{ color: GREEN, display: "block", marginBottom: 10 }}>{msg}</Caption1>}
+      <div>
+        {SEQUENCE_TEMPLATES.map((tpl) => (
+          <div key={tpl.key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: "1px solid var(--colorNeutralStroke2)" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Body1 style={{ fontWeight: 600, fontSize: 13 }}>{tpl.label}</Body1>
+              <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block" }}>
+                {tpl.description} · {tpl.steps.length} étapes sur {tpl.steps[tpl.steps.length - 1].day} j
+              </Caption1>
+            </div>
+            <Button appearance="outline" size="small" disabled={!!busy}
+              icon={busy === tpl.key ? <Spinner size="tiny" /> : <Add24Regular />}
+              onClick={() => enroll(tpl)}>
+              Lancer
+            </Button>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 /* ── Page (composant client) ── */
 
 // Les données initiales viennent du composant serveur (SSR : déjà dans le HTML).
@@ -773,6 +903,9 @@ export default function ProspectClient({ id, initialData = null }) {
       {/* ── Suivi commercial : historique des interactions + saisie rapide ── */}
       <SuiviCommercial prospect={prospect} events={events || []} onSaved={load} onPatchStatus={patchProspect} />
 
+      {/* ── Séquences de relance (FV5) : lance une cadence de tâches ── */}
+      <SequencesCard prospectId={prospect.id} accountId={prospect.account_id} onError={setError} />
+
       {/* ── Brief commercial à la demande (DISC, triggers, accroches, entourage) ── */}
       <BriefCommercial brief={brief} busy={busy === "brief"} onGenerate={() => run("brief", "brief", brief ? { force: true } : {})} />
 
@@ -892,12 +1025,30 @@ export default function ProspectClient({ id, initialData = null }) {
             À relire et ajuster avant envoi manuel.
           </Caption1>
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8, flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <Mail24Regular style={{ color: BRAND, fontSize: 16 }} />
               <Body1 style={{ fontWeight: 600, fontSize: 13 }}>Email · {drafts.email_subject}</Body1>
             </div>
-            <CopyButton text={`Objet : ${drafts.email_subject}\n\n${drafts.email_body}`} />
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {/* QW3 — email en 1 clic : ouvre la messagerie par défaut avec
+                  destinataire, objet et corps pré-remplis. Remplace le tunnel
+                  copier-objet → copier-corps → ouvrir Outlook → coller. */}
+              <Button
+                appearance="primary" size="small" icon={<Mail24Regular />}
+                disabled={!prospect.email}
+                title={prospect.email ? "Ouvrir dans ta messagerie avec l'objet et le corps pré-remplis" : "Renseigne un email d'abord"}
+                onClick={() => {
+                  const to = encodeURIComponent(prospect.email || "");
+                  const su = encodeURIComponent(drafts.email_subject || "");
+                  const bo = encodeURIComponent(drafts.email_body || "");
+                  window.location.href = `mailto:${to}?subject=${su}&body=${bo}`;
+                }}
+              >
+                Ouvrir dans ma messagerie
+              </Button>
+              <CopyButton text={`Objet : ${drafts.email_subject}\n\n${drafts.email_body}`} />
+            </div>
           </div>
           <div style={{ padding: "12px 14px", background: "var(--colorNeutralBackground3)", borderRadius: 6, marginBottom: 16, fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap", color: "var(--colorNeutralForeground2)" }}>
             {drafts.email_body}

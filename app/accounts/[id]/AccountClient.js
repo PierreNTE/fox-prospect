@@ -33,8 +33,10 @@ import {
 } from "@fluentui/react-icons";
 import Link from "next/link";
 import { NEWS_CATEGORY_LABELS, statusLabel } from "@/lib/constants";
+import { OPP_STAGES, OPP_STAGE_LABEL, OPP_STAGE_COLOR, effectiveProbability } from "@/lib/opportunities";
 import { fetchJson } from "@/lib/fetch-json";
 import DocumentsCard from "@/components/DocumentsCard";
+import SignalsCard from "@/components/SignalsCard";
 import BudgetHint from "@/components/BudgetHint";
 
 const BRAND = "#5B53E6";
@@ -86,6 +88,317 @@ function initials(c) {
   const a = (c.first_name || "").trim()[0] || "";
   const b = (c.last_name || "").trim()[0] || "";
   return (a + b).toUpperCase() || "?";
+}
+
+// ── FV4 — timeline au niveau compte ─────────────────────────────────────────
+const TL_CHANNEL = { appel: "Appel", email: "E-mail", linkedin: "LinkedIn", autre: "Échange" };
+function tlFmt(s) {
+  if (!s) return "";
+  try { return new Date(s).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" }); }
+  catch { return String(s); }
+}
+function tlLine(ev) {
+  switch (ev.kind) {
+    case "interaction": return { label: TL_CHANNEL[ev.channel] || "Échange", detail: ev.note || ev.next_action || "", color: BRAND };
+    case "status_change": return { label: "Changement de statut", detail: `${statusLabel(ev.from_status)} → ${statusLabel(ev.to_status)}`, color: "var(--colorNeutralForeground3)" };
+    case "research_done": return { label: "Recherche IA", detail: "Qualification", color: BRAND };
+    case "draft_generated": return { label: "Brouillons générés", detail: "", color: "#8B5CF6" };
+    case "enrich_done": return { label: "Enrichissement", detail: ev.note || "", color: "#8B5CF6" };
+    case "opt_out": return { label: "Ne pas contacter", detail: ev.note || "", color: RED };
+    default: return { label: ev.kind, detail: ev.note || "", color: "var(--colorNeutralForeground3)" };
+  }
+}
+
+// Agrège l'activité de tous les contacts du compte : la mémoire du compte en un
+// seul endroit, plutôt qu'éparpillée sur chaque fiche prospect.
+function AccountTimeline({ events, prospectById }) {
+  if (!events || events.length === 0) return null;
+  return (
+    <Card style={{ padding: "20px 20px 22px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Historique du compte</Body1>
+        <Badge appearance="outline">{events.length}</Badge>
+      </div>
+      {events.map((ev) => {
+        const l = tlLine(ev);
+        const who = prospectById.get(ev.prospect_id);
+        return (
+          <div key={ev.id} style={{ display: "flex", gap: 10, padding: "9px 0", borderTop: "1px solid var(--colorNeutralStroke2)" }}>
+            <span style={{ flexShrink: 0, marginTop: 6, width: 8, height: 8, borderRadius: "50%", background: l.color }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Body1 style={{ fontWeight: 600, fontSize: 13 }}>
+                {l.label}
+                {who && <span style={{ fontWeight: 400, color: "var(--colorNeutralForeground3)" }}> · {who}</span>}
+              </Body1>
+              {l.detail && <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block" }}>{l.detail}</Caption1>}
+            </div>
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)", flexShrink: 0, whiteSpace: "nowrap", fontSize: 11 }}>{tlFmt(ev.occurred_at)}</Caption1>
+          </div>
+        );
+      })}
+    </Card>
+  );
+}
+
+// ── IA1 — préparation de RDV (briefing à la demande, mis en cache) ──────────
+function RdvBriefCard({ accountId, brief, generatedAt, onDone, onError }) {
+  const [busy, setBusy] = useState(false);
+
+  const run = async (force) => {
+    setBusy(true); onError("");
+    const { ok, error } = await fetchJson("/api/rdv-brief", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ accountId, force: !!force }),
+    });
+    setBusy(false);
+    if (!ok) { onError(error); return; }
+    onDone();
+  };
+
+  return (
+    <Card style={{ padding: "20px 20px 22px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Sparkle24Regular style={{ color: BRAND }} />
+          <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Préparation de RDV</Body1>
+        </div>
+        <Button appearance={brief ? "outline" : "primary"} size="small" disabled={busy}
+          icon={busy ? <Spinner size="tiny" /> : <Sparkle24Regular />}
+          onClick={() => run(!!brief)}>
+          {busy ? "Analyse…" : brief ? "Régénérer" : "Préparer mon RDV (IA)"}
+        </Button>
+      </div>
+
+      {!brief && !busy && (
+        <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block", marginTop: 10, lineHeight: 1.6 }}>
+          Compile un briefing : contexte, actus exploitables, qui voir et sous quel angle, où en est la relation,
+          questions à poser et points de vigilance. Synthèse de tes données CRM — sans recherche web, coût minimal.
+        </Caption1>
+      )}
+
+      {brief && (
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
+          {brief.objectif_suggere && (
+            <div style={{ padding: "12px 14px", borderRadius: 8, background: `color-mix(in srgb, ${BRAND} 6%, var(--colorNeutralBackground1))`, borderLeft: `3px solid ${BRAND}` }}>
+              <Caption1 style={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--colorNeutralForeground3)" }}>Objectif du RDV</Caption1>
+              <Body1 style={{ display: "block", marginTop: 4 }}>{brief.objectif_suggere}</Body1>
+            </div>
+          )}
+          {brief.contexte && <Body1 style={{ color: "var(--colorNeutralForeground2)", lineHeight: 1.6 }}>{brief.contexte}</Body1>}
+          {brief.ou_on_en_est && <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block" }}>{brief.ou_on_en_est}</Caption1>}
+
+          {(brief.actus_cles || []).length > 0 && (
+            <div>
+              <Body1 style={{ fontWeight: 700, fontSize: 14, display: "block", marginBottom: 6 }}>Actus exploitables</Body1>
+              {brief.actus_cles.map((a, i) => (
+                <div key={i} style={{ padding: "8px 0", borderTop: i > 0 ? "1px solid var(--colorNeutralStroke2)" : "none" }}>
+                  <Body1 style={{ fontWeight: 600, fontSize: 13 }}>{a.titre}{a.date ? ` · ${a.date}` : ""}</Body1>
+                  {a.pourquoi && <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block" }}>{a.pourquoi}</Caption1>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {(brief.interlocuteurs || []).length > 0 && (
+            <div>
+              <Body1 style={{ fontWeight: 700, fontSize: 14, display: "block", marginBottom: 6 }}>Qui voir</Body1>
+              {brief.interlocuteurs.map((p, i) => (
+                <div key={i} style={{ padding: "8px 0", borderTop: i > 0 ? "1px solid var(--colorNeutralStroke2)" : "none" }}>
+                  <Body1 style={{ fontWeight: 600, fontSize: 13 }}>
+                    {p.nom}<span style={{ fontWeight: 400, color: "var(--colorNeutralForeground3)" }}> · {p.role}</span>
+                  </Body1>
+                  {p.angle && <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block" }}>{p.angle}</Caption1>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {(brief.questions || []).length > 0 && (
+            <div>
+              <Body1 style={{ fontWeight: 700, fontSize: 14, display: "block", marginBottom: 6 }}>Questions à poser</Body1>
+              {brief.questions.map((q, i) => (
+                <Caption1 key={i} style={{ display: "block", color: "var(--colorNeutralForeground2)", padding: "3px 0" }}>· {q}</Caption1>
+              ))}
+            </div>
+          )}
+
+          {(brief.risques || []).length > 0 && (
+            <div>
+              <Body1 style={{ fontWeight: 700, fontSize: 14, display: "block", marginBottom: 6, color: RED }}>Points de vigilance</Body1>
+              {brief.risques.map((r, i) => (
+                <Caption1 key={i} style={{ display: "block", color: "var(--colorNeutralForeground2)", padding: "3px 0" }}>· {r}</Caption1>
+              ))}
+            </div>
+          )}
+
+          {generatedAt && (
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
+              Généré le {new Date(generatedAt).toLocaleString("fr-FR")}
+            </Caption1>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ── IA4 — suivi des décideurs (contrôle de poste à la demande) ──────────────
+const JOB_STATUS_META = {
+  en_poste: { label: "En poste", color: "#107C10" },
+  change_de_poste: { label: "A changé de poste", color: "#E8730C" },
+  parti: { label: "A quitté l'entreprise", color: RED },
+  incertain: { label: "Incertain", color: "var(--colorNeutralForeground3)" },
+};
+
+function JobCheckCard({ contacts, onDone, onError }) {
+  const [busy, setBusy] = useState("");
+
+  const check = async (c) => {
+    setBusy(c.id); onError("");
+    const { ok, error } = await fetchJson(`/api/account-contacts/${c.id}/job-check`, { method: "POST" });
+    setBusy("");
+    if (!ok) { onError(error); return; }
+    onDone();
+  };
+
+  const list = (contacts || []).filter((c) => c.first_name || c.last_name);
+  if (list.length === 0) return null;
+
+  return (
+    <Card style={{ padding: "20px 20px 22px" }}>
+      <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Suivi des décideurs</Body1>
+      <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", margin: "4px 0 10px" }}>
+        Vérifie si un décideur occupe encore son poste. Un départ = un contact perdu et une opportunité ailleurs ;
+        une arrivée = une revue fournisseurs à venir.
+      </Caption1>
+      {list.map((c) => {
+        const m = JOB_STATUS_META[c.job_check_status] || null;
+        return (
+          <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: "1px solid var(--colorNeutralStroke2)" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Body1 style={{ fontWeight: 600, fontSize: 13 }}>
+                {c.first_name} {c.last_name}
+                {c.role && <span style={{ fontWeight: 400, color: "var(--colorNeutralForeground3)" }}> · {c.role}</span>}
+              </Body1>
+              {m && (
+                <Caption1 style={{ display: "block", color: m.color, fontWeight: 600 }}>
+                  {m.label}
+                  {c.job_check_note && <span style={{ fontWeight: 400, color: "var(--colorNeutralForeground2)" }}> — {c.job_check_note}</span>}
+                </Caption1>
+              )}
+            </div>
+            <Button appearance="subtle" size="small" disabled={!!busy}
+              icon={busy === c.id ? <Spinner size="tiny" /> : <Search24Regular />}
+              onClick={() => check(c)}>
+              Vérifier
+            </Button>
+          </div>
+        );
+      })}
+    </Card>
+  );
+}
+
+// ── FV2 — opportunités du compte (créer / suivre une affaire) ────────────────
+function fmtEurShort(n) {
+  const v = Number(n) || 0;
+  if (!v) return "—";
+  if (v >= 1000) return `${Math.round(v / 1000).toLocaleString("fr-FR")} k€`;
+  return `${v.toLocaleString("fr-FR")} €`;
+}
+
+function OpportunitiesCard({ accountId, opportunities, onChange, onError }) {
+  const [adding, setAdding] = useState(false);
+  const [f, setF] = useState({ title: "", amount_eur: "", stage: "qualification", expected_close_date: "" });
+  const [busy, setBusy] = useState(false);
+
+  const create = async () => {
+    if (!f.title.trim()) return;
+    setBusy(true); onError("");
+    const { ok, error } = await fetchJson("/api/opportunities", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ account_id: accountId, ...f }),
+    });
+    setBusy(false);
+    if (!ok) { onError(error); return; }
+    setF({ title: "", amount_eur: "", stage: "qualification", expected_close_date: "" });
+    setAdding(false);
+    onChange();
+  };
+
+  const move = async (opp, stage) => {
+    const { ok, error } = await fetchJson(`/api/opportunities/${opp.id}`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ stage }),
+    });
+    if (!ok) { onError(error); return; }
+    onChange();
+  };
+
+  const remove = async (opp) => {
+    if (!confirm("Supprimer cette opportunité ?")) return;
+    const { ok, error } = await fetchJson(`/api/opportunities/${opp.id}`, { method: "DELETE" });
+    if (!ok) { onError(error); return; }
+    onChange();
+  };
+
+  return (
+    <Card style={{ padding: "20px 20px 22px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+        <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Opportunités</Body1>
+        {!adding && (
+          <Button appearance="outline" size="small" icon={<PersonAdd24Regular />} onClick={() => setAdding(true)}>
+            Nouvelle opportunité
+          </Button>
+        )}
+      </div>
+
+      {adding && (
+        <Card style={{ padding: 14, borderLeft: `3px solid ${BRAND}`, marginBottom: 12 }}>
+          <Input value={f.title} onChange={(_, d) => setF({ ...f, title: d.value })} placeholder="Ex. Renouvellement pare-feu" style={{ width: "100%", marginBottom: 10 }} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
+            <div>
+              <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Montant (€)</Caption1>
+              <Input type="number" value={f.amount_eur} onChange={(_, d) => setF({ ...f, amount_eur: d.value })} placeholder="45000" />
+            </div>
+            <div>
+              <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Étape</Caption1>
+              <Select value={f.stage} onChange={(_, d) => setF({ ...f, stage: d.value })}>
+                {OPP_STAGES.map((s) => <option key={s} value={s}>{OPP_STAGE_LABEL[s]}</option>)}
+              </Select>
+            </div>
+            <div>
+              <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Closing</Caption1>
+              <Input type="date" value={f.expected_close_date} onChange={(_, d) => setF({ ...f, expected_close_date: d.value })} />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button appearance="primary" disabled={busy || !f.title.trim()} onClick={create}>Créer</Button>
+            <Button appearance="outline" onClick={() => setAdding(false)}>Annuler</Button>
+          </div>
+        </Card>
+      )}
+
+      {opportunities.length === 0 ? (
+        <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>Aucune affaire sur ce compte. Crée-en une pour la suivre dans le pipeline.</Caption1>
+      ) : (
+        opportunities.map((o) => (
+          <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: "1px solid var(--colorNeutralStroke2)" }}>
+            <span style={{ flexShrink: 0, width: 8, height: 8, borderRadius: "50%", background: OPP_STAGE_COLOR[o.stage] }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Body1 style={{ fontWeight: 600, fontSize: 13 }}>{o.title}</Body1>
+              <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
+                {fmtEurShort(o.amount_eur)} · {effectiveProbability(o)}%{o.expected_close_date ? ` · ${new Date(o.expected_close_date).toLocaleDateString("fr-FR", { month: "short", year: "2-digit" })}` : ""}
+              </Caption1>
+            </div>
+            <Select value={o.stage} onChange={(_, d) => move(o, d.value)} style={{ width: "auto", flexShrink: 0 }}>
+              {OPP_STAGES.map((s) => <option key={s} value={s}>{OPP_STAGE_LABEL[s]}</option>)}
+            </Select>
+            <Button appearance="subtle" size="small" icon={<Delete24Regular />} onClick={() => remove(o)} title="Supprimer" />
+          </div>
+        ))
+      )}
+    </Card>
+  );
 }
 
 /* ── Petits éléments ── */
@@ -669,7 +982,7 @@ export default function AccountClient({ id, initialData = null }) {
     );
   }
 
-  const { account, contacts, prospects } = data;
+  const { account, contacts, prospects, signals } = data;
   const news = (account.news || []).slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const analyzed = !!account.last_refreshed_at;
   // Prospects du compte absents de l'organigramme (import/scraping crée le
@@ -770,7 +1083,13 @@ export default function AccountClient({ id, initialData = null }) {
         </Card>
       )}
 
-      {/* ── 1. Actualités ── */}
+      {/* ── 1. Signaux de veille ──
+          Placés AVANT les actualités : ils portent un lien vérifiable et une
+          méthode de rattachement traçable, là où les actualités viennent de
+          l'analyse LLM. Ce sont ceux qu'on peut citer devant un client. */}
+      <SignalsCard signals={signals} />
+
+      {/* ── 2. Actualités ── */}
       {analyzed && (
         <Card style={{ padding: "20px 20px 22px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
@@ -860,6 +1179,21 @@ export default function AccountClient({ id, initialData = null }) {
           ))}
         </Card>
       )}
+
+      {/* ── Préparation de RDV (IA1) : briefing à la demande, mis en cache ── */}
+      <RdvBriefCard accountId={id} brief={account.rdv_brief} generatedAt={account.rdv_brief_at} onDone={load} onError={setError} />
+
+      {/* ── Suivi des décideurs (IA4) : contrôle de poste à la demande ── */}
+      <JobCheckCard contacts={contacts} onDone={load} onError={setError} />
+
+      {/* ── Opportunités (FV2) : affaires du compte ── */}
+      <OpportunitiesCard accountId={id} opportunities={data.opportunities || []} onChange={load} onError={setError} />
+
+      {/* ── Historique du compte (FV4) : activité agrégée de tous les contacts ── */}
+      <AccountTimeline
+        events={data.events || []}
+        prospectById={new Map((prospects || []).map((p) => [p.id, `${p.first_name} ${p.last_name}`.trim()]))}
+      />
 
       {/* ── Documents (compte + contacts + prospects rattachés) ── */}
       <DocumentsCard accountId={id} />

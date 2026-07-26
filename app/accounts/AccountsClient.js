@@ -21,11 +21,32 @@ import { SkeletonAccountCards } from "@/components/Skeleton";
 import { fetchJson } from "@/lib/fetch-json";
 
 const BRAND = "#5B53E6";
-const GREEN = "#107C10";
+const AMBER = "#F6A623";
+const RED = "#C50F1F";
+
+// Chaleur d'un compte (QW2) : dérivée côté serveur des actualités récentes et de
+// leur impact (cf. computeAccountHeatFull). Trois paliers lisibles d'un coup d'œil.
+function heatMeta(heat) {
+  if (heat >= 55) return { label: "Chaud", color: RED };
+  if (heat >= 25) return { label: "Tiède", color: AMBER };
+  return { label: "Calme", color: "var(--colorNeutralForeground3)" };
+}
+
+function daysAgo(dateStr) {
+  if (!dateStr) return null;
+  const d = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+  if (Number.isNaN(d)) return null;
+  if (d <= 0) return "aujourd'hui";
+  if (d === 1) return "hier";
+  if (d < 30) return `il y a ${d} j`;
+  return `il y a ${Math.floor(d / 30)} mois`;
+}
 
 // Carte compte : une seule question — « où en suis-je sur ce compte ? »
 function AccountRow({ account, onClick }) {
   const analyzed = !!account.last_refreshed_at;
+  const hm = analyzed ? heatMeta(account.heat || 0) : null;
+  const fresh = daysAgo(account.last_news_date);
   return (
     <div
       onClick={onClick}
@@ -47,21 +68,35 @@ function AccountRow({ account, onClick }) {
           {account.sector || "Secteur à préciser"}
         </Caption1>
       </div>
-      <span style={{
-        flexShrink: 0, fontSize: 11, fontWeight: 600,
-        color: analyzed ? GREEN : "var(--colorNeutralForeground3)",
-        display: "inline-flex", alignItems: "center", gap: 5,
-      }}>
-        <span style={{ width: 7, height: 7, borderRadius: "50%", background: analyzed ? GREEN : "var(--colorNeutralForeground4)" }} />
-        {analyzed ? "Analysé" : "À analyser"}
-      </span>
+      {analyzed ? (
+        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 12 }}>
+          <span title={`Chaleur ${account.heat || 0}/100`}
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, color: hm.color }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: hm.color }} />
+            {hm.label}
+          </span>
+          {account.news_count > 0 && (
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)", whiteSpace: "nowrap" }}>
+              {account.news_count} actu{account.news_count > 1 ? "s" : ""}{fresh ? ` · ${fresh}` : ""}
+            </Caption1>
+          )}
+        </div>
+      ) : (
+        <span style={{
+          flexShrink: 0, fontSize: 11, fontWeight: 600, color: "var(--colorNeutralForeground3)",
+          display: "inline-flex", alignItems: "center", gap: 5,
+        }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--colorNeutralForeground4)" }} />
+          À analyser
+        </span>
+      )}
       <ChevronRight24Regular style={{ flexShrink: 0, color: "var(--colorNeutralForeground3)", fontSize: 18 }} />
     </div>
   );
 }
 
 // Les données initiales arrivent du composant serveur (rendu SSR).
-export default function AccountsClient({ initialAccounts = null }) {
+export default function AccountsClient({ initialAccounts = null, veille = [] }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [accounts] = useState(initialAccounts);
@@ -93,9 +128,18 @@ export default function AccountsClient({ initialAccounts = null }) {
     router.push(`/accounts/${data.account.id}`);
   };
 
-  const filtered = (accounts || []).filter((a) =>
-    a.name.toLowerCase().includes(q.toLowerCase()) || (a.sector || "").toLowerCase().includes(q.toLowerCase())
-  );
+  const filtered = (accounts || [])
+    .filter((a) =>
+      a.name.toLowerCase().includes(q.toLowerCase()) || (a.sector || "").toLowerCase().includes(q.toLowerCase())
+    )
+    // Comptes chauds en tête (QW2) : analysés d'abord, triés par chaleur ; les
+    // non analysés ensuite, par ordre alphabétique.
+    .sort((a, b) => {
+      const aa = !!a.last_refreshed_at, bb = !!b.last_refreshed_at;
+      if (aa !== bb) return aa ? -1 : 1;
+      if (aa && bb && (b.heat || 0) !== (a.heat || 0)) return (b.heat || 0) - (a.heat || 0);
+      return a.name.localeCompare(b.name, "fr");
+    });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -131,6 +175,70 @@ export default function AccountsClient({ initialAccounts = null }) {
           </Button>
         </div>
       </Card>
+
+      {/* ── Veille (IA3) : actus à fort impact, tous comptes. Zéro coût IA. ── */}
+      {veille.length > 0 && (
+        <Card style={{ padding: "18px 20px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+            <Body1 style={{ fontWeight: 800, fontSize: 15 }}>Veille</Body1>
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>actualités les plus marquantes de tes comptes (12 mois)</Caption1>
+          </div>
+          {veille.map((v, i) => (
+            <div key={i} onClick={() => router.push(`/accounts/${v.account_id}`)}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: "1px solid var(--colorNeutralStroke2)", cursor: "pointer" }}>
+              {v.category && (
+                <span style={{ fontSize: 10, fontWeight: 700, flexShrink: 0, color: AMBER, border: `1px solid ${AMBER}`, borderRadius: 4, padding: "1px 6px" }}>
+                  {v.category}
+                </span>
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Body1 style={{ fontWeight: 600, fontSize: 13 }}>{v.title}</Body1>
+                <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block" }}>
+                  {v.account_name}{v.date ? ` · ${v.date}` : ""}
+                </Caption1>
+              </div>
+              <ChevronRight24Regular style={{ flexShrink: 0, color: "var(--colorNeutralForeground3)", fontSize: 18 }} />
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {/* ── Next Best Account (IA5, déterministe) : chaleur + joignabilité ── */}
+      {(() => {
+        const scored = (accounts || [])
+          .filter((a) => a.last_refreshed_at)
+          .map((a) => ({ a, score: (a.heat || 0) + Math.min(a.reachable_contacts || 0, 3) * 8 }))
+          .filter((x) => x.score > 0)
+          .sort((x, y) => y.score - x.score)
+          .slice(0, 3);
+        if (scored.length === 0) return null;
+        return (
+          <Card style={{ padding: "18px 20px", borderLeft: `3px solid ${BRAND}` }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+              <Body1 style={{ fontWeight: 800, fontSize: 15 }}>À travailler en priorité</Body1>
+              <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>comptes chauds avec des décideurs joignables</Caption1>
+            </div>
+            {scored.map(({ a }) => {
+              const hm = heatMeta(a.heat || 0);
+              const fresh = daysAgo(a.last_news_date);
+              const rc = a.reachable_contacts || 0;
+              return (
+                <div key={a.id} onClick={() => router.push(`/accounts/${a.id}`)}
+                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: "1px solid var(--colorNeutralStroke2)", cursor: "pointer" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: hm.color, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <Body1 style={{ fontWeight: 600 }}>{a.name}</Body1>
+                    <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block" }}>
+                      {hm.label}{a.news_count ? ` · ${a.news_count} actu${a.news_count > 1 ? "s" : ""}${fresh ? ` (${fresh})` : ""}` : ""} · {rc} décideur{rc > 1 ? "s" : ""} joignable{rc > 1 ? "s" : ""}
+                    </Caption1>
+                  </div>
+                  <ChevronRight24Regular style={{ flexShrink: 0, color: "var(--colorNeutralForeground3)", fontSize: 18 }} />
+                </div>
+              );
+            })}
+          </Card>
+        );
+      })()}
 
       {/* ── Liste ── */}
       {accounts === null ? (

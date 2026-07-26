@@ -1,14 +1,20 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
-import { getAccountDetail } from "@/lib/data";
+import { getAccountDetail, getAccountSignals } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
 // Rafraîchissement client de la fiche (le 1er rendu vient du serveur via lib/data).
+// Doit renvoyer EXACTEMENT la même forme que le rendu serveur, signaux compris :
+// sinon la carte de veille disparaît dès la première mutation de la fiche.
 export async function GET(_request, { params }) {
-  const result = await getAccountDetail(getSupabase(), params.id);
+  const supabase = getSupabase();
+  const [result, signals] = await Promise.all([
+    getAccountDetail(supabase, params.id),
+    getAccountSignals(supabase, params.id),
+  ]);
   if (result.error) return NextResponse.json({ error: result.error }, { status: 404 });
-  return NextResponse.json(result);
+  return NextResponse.json({ ...result, signals });
 }
 
 export async function PATCH(request, { params }) {

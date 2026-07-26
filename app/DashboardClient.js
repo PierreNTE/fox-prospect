@@ -85,6 +85,102 @@ function ScoreBadge({ score }) {
   return <span style={{ fontWeight: 700, fontSize: 14, color }}>{score}</span>;
 }
 
+// ── Cockpit « Ta journée » (QW1) ─────────────────────────────────────────────
+// Agrège, à partir des prospects DÉJÀ chargés (coût nul, zéro fetch), la file de
+// travail du jour : relances échues > relances du jour > échanges chauds >
+// prospects qualifiés jamais contactés. Répond à « par où je commence ? » dès
+// l'ouverture, au lieu de laisser scanner la liste.
+const KIND_META = {
+  overdue: { color: RED, tag: "En retard" },
+  today: { color: "#E8730C", tag: "Aujourd'hui" },
+  hot: { color: AMBER, tag: "Chaud" },
+  contact: { color: BLUE, tag: "À contacter" },
+};
+
+function CockpitTile({ n, label, color }) {
+  return (
+    <div style={{ flex: "1 1 90px", minWidth: 82, padding: "10px 12px", borderRadius: 8, background: "var(--colorNeutralBackground1)", border: "1px solid var(--colorNeutralStroke2)" }}>
+      <div style={{ fontSize: 22, fontWeight: 800, color: n > 0 ? color : "var(--colorNeutralForeground3)", lineHeight: 1 }}>{n}</div>
+      <Caption1 style={{ color: "var(--colorNeutralForeground2)", marginTop: 3, display: "block" }}>{label}</Caption1>
+    </div>
+  );
+}
+
+function Cockpit({ prospects, onGo }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const dateLabel = new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+  const actionable = (prospects || []).filter((p) => !p.do_not_contact && p.status !== "refuse" && p.status !== "client");
+  const overdue = actionable.filter((p) => p.follow_up_at && p.follow_up_at < today).sort((a, b) => a.follow_up_at.localeCompare(b.follow_up_at));
+  const dueToday = actionable.filter((p) => p.follow_up_at === today);
+  const hot = actionable.filter((p) => (p.status === "interesse" || p.status === "en_cours") && !p.follow_up_at).sort((a, b) => (b.fit_score || 0) - (a.fit_score || 0));
+  const toContact = actionable.filter((p) => p.status === "non_contacte" && (p.fit_score || 0) >= 70 && ((p.email || "").trim() || (p.phone || "").trim())).sort((a, b) => (b.fit_score || 0) - (a.fit_score || 0));
+
+  const reason = (p, kind) => {
+    if (kind === "overdue") return `Relance en retard depuis le ${new Date(p.follow_up_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })}${p.next_action ? ` — ${p.next_action}` : ""}`;
+    if (kind === "today") return `Relance prévue aujourd'hui${p.next_action ? ` — ${p.next_action}` : ""}`;
+    if (kind === "hot") return `${STATUS_LABELS[p.status]} — fais avancer l'échange`;
+    return `Prospect qualifié (score ${p.fit_score}) jamais contacté`;
+  };
+
+  const work = [
+    ...overdue.map((p) => ({ p, kind: "overdue" })),
+    ...dueToday.map((p) => ({ p, kind: "today" })),
+    ...hot.map((p) => ({ p, kind: "hot" })),
+    ...toContact.map((p) => ({ p, kind: "contact" })),
+  ].slice(0, 8);
+
+  return (
+    <Card style={{ padding: "18px 20px 20px", borderLeft: `3px solid ${BRAND}` }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+        <Body1 style={{ fontWeight: 800, fontSize: 16 }}>Ta journée</Body1>
+        <Caption1 style={{ color: "var(--colorNeutralForeground3)", textTransform: "capitalize" }}>{dateLabel}</Caption1>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: work.length ? 16 : 0 }}>
+        <CockpitTile n={overdue.length} label="En retard" color={RED} />
+        <CockpitTile n={dueToday.length} label="Aujourd'hui" color="#E8730C" />
+        <CockpitTile n={hot.length} label="Échanges chauds" color={AMBER} />
+        <CockpitTile n={toContact.length} label="À contacter" color={BLUE} />
+      </div>
+      {work.length === 0 ? (
+        <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 12 }}>
+          Rien d'urgent aujourd'hui. Ouvre un compte pour identifier de nouveaux décideurs, ou qualifie un prospect prometteur.
+        </Caption1>
+      ) : (
+        <>
+          <Caption1 style={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--colorNeutralForeground3)" }}>
+            Par où commencer
+          </Caption1>
+          <div style={{ marginTop: 6 }}>
+            {work.map(({ p, kind }) => {
+              const m = KIND_META[kind];
+              return (
+                <div key={`${kind}-${p.id}`} onClick={() => onGo(p.id)}
+                  style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 0", borderTop: "1px solid var(--colorNeutralStroke2)", cursor: "pointer" }}>
+                  <span title={m.tag} style={{ flexShrink: 0, width: 8, height: 8, borderRadius: "50%", background: m.color }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <Body1 style={{ fontWeight: 600 }}>
+                      {p.first_name} {p.last_name}
+                      <span style={{ fontWeight: 400, color: "var(--colorNeutralForeground3)" }}> · {p.company}</span>
+                    </Body1>
+                    <Caption1 style={{ color: "var(--colorNeutralForeground2)", display: "block" }}>{reason(p, kind)}</Caption1>
+                  </div>
+                  {p.phone ? (
+                    <a href={`tel:${(p.phone || "").replace(/\s/g, "")}`} onClick={(e) => e.stopPropagation()}
+                      style={{ flexShrink: 0, fontSize: 12, fontWeight: 700, color: GREEN, textDecoration: "none" }}>Appeler</a>
+                  ) : p.email ? (
+                    <a href={`mailto:${p.email}`} onClick={(e) => e.stopPropagation()}
+                      style={{ flexShrink: 0, fontSize: 12, fontWeight: 600, color: BRAND, textDecoration: "none" }}>Écrire</a>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 // Les données initiales arrivent du composant serveur (rendu SSR : déjà dans le
 // HTML, aucune attente réseau au premier affichage). Les rafraîchissements
 // (après changement de statut) repassent par l'API.
@@ -201,6 +297,11 @@ export default function DashboardClient({ initialProspects = null }) {
         <Card style={{ borderLeft: `3px solid ${RED}`, padding: "12px 16px" }}>
           <Body1 style={{ color: RED }}>{error}</Body1>
         </Card>
+      )}
+
+      {/* ── Cockpit « Ta journée » (QW1) : la file de travail avant la liste ── */}
+      {prospects !== null && prospects.length > 0 && (
+        <Cockpit prospects={prospects} onGo={(id) => router.push(`/prospects/${id}`)} />
       )}
 
       {/* ── Pipeline funnel ── */}
