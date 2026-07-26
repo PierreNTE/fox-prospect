@@ -15,7 +15,7 @@ existe déjà en base (index GIN de v12) et reste le bon outil pour un nom propr
 import time
 
 import db
-from config import MAX_EMBED_PAR_PASSAGE, MODELE_EMBED
+from config import MAX_EMBED_PAR_PASSAGE, MODELE_EMBED, PURGE_MOIS
 
 _modele = None
 
@@ -77,6 +77,26 @@ def vectoriser_themes(dry_run=False):
         db.maj_theme_vecteur(theme["id"], vecteur)
         print(f"  thème vectorisé : {theme['label']}")
     return len(themes)
+
+
+def purger(dry_run=False, mois=None):
+    """Purge glissante des vecteurs trop anciens.
+
+    Rattachée à l'étage de vectorisation plutôt qu'à un cron séparé : c'est le
+    seul endroit qui écrit des vecteurs, donc le seul qui ait une raison d'en
+    retirer. Et comme cette étape tolère l'échec, une purge qui échoue ne fait
+    pas tomber le passage.
+
+    Sans appelant, la fonction SQL de la migration v12 restait lettre morte sur
+    un projet où pg_cron n'est pas activé.
+    """
+    if dry_run:
+        return 0
+    try:
+        return db.purger_embeddings(mois or PURGE_MOIS) or 0
+    except Exception as e:
+        print(f"  purge des vecteurs impossible : {e}")
+        return 0
 
 
 def vectoriser_signaux(dry_run=False, limite=None):

@@ -433,7 +433,9 @@ def main():
         print("Vectorisation…")
         themes = embed.vectoriser_themes(args.dry_run)
         signaux_vus = embed.vectoriser_signaux(args.dry_run)
-        print(f"  {themes} thème(s) · {signaux_vus} signal(aux)")
+        purges = embed.purger(args.dry_run)
+        print(f"  {themes} thème(s) · {signaux_vus} signal(aux)"
+              + (f" · {purges} vecteur(s) purgé(s)" if purges else ""))
 
     print(f"Terminé en {time.time() - debut:.1f} s")
 

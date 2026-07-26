@@ -81,3 +81,8 @@ MODELE_EMBED = os.environ.get("VEILLE_MODELE_EMBED", "BAAI/bge-m3")
 # runner dispose d'une trentaine de minutes, et c'est la seule étape dont la
 # durée croît avec le volume collecté.
 MAX_EMBED_PAR_PASSAGE = int(os.environ.get("VEILLE_MAX_EMBED", "400"))
+
+# Fenêtre de conservation des vecteurs, en mois. Seul poste à croissance
+# illimitée sous le palier gratuit de 500 Mo : ~55 000 vecteurs à 12 mois,
+# soit ~165 Mo. Les signaux, eux, ne sont jamais purgés.
+PURGE_MOIS = int(os.environ.get("VEILLE_PURGE_MOIS", "12"))

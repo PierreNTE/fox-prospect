@@ -206,6 +206,21 @@ def themes_a_vectoriser():
     return sb("veille_themes?enabled=eq.true&embedding=is.null&select=id,label,query") or []
 
 
+def purger_embeddings(mois=12):
+    """Supprime les vecteurs au-delà de N mois. Renvoie le nombre supprimé.
+
+    La migration v12 planifie cette purge par pg_cron QUAND l'extension est
+    disponible, et imprime sinon « appeler purge_signal_embeddings(12) depuis le
+    pipeline ». pg_cron n'est pas activé sur ce projet et personne n'appelait la
+    fonction : la purge était documentée comme acquise sans l'être. C'est ici
+    qu'elle l'est.
+
+    Les signaux ne sont jamais touchés — seuls les vecteurs, qui sont le seul
+    poste à croissance illimitée sous le palier gratuit de 500 Mo.
+    """
+    return sb("rpc/purge_signal_embeddings", "POST", {"p_months": mois})
+
+
 def maj_theme_vecteur(theme_id, vecteur):
     sb(f"veille_themes?id=eq.{theme_id}", "PATCH",
        {"embedding": vecteur, "embedded_at": "now()"}, prefer="return=minimal")
