@@ -30,8 +30,24 @@ from config import (ANTHROPIC_KEY, BUDGET_MENSUEL_EUR, MAX_LLM_PAR_PASSAGE,
 API = "https://api.anthropic.com/v1/messages"
 
 # Méthodes de rattachement qui ne se trompent pas : la source appartient au
-# compte, ou l'entité est nommée dans un document officiel. Les soumettre au
-# modèle serait payer pour confirmer une certitude.
+# compte, ou l'entité est nommée dans un document officiel.
+#
+# Elles ne dispensent PAS du jugement, et c'est une correction sur la première
+# version de cet étage. Le juge répond à deux questions — « est-ce bien ce
+# compte ? » et « est-ce un signal d'achat exploitable ? ». Une salle de presse
+# tranche la première, jamais la seconde.
+#
+# Le coût de l'erreur a été mesuré : la formule de présentation d'Atos
+# (« a global leader in digital transformation powered by Artificial
+# Intelligence ») figure dans chacun de ses communiqués, ce qui faisait passer
+# un sponsoring des Special Olympics pour un « projet datacenter » sur la fiche
+# client — avec une provenance affichée comme certaine. Un filtre lexical réglé
+# large ne peut pas distinguer une formule de présentation d'une annonce ; c'est
+# précisément le travail du modèle.
+#
+# Ces méthodes servent donc uniquement à moduler la SÉVÉRITÉ du prompt (voir
+# prompts.utilisateur) et l'ordre de passage sous plafond : le rattachement
+# certain est jugé en dernier, parce qu'il n'a qu'une question à trancher.
 METHODES_SURES = {"source", "lei", "siren", "registre", "domaine", "manuel"}
 
 LIGNES_VALIDES = {"csg", "isg", "both", "none"}
@@ -140,10 +156,6 @@ class Juge:
         if self.restant <= 0:
             return False
         return (self.depense_mois + self.cout_eur) < BUDGET_MENSUEL_EUR
-
-    def a_juger(self, methode):
-        """Ce rattachement mérite-t-il un appel ? Voir METHODES_SURES."""
-        return methode not in METHODES_SURES
 
     def juger(self, document, compte, categories, methode):
         """Verdict sur un document, ou None si l'appel n'a pas eu lieu.

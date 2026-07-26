@@ -124,7 +124,10 @@ def collecter(source, depuis_jours=2, plafond=200, **_):
     compte = source.get("account_id")
     strategie = "source" if compte else "mention"
 
-    documents, plus_recente = [], None
+    # Deux passes : on retient d'abord les entrées de la fenêtre, on ne trie par
+    # langue qu'ensuite. La raison est dans `_garder_langue` — décider entrée par
+    # entrée empêchait de voir que le tri vidait le flux entier.
+    retenues = []
     for entree in flux.entries[:plafond]:
         lien = entree.get("link")
         titre = _texte(entree.get("title"))
@@ -138,14 +141,11 @@ def collecter(source, depuis_jours=2, plafond=200, **_):
             continue
 
         resume = OURS.sub("", _texte(entree.get("summary") or entree.get("description")))[:1000]
+        retenues.append((entree, lien, titre, resume, publie,
+                         deviner_langue(f"{titre} {resume}")))
 
-        # Beaucoup de salles de presse diffusent le MÊME communiqué en
-        # plusieurs langues dans un flux unique, sous des URL distinctes :
-        # l'unicité d'url_hash ne les voit pas. Sans ce tri, chaque annonce
-        # apparaît deux fois sur la fiche client.
-        detectee = deviner_langue(f"{titre} {resume}")
-        if langue_voulue and detectee and detectee != langue_voulue:
-            continue
+    documents, plus_recente = [], None
+    for entree, lien, titre, resume, publie, detectee in _garder_langue(retenues, langue_voulue):
         if publie and (plus_recente is None or publie > plus_recente):
             plus_recente = publie
 
@@ -168,3 +168,34 @@ def collecter(source, depuis_jours=2, plafond=200, **_):
         ))
 
     return documents, plus_recente
+
+
+def _garder_langue(retenues, langue_voulue):
+    """Trie par langue, SAUF si ce tri viderait le flux.
+
+    Le tri par langue existe pour une seule raison : beaucoup de salles de presse
+    diffusent le même communiqué en plusieurs langues dans un flux unique, sous
+    des URL distinctes que l'unicité d'url_hash ne rapproche pas. Sans lui,
+    chaque annonce apparaît deux fois sur la fiche client.
+
+    Il ne sert JAMAIS à exclure un flux qui ne publie que dans une langue. Or
+    c'est ce qu'il faisait : les salles de presse d'Atos et d'AXA, déclarées
+    « fr » parce que ce sont des groupes français, publient en anglais sur les
+    URL configurées. Chaque entrée était écartée en silence, et le flux comptait
+    zéro document sans lever la moindre erreur — la source paraissait saine.
+
+    Le prix payé était réel : « Atos launches Atos Sovereign Cloud » et « AXA
+    accelerates its AI workplace strategy » ont été perdus par leur salle de
+    presse, dont le rattachement est CERTAIN. Le premier n'est arrivé sur la
+    fiche que par une reprise de presse, avec une provenance à 78 %.
+
+    D'où la règle : choisir une langue parmi plusieurs, jamais vider le flux.
+    """
+    if not langue_voulue:
+        return retenues
+    voulues = [r for r in retenues if r[5] == langue_voulue]
+    if not voulues:
+        return retenues                    # le flux ne publie pas dans cette langue
+    # Les entrées dont la langue est indécidable (texte trop court) sont
+    # conservées : les écarter reviendrait à perdre un titre bref sur un doute.
+    return [r for r in retenues if r[5] in (langue_voulue, None)]

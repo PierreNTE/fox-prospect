@@ -20,7 +20,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import db
-from config import (FENETRE_JOURS, MAX_DOCS_PAR_SOURCE, PAYS_MVP, RUN_REF,
+from config import (FENETRE_JOURS, FENETRE_JOURS_PRESSE, MAX_DOCS_PAR_SOURCE,
+                    PAYS_MVP, RUN_REF,
                     exiger_supabase)
 from pipeline import embed, filtre, juger
 from pipeline.resolve import Annuaire
@@ -73,6 +74,18 @@ def _sources():
     return [s for s in db.charger_sources() if s.get("kind") in COLLECTEURS]
 
 
+def _fenetre(source):
+    """Profondeur de collecte, selon la cadence de publication de la source.
+
+    Un flux rattaché à un compte est une salle de presse : elle publie quelques
+    fois par mois, et chacun de ses communiqués porte un rattachement CERTAIN.
+    Lui appliquer la fenêtre courte de TED — qui publie des centaines d'avis par
+    jour — revenait à ne la lire que les jours où elle publiait, c'est-à-dire
+    presque jamais.
+    """
+    return FENETRE_JOURS_PRESSE if source.get("account_id") else FENETRE_JOURS
+
+
 def collecter(dry_run=False):
     """Étage de collecte. Renvoie les lignes prêtes pour veille_documents."""
     collectes = []
@@ -80,14 +93,14 @@ def collecter(dry_run=False):
         debut = time.time()
         try:
             documents, curseur = COLLECTEURS[source["kind"]](
-                source, depuis_jours=FENETRE_JOURS,
+                source, depuis_jours=_fenetre(source),
                 pays=PAYS_MVP, plafond=MAX_DOCS_PAR_SOURCE,
             )
             lignes = [d.en_ligne() for d in documents]
             print(f"  {source['label']} : {len(lignes)} documents")
             if not dry_run:
                 db.inserer_documents(lignes)
-                db.maj_source(source["id"], sync_cursor=curseur)
+                db.maj_source(source["id"], sync_cursor=curseur, collectes=len(lignes))
                 db.journaliser_run(
                     "collecte", source_id=source["id"], collected=len(lignes),
                     duration_ms=int((time.time() - debut) * 1000), run_ref=RUN_REF,
@@ -177,7 +190,7 @@ def traiter(dry_run=False, documents=None, comptes=None):
     # ── Jugement puis écriture ──────────────────────────────────────────────
     juge = juger.Juge(dry_run)
     for doc, compte, categories, ligne, methode, confiance in sorted(a_creer, key=_priorite_jugement):
-        verdict = juge.juger(doc, compte, categories, methode) if juge.a_juger(methode) else None
+        verdict = juge.juger(doc, compte, categories, methode)
 
         # Le modèle peut REFUSER un rattachement que le filtre lexical avait
         # laissé passer. C'est son seul vrai pouvoir, et la raison d'être de
@@ -218,10 +231,11 @@ def traiter(dry_run=False, documents=None, comptes=None):
 def _priorite_jugement(candidat):
     """Ordre de passage devant le modèle : le plus fragile d'abord.
 
-    Le plafond d'appels est une ressource rare ; le dépenser sur un flux de
-    salle de presse — dont le rattachement est certain par construction — au
-    détriment d'une mention repérée dans un article généraliste serait le
-    dépenser à l'envers.
+    Tous les candidats sont jugés — une salle de presse tranche l'appartenance
+    au compte, jamais l'intérêt commercial. Mais le plafond d'appels est une
+    ressource rare : quand il ne suffit pas, il doit aller aux documents qui ont
+    DEUX questions à trancher (« est-ce ce compte ? » et « est-ce un signal ? »)
+    plutôt qu'à ceux qui n'en ont qu'une.
     """
     _doc, _compte, _categories, _ligne, methode, _confiance = candidat
     rang = {"mention": 0, "nom": 1}.get(methode, 2)

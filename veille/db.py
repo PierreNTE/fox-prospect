@@ -48,8 +48,14 @@ def charger_sources(kind=None):
     return sb(q) or []
 
 
-def maj_source(source_id, sync_cursor=None, erreur=None):
-    """Met à jour le curseur d'incrémentalité et l'état de santé d'une source."""
+def maj_source(source_id, sync_cursor=None, erreur=None, collectes=0):
+    """Met à jour le curseur d'incrémentalité et l'état de santé d'une source.
+
+    `last_ok_at` et `last_document_at` répondent à deux questions différentes,
+    et les confondre a coûté cher : une source tarie affichait la même santé
+    qu'une source féconde, parce qu'une collecte qui ne rapporte rien se termine
+    sans erreur. Seul `last_document_at` dit que la source produit encore.
+    """
     champs = {"last_run_at": "now()"}
     if erreur:
         champs["last_error"] = erreur[:500]
@@ -58,6 +64,8 @@ def maj_source(source_id, sync_cursor=None, erreur=None):
         champs["last_error"] = None
         if sync_cursor is not None:
             champs["sync_cursor"] = sync_cursor
+        if collectes > 0:
+            champs["last_document_at"] = "now()"
     sb(f"veille_sources?id=eq.{source_id}", "PATCH", champs, prefer="return=minimal")
 
 

@@ -200,14 +200,24 @@ function SourcesCard({ sources }) {
   const actives = sources.filter((s) => s.enabled && estCollectable(s.kind));
   const aVenir = sources.filter((s) => s.enabled && !estCollectable(s.kind));
 
+  // Une source muette se juge sur last_document_at, JAMAIS sur last_ok_at :
+  // une collecte qui ne rapporte rien se termine sans erreur, donc une source
+  // tarie affichait la même santé qu'une source féconde. Deux pannes réelles
+  // (fenêtre trop courte, tri par langue vidant un flux) ont vécu des semaines
+  // derrière ce « tout va bien ».
+  //
+  // Le seuil dépend de la cadence : une salle de presse publie quelques fois
+  // par mois, un portail d'appels d'offres tous les jours. Un seuil unique
+  // alerterait en permanence sur les unes, ou jamais sur les autres.
+  const seuil = (s) => (s.account_id ? 30 : 4);
+  const silence = (s) => {
+    const j = joursDepuis(s.last_document_at);
+    return j === null ? Infinity : j;
+  };
+
   const enPanne = actives.filter((s) => s.last_error);
-  const muettes = actives.filter((s) => {
-    const j = joursDepuis(s.last_ok_at);
-    return !s.last_error && (j === null || j > 3);
-  });
-  const saines = actives.filter(
-    (s) => !s.last_error && joursDepuis(s.last_ok_at) !== null && joursDepuis(s.last_ok_at) <= 3
-  );
+  const muettes = actives.filter((s) => !s.last_error && silence(s) > seuil(s));
+  const saines = actives.filter((s) => !s.last_error && silence(s) <= seuil(s));
 
   return (
     <Card style={{ padding: "18px 20px" }}>
@@ -233,7 +243,7 @@ function SourcesCard({ sources }) {
         </Caption1>
       ) : [...enPanne, ...muettes].length === 0 ? (
         <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
-          Toutes les sources actives ont collecté ces trois derniers jours.
+          Toutes les sources actives rapportent des documents.
         </Caption1>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -253,7 +263,9 @@ function SourcesCard({ sources }) {
               <Warning24Regular style={{ color: "#E8730C", flexShrink: 0, width: 16, height: 16 }} />
               <Caption1>
                 <b>{s.label}</b>{" — "}
-                {s.last_ok_at ? `rien depuis ${joursDepuis(s.last_ok_at)} jours` : "jamais collecté"}
+                {s.last_document_at
+                  ? `aucun document depuis ${joursDepuis(s.last_document_at)} jours`
+                  : "n'a jamais rien rapporté"}
               </Caption1>
             </div>
           ))}

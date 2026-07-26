@@ -30,6 +30,20 @@ MAX_DOCS_PAR_SOURCE = int(os.environ.get("VEILLE_MAX_DOCS", "400"))
 # sur url_hash rend ce recouvrement sans effet de bord.
 FENETRE_JOURS = int(os.environ.get("VEILLE_FENETRE_JOURS", "2"))
 
+# Fenêtre des SALLES DE PRESSE (flux rattachés à un compte).
+#
+# Une fenêtre unique de 2 jours convient à TED, qui publie des centaines d'avis
+# par jour ; elle est inadaptée à la salle de presse d'un grand compte, qui
+# publie quelques fois par mois. Mesuré le 26 juillet sur les cinq flux
+# rattachés : le communiqué le plus récent avait 3 jours (Atos, Stellantis,
+# TotalEnergies), 6 jours (AXA), 38 jours (Crédit Agricole). Aucun n'entrait
+# dans la fenêtre — la veille sur ces comptes était donc structurellement
+# aveugle, alors que ce sont les seuls flux dont le rattachement est certain.
+#
+# Le recouvrement ne coûte rien : l'unicité d'url_hash écarte les doublons, et
+# ces flux comptent quelques dizaines d'entrées, pas des milliers.
+FENETRE_JOURS_PRESSE = int(os.environ.get("VEILLE_FENETRE_PRESSE", "21"))
+
 # Seuil de similarité pour le rattachement par nom (0-1). Volontairement haut :
 # un faux rattachement coûte plus cher qu'un signal manqué.
 SEUIL_RAPPROCHEMENT_NOM = float(os.environ.get("VEILLE_SEUIL_NOM", "0.86"))
