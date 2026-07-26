@@ -11,7 +11,7 @@ import {
 } from "@fluentui/react-icons";
 import {
   provenance, NIVEAU_COULEUR, LIGNES, TYPES_SIGNAL, dateCourte, estCollectable,
-  equilibrerParPays, labelPays,
+  equilibrerParPays, labelPays, estNonJuge,
 } from "@/lib/veille";
 
 const BRAND = "#5B53E6";
@@ -129,6 +129,14 @@ function SignalRow({ s, proches, onProches, chargementProches }) {
             {s.observed_at && ` · ${dateCourte(s.observed_at)}`}
           </Caption1>
           <Provenance methode={s.match_method} confiance={s.match_confidence} />
+          {estNonJuge(s) && (
+            <Caption1
+              title="Retenu par correspondance de mots-clés. Aucun modèle ne l'a encore relu : vérifiez qu'il s'agit bien d'un signal d'achat avant de le citer."
+              style={{ color: "var(--colorNeutralForeground3)", fontStyle: "italic" }}
+            >
+              mot-clé seul
+            </Caption1>
+          )}
           {typeof s.similarite === "number" && (
             <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
               proximité {s.similarite} %
@@ -372,11 +380,13 @@ export default function VeilleClient({ initialData }) {
   const [resultats, setResultats] = useState(null);
   const [chargement, setChargement] = useState(false);
   const [erreurRecherche, setErreurRecherche] = useState("");
+  // Non nul quand le thème ne sépare rien : voir `discrimination` côté route.
+  const [plat, setPlat] = useState(null);
   const [proches, setProches] = useState({});
   const [procheEnCours, setProcheEnCours] = useState(null);
 
   async function choisirTheme(id) {
-    if (id === theme) { setTheme(null); setResultats(null); setErreurRecherche(""); return; }
+    if (id === theme) { setTheme(null); setResultats(null); setErreurRecherche(""); setPlat(null); return; }
     setTheme(id);
     setChargement(true);
     setErreurRecherche("");
@@ -385,11 +395,13 @@ export default function VeilleClient({ initialData }) {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || `Erreur ${res.status}`);
       setResultats(json.signals || []);
+      setPlat(json.discrimine === false ? json : null);
     } catch (e) {
       // Affiché, jamais avalé : une recherche muette se confondrait avec une
       // absence de résultat, c'est-à-dire avec « rien ne se passe ».
       setErreurRecherche(e.message);
       setResultats([]);
+      setPlat(null);
     } finally {
       setChargement(false);
     }
@@ -494,6 +506,16 @@ export default function VeilleClient({ initialData }) {
               {erreurRecherche && (
                 <Caption1 style={{ color: "#C50F1F" }}>{erreurRecherche}</Caption1>
               )}
+
+              {plat && (
+                /* Un classement plat s'annonce comme plat : sans cet avertissement,
+                   la liste paraît pertinente alors qu'elle est arbitraire. */
+                <Caption1 style={{ color: "#A2600B" }}>
+                  Ce thème ne distingue rien dans le corpus actuel — toutes les
+                  proximités tiennent entre {plat.proximiteMin} et {plat.proximiteMax} %.
+                  L&apos;ordre ci-dessous vaut par la priorité, pas par le thème.
+                </Caption1>
+              )}
             </div>
 
             {base.length === 0 && !theme ? (
@@ -513,7 +535,7 @@ export default function VeilleClient({ initialData }) {
                 <div style={{ marginTop: 10 }}>
                   <Button size="small" appearance="secondary" onClick={() => {
                     setLigne("tout"); setType("tout"); setFiabilite("tout");
-                    setTheme(null); setResultats(null); setErreurRecherche("");
+                    setTheme(null); setResultats(null); setErreurRecherche(""); setPlat(null);
                   }}>Tout afficher</Button>
                 </div>
               </div>

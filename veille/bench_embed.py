@@ -14,6 +14,26 @@ passage quotidien : l'installation de torch coûte plusieurs minutes et plus de
 
 Le banc mesure sur des textes RÉELS issus de TED, pas sur du texte synthétique :
 la longueur des titres et des extraits conditionne directement le débit.
+
+── MESURE DU 26/07/2026 ────────────────────────────────────────────────────
+Machine : 24 cœurs logiques, 12 threads torch. 170 textes TED, médiane 205 car.
+
+    lot 8 : 10,4 textes/s   ·   lot 16 : 10,3   ·   lot 32 : 10,0
+    dimensions produites : 1024 — conforme à halfvec(1024) de la migration v12
+    chargement du modèle : 5,6 s
+
+Le débit ne dépend pas de la taille de lot : le modèle sature déjà le CPU à 8.
+Rapporté à un runner GitHub (4 vCPU), diviser par trois à quatre donne ~3
+textes/s, soit le plafond de 400 par passage en un peu plus de deux minutes —
+très en deçà du garde-fou de 15 minutes.
+
+CE QUE LA MESURE DÉPLACE. Le débit n'est pas le poste coûteux, et ce banc a
+été écrit en le supposant. Ce qui coûte, c'est l'INSTALLATION de torch
+(plus de 2 Go) puis le chargement du modèle à chaque passage. Le régime réel
+n'embarque d'ailleurs pas les documents mais les SIGNAUX — quelques unités par
+jour, pas des centaines. L'étape de vectorisation est donc dominée par ses
+frais fixes, ce qui confirme après coup de l'avoir isolée dans une étape
+tolérante à l'échec plutôt que de l'attacher à la collecte.
 """
 
 import sys

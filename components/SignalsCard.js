@@ -2,7 +2,7 @@
 
 import { Card, Body1, Caption1 } from "@fluentui/react-components";
 import { Pulse24Regular } from "@fluentui/react-icons";
-import { provenance, NIVEAU_COULEUR, LIGNES, TYPES_SIGNAL, dateCourte } from "@/lib/veille";
+import { provenance, NIVEAU_COULEUR, LIGNES, TYPES_SIGNAL, dateCourte, estNonJuge } from "@/lib/veille";
 
 const BRAND = "#5B53E6";
 
@@ -83,6 +83,14 @@ function SignalRow({ s }) {
             {s.observed_at && ` · ${dateCourte(s.observed_at)}`}
           </Caption1>
           <Provenance methode={s.match_method} confiance={s.match_confidence} />
+          {estNonJuge(s) && (
+            <Caption1
+              title="Retenu par correspondance de mots-clés. Aucun modèle ne l'a encore relu : vérifiez qu'il s'agit bien d'un signal d'achat avant de le citer."
+              style={{ color: "var(--colorNeutralForeground3)", fontStyle: "italic" }}
+            >
+              mot-clé seul
+            </Caption1>
+          )}
           {domaine && (
             <Caption1>
               <a href={s.source_url} target="_blank" rel="noreferrer"

@@ -63,5 +63,35 @@ export async function GET(request) {
     }))
     .sort((a, b) => b.priority - a.priority);
 
-  return NextResponse.json({ signals });
+  return NextResponse.json({ signals, ...discrimination(signals) });
+}
+
+// Écart minimal, en points de proximité, en deçà duquel un classement
+// sémantique n'ordonne plus rien.
+const ETALEMENT_MINIMAL = 8;
+
+/**
+ * Ce résultat distingue-t-il quoi que ce soit ?
+ *
+ * Mesuré le 26 juillet sur les sept premiers signaux réels : toutes les
+ * proximités tenaient entre 35 % et 54 %, quel que soit le thème. « Nomination
+ * informatique » plaçait en tête un accord-cadre EDF — alors qu'aucune
+ * nomination n'existait en base. Un seuil absolu ne sépare rien dans une bande
+ * aussi étroite, et le tri par priorité rendait la liste vraisemblable, donc
+ * trompeuse.
+ *
+ * Plutôt que d'accorder un seuil sur sept points — ce qui reviendrait à régler
+ * un instrument sur son propre bruit — on mesure l'étalement et on le dit. Un
+ * classement plat s'annonce comme plat.
+ */
+function discrimination(signals) {
+  if (signals.length < 2) return { discrimine: true };
+  const valeurs = signals.map((s) => s.similarite);
+  const etalement = Math.max(...valeurs) - Math.min(...valeurs);
+  return {
+    discrimine: etalement >= ETALEMENT_MINIMAL,
+    etalement,
+    proximiteMin: Math.min(...valeurs),
+    proximiteMax: Math.max(...valeurs),
+  };
 }
