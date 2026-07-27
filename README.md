@@ -39,6 +39,11 @@ génération). Vercel et Supabase en free tier. Tous les appels LLM sont journal
    | `supabase/migration-v1.sql` | companies (SIREN), company_signals (signaux d'achat datés) |
    | `supabase/migration-v2.sql` | `settings.icp`, `prospects.email_confidence/email_source` |
    | `supabase/migration-v3.sql` | `events` (timeline commerciale), `push_subscriptions` |
+   | `supabase/migration-v4.sql` … `migration-v6.sql` | statuts simplifiés (P2), interactions (P3), briefs (P4) |
+   | `supabase/migration-v7-fondations.sql` | index uniques + dédup prospects, `company_signals.account_id`, cache `company_research`, RPC budget |
+   | `supabase/migration-v8-cockpit.sql` | `prospects.tags`, vues sauvegardées |
+   | `supabase/migration-v9-saas.sql` | orgs/membres, `org_id` partout, policies RLS, purge RGPD |
+   | `supabase/migration-v10-scale.sql` | vue `hot_accounts` (signal < 14 j sans contact < 30 j) |
 
 3. Récupère dans **Project Settings → API** : l'URL du projet et la clé `service_role`
    (jamais l'anon key — la clé reste côté serveur uniquement).
@@ -73,6 +78,7 @@ cookie sécurisé. Le formulaire de login est protégé par un **rate-limiting**
 ```bash
 npm install
 npm run dev    # → http://localhost:3000
+npm test       # tests unitaires (scoring, NBA, schémas, enrich, rate-limit)
 ```
 
 ### 4. Déploiement Vercel
