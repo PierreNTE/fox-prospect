@@ -17,18 +17,36 @@ def exiger_supabase():
         sys.exit("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY requis (secrets GitHub Actions).")
 
 
+def _env(nom, defaut):
+    """Valeur d'environnement, la chaîne VIDE valant absence.
+
+    `os.environ.get(nom, defaut)` ne suffit pas ici. GitHub Actions exporte
+    `FOO: ${{ vars.FOO }}` comme chaîne vide quand la variable de dépôt n'existe
+    pas : la clé EST présente dans l'environnement, le défaut n'est donc jamais
+    servi, et `int("")` lève.
+
+    Ce n'était pas théorique. Le passage du 27 juillet (run 30240731757) est
+    mort en 20 secondes sur `int('')` à l'import de ce module — donc avant toute
+    collecte, et pour la seule raison qu'aucune des six variables facultatives
+    du workflow n'était définie. Les valeurs par défaut de ce fichier étaient
+    inatteignables depuis GitHub Actions.
+    """
+    valeur = os.environ.get(nom)
+    return defaut if valeur is None or valeur.strip() == "" else valeur.strip()
+
+
 # ── Plafonds ────────────────────────────────────────────────────────────────
 # Seconde barrière derrière le kill-switch mensuel de lib/budget.js : celui-ci
 # protège le mois, il ne protège pas d'une source qui déverserait des milliers
 # de documents ambigus en une nuit.
 
-MAX_LLM_PAR_PASSAGE = int(os.environ.get("VEILLE_MAX_LLM", "20"))
-MAX_DOCS_PAR_SOURCE = int(os.environ.get("VEILLE_MAX_DOCS", "400"))
+MAX_LLM_PAR_PASSAGE = int(_env("VEILLE_MAX_LLM", "20"))
+MAX_DOCS_PAR_SOURCE = int(_env("VEILLE_MAX_DOCS", "400"))
 
 # Fenêtre de collecte. 2 jours et non 1 : un passage quotidien qui échoue ne
 # doit pas créer un trou définitif dans l'historique. La contrainte d'unicité
 # sur url_hash rend ce recouvrement sans effet de bord.
-FENETRE_JOURS = int(os.environ.get("VEILLE_FENETRE_JOURS", "2"))
+FENETRE_JOURS = int(_env("VEILLE_FENETRE_JOURS", "2"))
 
 # Fenêtre des SALLES DE PRESSE (flux rattachés à un compte).
 #
@@ -42,17 +60,19 @@ FENETRE_JOURS = int(os.environ.get("VEILLE_FENETRE_JOURS", "2"))
 #
 # Le recouvrement ne coûte rien : l'unicité d'url_hash écarte les doublons, et
 # ces flux comptent quelques dizaines d'entrées, pas des milliers.
-FENETRE_JOURS_PRESSE = int(os.environ.get("VEILLE_FENETRE_PRESSE", "21"))
+FENETRE_JOURS_PRESSE = int(_env("VEILLE_FENETRE_PRESSE", "21"))
 
 # Seuil de similarité pour le rattachement par nom (0-1). Volontairement haut :
 # un faux rattachement coûte plus cher qu'un signal manqué.
-SEUIL_RAPPROCHEMENT_NOM = float(os.environ.get("VEILLE_SEUIL_NOM", "0.86"))
+SEUIL_RAPPROCHEMENT_NOM = float(_env("VEILLE_SEUIL_NOM", "0.86"))
 
 # Pays du MVP. L'Allemagne est couverte par TED et la presse uniquement.
-PAYS_MVP = os.environ.get("VEILLE_PAYS", "FRA,DEU,GBR").split(",")
+# Les entrées vides sont retirées : `"FRA,,GBR".split(",")` produirait un code
+# pays vide, que TED interprète comme une requête sans filtre de pays.
+PAYS_MVP = [p.strip().upper() for p in _env("VEILLE_PAYS", "FRA,DEU,GBR").split(",") if p.strip()]
 
 # Identifiant d'exécution GitHub Actions, journalisé dans pipeline_runs.
-RUN_REF = os.environ.get("GITHUB_RUN_ID", "local")
+RUN_REF = _env("GITHUB_RUN_ID", "local")
 
 
 # ── Étage IA ────────────────────────────────────────────────────────────────
@@ -60,29 +80,29 @@ RUN_REF = os.environ.get("GITHUB_RUN_ID", "local")
 # table ai_runs, même plafond mensuel que lib/budget.js. Deux compteurs
 # séparés donneraient deux vérités sur une seule facture.
 
-ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY")
+ANTHROPIC_KEY = _env("ANTHROPIC_API_KEY", "")
 
 # Haiku et non Sonnet : la tâche est de trancher un oui/non sur un texte court
 # et de le résumer. Mesuré côté application, l'écart de tarif est d'un facteur
 # dix pour un gain nul sur ce type de jugement.
-MODELE_LLM = os.environ.get("VEILLE_MODELE_LLM", "claude-haiku-4-5-20251001")
+MODELE_LLM = _env("VEILLE_MODELE_LLM", "claude-haiku-4-5-20251001")
 
 # Tarifs en euros par million de jetons, alignés sur ANTHROPIC_TARIF de
 # lib/constants.js. À corriger AUX DEUX ENDROITS si les tarifs changent.
 TARIF_LLM = {"entree_par_m_eur": 0.25, "sortie_par_m_eur": 1.25}
 
-BUDGET_MENSUEL_EUR = float(os.environ.get("MONTHLY_BUDGET_EUR", "15"))
+BUDGET_MENSUEL_EUR = float(_env("MONTHLY_BUDGET_EUR", "15"))
 
 # BGE-M3 : multilingue, 1024 dimensions — la valeur déclarée par la migration
 # v12 (halfvec(1024)). Changer de modèle impose de changer la colonne.
-MODELE_EMBED = os.environ.get("VEILLE_MODELE_EMBED", "BAAI/bge-m3")
+MODELE_EMBED = _env("VEILLE_MODELE_EMBED", "BAAI/bge-m3")
 
 # Plafond de volume par passage, qui est en réalité un plafond de temps : le
 # runner dispose d'une trentaine de minutes, et c'est la seule étape dont la
 # durée croît avec le volume collecté.
-MAX_EMBED_PAR_PASSAGE = int(os.environ.get("VEILLE_MAX_EMBED", "400"))
+MAX_EMBED_PAR_PASSAGE = int(_env("VEILLE_MAX_EMBED", "400"))
 
 # Fenêtre de conservation des vecteurs, en mois. Seul poste à croissance
 # illimitée sous le palier gratuit de 500 Mo : ~55 000 vecteurs à 12 mois,
 # soit ~165 Mo. Les signaux, eux, ne sont jamais purgés.
-PURGE_MOIS = int(os.environ.get("VEILLE_PURGE_MOIS", "12"))
+PURGE_MOIS = int(_env("VEILLE_PURGE_MOIS", "12"))
