@@ -123,12 +123,51 @@ async function checkJobs() {
   }
 }
 
+// Âge du dernier passage de veille — le détecteur du signal de vie.
+//
+// GitHub désactive les crons après 60 jours sans activité sur le dépôt, et un
+// cron désactivé ne lève rien : il se tait. Le seul moyen de le voir est de
+// mesurer un SILENCE, depuis un hébergeur différent. Vercel lit ici la date du
+// dernier `pipeline_runs`, alimenté à la fois par le pipeline lui-même et par
+// /api/cron/veille-heartbeat.
+//
+// 48 h et non 24 : le passage est quotidien, une exécution manquée (incident
+// runner, dépôt en maintenance) ne doit pas crier au loup.
+const VEILLE_SILENCE_MAX_H = 48;
+
+async function checkVeille() {
+  try {
+    const { data, error } = await getSupabase()
+      .from("pipeline_runs")
+      .select("finished_at, stage")
+      .not("finished_at", "is", null)
+      .order("finished_at", { ascending: false })
+      .limit(1);
+
+    if (error) return ko(`pipeline_runs illisible : ${error.message}`, { stale: null });
+    if (!data?.length) return ko("aucun passage de veille enregistré.", { stale: true, hours: null });
+
+    const heures = (Date.now() - new Date(data[0].finished_at).getTime()) / 3_600_000;
+    const arrondi = Math.round(heures * 10) / 10;
+    if (heures > VEILLE_SILENCE_MAX_H) {
+      return ko(
+        `aucun passage depuis ${Math.round(heures)} h — cron GitHub désactivé ou en panne.`,
+        { stale: true, hours: arrondi }
+      );
+    }
+    return ok(`dernier passage il y a ${arrondi} h.`, { stale: false, hours: arrondi });
+  } catch (e) {
+    return ko(e.message, { stale: null });
+  }
+}
+
 export async function GET() {
-  const [supabase, anthropic, brave, jobs] = await Promise.all([
+  const [supabase, anthropic, brave, jobs, veille] = await Promise.all([
     checkSupabase(),
     checkAnthropic(),
     checkBrave(),
     checkJobs(),
+    checkVeille(),
   ]);
 
   const budget = monthlyBudgetEur();
@@ -146,7 +185,7 @@ export async function GET() {
   return NextResponse.json({
     healthy,
     checked_at: new Date().toISOString(),
-    services: { supabase, anthropic, brave, jobs },
+    services: { supabase, anthropic, brave, jobs, veille },
     budget: {
       month_spent_eur: spent == null ? null : Math.round(spent * 100) / 100,
       month_budget_eur: budget,

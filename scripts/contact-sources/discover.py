@@ -37,6 +37,17 @@ load_dotenv(ROOT / ".env.local")
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY")
 BRAVE_KEY = os.environ.get("BRAVE_API_KEY")
 MODEL = os.environ.get("MODEL_SONNET", "claude-sonnet-4-6")
+SB_URL = os.environ.get("SUPABASE_URL")
+SB_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+
+# Tarifs en euros par million de jetons — alignés sur ANTHROPIC_TARIF
+# (lib/constants.js) et TARIF_LLM (veille/config.py). À corriger AUX TROIS
+# endroits si les tarifs changent.
+TARIF = {
+    "haiku": {"entree": 0.25, "sortie": 1.25},
+    "sonnet": {"entree": 2.8, "sortie": 14.0},
+    "recherche_par_k": 9.3,
+}
 
 # Cibles : rôle décideur + société. Remplace par tes vrais comptes.
 TARGETS = [
@@ -56,6 +67,41 @@ def http(method, url, headers=None, body=None, timeout=40):
         return e.code, {"error": e.read().decode()[:300]}
     except Exception as e:  # noqa: BLE001
         return 0, {"error": str(e)}
+
+
+# ── Comptabilité ──────────────────────────────────────────────────────────────
+
+def journaliser_ai_run(usage, recherches=0, modele=MODEL):
+    """Inscrit la dépense dans ai_runs, comme n'importe quel appel de l'app.
+
+    Ce script tape l'API Anthropic en direct et tombe sur la MÊME facture que
+    l'application. Tant qu'il ne journalisait rien, sa dépense était invisible
+    au kill-switch de lib/budget.js. Rapproché le 2026-07-27 : la console
+    facturait 15,20 $ quand ai_runs n'en voyait que 9,88 € — un garde-fou
+    budgétaire ne protège que ce qu'il voit.
+
+    Au mieux et jamais bloquant : une comparaison de sources ne doit pas
+    échouer parce que la base est injoignable.
+    """
+    if not (SB_URL and SB_KEY and usage):
+        return
+    tarif = TARIF["haiku"] if "haiku" in str(modele) else TARIF["sonnet"]
+    cout = ((usage.get("input_tokens", 0) / 1e6) * tarif["entree"]
+            + (usage.get("output_tokens", 0) / 1e6) * tarif["sortie"]
+            + (recherches / 1000) * TARIF["recherche_par_k"])
+    try:
+        http("POST", f"{SB_URL}/rest/v1/ai_runs",
+             headers={"apikey": SB_KEY, "Authorization": f"Bearer {SB_KEY}",
+                      "content-type": "application/json", "Prefer": "return=minimal"},
+             body=[{
+                 "route": "discover",
+                 "input_tokens": usage.get("input_tokens", 0),
+                 "output_tokens": usage.get("output_tokens", 0),
+                 "web_search_count": recherches,
+                 "cost_eur": round(cout, 5),
+             }])
+    except Exception:  # noqa: BLE001
+        pass  # la comptabilité ne prime jamais sur la mesure
 
 
 # ── Voie A : web_search Claude ────────────────────────────────────────────────
@@ -82,6 +128,7 @@ def discover_websearch(target):
     content = data.get("content", [])
     text = "\n".join(b.get("text", "") for b in content if b.get("type") == "text")
     searches = (data.get("usage", {}).get("server_tool_use", {}) or {}).get("web_search_requests", 0)
+    journaliser_ai_run(data.get("usage") or {}, searches, MODEL)
     try:
         m = re.search(r"\{[\s\S]*\}", text)
         parsed = json.loads(m.group(0)) if m else {}

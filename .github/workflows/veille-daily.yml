@@ -106,12 +106,20 @@ jobs:
           VEILLE_MAX_EMBED: ${{ vars.VEILLE_MAX_EMBED }}
         run: python veille/run.py --embed
 
-      # Signal de vie : un service de surveillance de tâches planifiées alerte
-      # quand le ping CESSE d'arriver — ce qu'aucune alerte d'échec ne peut
-      # détecter, puisqu'un cron désactivé n'échoue pas, il se tait.
+      # Signal de vie : ce qui alerte, c'est le ping qui CESSE d'arriver — un
+      # cron désactivé par GitHub après 60 jours n'échoue pas, il se tait, et
+      # aucune alerte d'échec ne peut voir ça.
+      #
+      # Le détecteur vit chez Vercel (/api/health → services.veille, seuil 48 h),
+      # pas ici : GitHub ne peut pas signaler qu'il a coupé son propre cron.
+      # Le secret passe par l'en-tête et jamais par l'URL, qui se retrouverait
+      # dans les journaux d'accès de tout ce qu'elle traverse.
       - name: Signal de vie
         if: success() && vars.VEILLE_HEARTBEAT_URL != ''
-        run: curl -fsS --max-time 10 "${{ vars.VEILLE_HEARTBEAT_URL }}" || true
+        run: |
+          curl -fsS --max-time 10 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.VEILLE_HEARTBEAT_URL }}?run=${{ github.run_id }}" || true
 
       - name: Alerte en cas d'échec
         if: failure()
