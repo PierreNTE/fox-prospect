@@ -88,14 +88,22 @@ ANTHROPIC_KEY = _env("ANTHROPIC_API_KEY", "")
 MODELE_LLM = _env("VEILLE_MODELE_LLM", "claude-haiku-4-5-20251001")
 
 # Tarifs en euros par million de jetons, alignés sur ANTHROPIC_TARIF de
-# lib/constants.js. À corriger AUX DEUX ENDROITS si les tarifs changent.
-TARIF_LLM = {"entree_par_m_eur": 0.25, "sortie_par_m_eur": 1.25}
+# lib/constants.js. À corriger AUX QUATRE ENDROITS si les tarifs changent
+# (ici, lib/constants.js, scripts/eval.mjs, scripts/contact-sources/discover.py).
+#
+# Ces valeurs ont porté 0,25 / 1,25 jusqu'au 2026-07-27 — le tarif de Claude 3.5
+# Haiku, alors que MODELE_LLM ci-dessus est haiku-4-5, facturé quatre fois plus.
+# La dépense de la veille était donc divisée par quatre dans ai_runs, et le
+# plafond mensuel qu'elle consulte comptait faux dans le même sens.
+TARIF_LLM = {"entree_par_m_eur": 0.93, "sortie_par_m_eur": 4.65}
 
-# 13 et non 15 : doit rester ALIGNÉ sur monthlyBudgetEur() de lib/budget.js.
-# Deux moitiés du système qui partagent une facture ne peuvent pas avoir deux
-# plafonds. La valeur tient compte du fait qu'ai_runs sous-estime la facture
-# d'environ un tiers (voir le commentaire de lib/budget.js).
-BUDGET_MENSUEL_EUR = float(_env("MONTHLY_BUDGET_EUR", "13"))
+# Doit rester ALIGNÉ sur monthlyBudgetEur() de lib/budget.js : deux moitiés du
+# système qui partagent une facture ne peuvent pas avoir deux plafonds.
+#
+# Repassé de 13 à 15 le 2026-07-27, en même temps que la correction du tarif
+# ci-dessus. Le 13 compensait la sous-évaluation ; la cause étant corrigée à la
+# source, le maintenir reviendrait à déduire deux fois la même erreur.
+BUDGET_MENSUEL_EUR = float(_env("MONTHLY_BUDGET_EUR", "15"))
 
 # BGE-M3 : multilingue, 1024 dimensions — la valeur déclarée par la migration
 # v12 (halfvec(1024)). Changer de modèle impose de changer la colonne.

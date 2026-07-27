@@ -41,10 +41,13 @@ SB_URL = os.environ.get("SUPABASE_URL")
 SB_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
 # Tarifs en euros par million de jetons — alignés sur ANTHROPIC_TARIF
-# (lib/constants.js) et TARIF_LLM (veille/config.py). À corriger AUX TROIS
-# endroits si les tarifs changent.
+# (lib/constants.js), TARIF_LLM (veille/config.py) et TARIF (scripts/eval.mjs).
+# À corriger AUX QUATRE endroits si les tarifs changent.
+#
+# Haiku a porté 0,25 / 1,25 jusqu'au 2026-07-27 : le tarif de Haiku 3.5, pas
+# celui de haiku-4-5, facturé quatre fois plus cher.
 TARIF = {
-    "haiku": {"entree": 0.25, "sortie": 1.25},
+    "haiku": {"entree": 0.93, "sortie": 4.65},
     "sonnet": {"entree": 2.8, "sortie": 14.0},
     "recherche_par_k": 9.3,
 }

@@ -66,8 +66,10 @@ const API_URL = "https://api.anthropic.com/v1/messages";
 //
 // Journalisation au mieux : jamais bloquante, jamais fatale. Une évaluation ne
 // doit pas échouer parce que la base est injoignable.
+// Aligné sur ANTHROPIC_TARIF (lib/constants.js). Haiku a porté 0,25 / 1,25
+// jusqu'au 2026-07-27 : c'était le tarif de Haiku 3.5, pas celui de haiku-4-5.
 const TARIF = {
-  haiku: { in: 0.25, out: 1.25 },
+  haiku: { in: 0.93, out: 4.65 },
   sonnet: { in: 2.8, out: 14.0 },
   searchParK: 9.3,
 };

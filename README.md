@@ -79,7 +79,7 @@ Copie `.env.example` vers `.env.local` et remplis :
 | `RESEARCH_EXTRACT_MODEL` | modèle de la passe d'extraction : `haiku` (défaut) ou `sonnet` | `haiku` |
 | `RESEARCH_MAX_SEARCHES` | nb max de recherches web par qualification | `2` |
 | `DAILY_RESEARCH_CAP` | plafond de recherches/analyses par 24 h (nombre d'appels) | `50` |
-| `MONTHLY_BUDGET_EUR` | **kill-switch budgétaire** en € — coupe tout au-delà | `13` |
+| `MONTHLY_BUDGET_EUR` | **kill-switch budgétaire** en € — coupe tout au-delà | `15` |
 | `BUDGET_PACING` | `off` désarme le lissage sur le mois (voir ci-dessous) | actif |
 | `FRESHNESS_TTL_DAYS` | durée de validité du cache de recherche | `14` |
 | `AUTO_QUALIFY` | qualification autonome des contacts scrapés (`off` = 100 % manuel) | `on` |
@@ -95,10 +95,29 @@ l'autorisation porte sur le cumul, donc une semaine sans usage reste
 disponible ensuite. Motivation : en juillet 2026, les 15 € ont été consommés
 entre le 1ᵉʳ et le 4, laissant vingt-trois jours sans outil.
 
-> ⚠️ Le kill-switch ne protège que ce qu'il **voit** — la somme de
-> `ai_runs.cost_eur`. Tout script appelant l'API Anthropic sans journaliser
-> reste invisible. `scripts/eval.mjs` journalise (route `eval`) ;
-> `scripts/contact-sources/discover.py` **pas encore**.
+**Coût réel d'une qualification : ~0,093 €**, mesuré le 2026-07-27 sur les
+160 prospects qualifiés en juillet — soit **~160 prospects/mois** dans 15 €.
+Le poste dominant n'est pas le nombre de recherches web mais le volume de
+jetons qu'elles rapatrient (~26 500 jetons d'entrée par appel d'extraction).
+
+> ⚠️ Le kill-switch ne protège que ce qu'il **voit**, et il ne voit que la
+> somme de `ai_runs.cost_eur` — c'est-à-dire un tarif appliqué à des jetons.
+> Les deux moitiés peuvent mentir.
+>
+> - **Appels non journalisés** : tout script appelant l'API sans passer par
+>   `logAiRun` est invisible. `scripts/eval.mjs` (route `eval`) et
+>   `scripts/contact-sources/discover.py` (route `discover`) journalisent
+>   désormais tous les deux.
+> - **Tarif faux** : jusqu'au 2026-07-27, `ANTHROPIC_TARIF` portait le tarif de
+>   Haiku 3.5 pour un modèle haiku-4-5 facturé quatre fois plus — 4,34 € de
+>   dépense réelle absente d'ai_runs sur le seul mois de juillet. La table est
+>   recopiée dans **quatre** fichiers (`lib/constants.js`, `veille/config.py`,
+>   `scripts/eval.mjs`, `scripts/contact-sources/discover.py`) : les corriger
+>   partout ou pas du tout.
+>
+> `ai_runs` ne stocke pas le modèle appelé, ce qui rend ce second cas
+> indétectable sans rapprochement manuel avec la console. Ajouter la colonne
+> est la vraie parade.
 
 ⚠️ **`APP_PASSWORD` est obligatoire en production** : sans lui, n'importe qui trouvant l'URL consomme ta clé API Anthropic.
 
