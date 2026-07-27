@@ -15,7 +15,10 @@
  *   ✓ summary_long       — résumé ≥ 80 caractères
  *   ✓ sources_present    — au moins 1 source URL trouvée
  *
- * Le script n'insère rien en base — il appelle l'API Anthropic directement.
+ * Le script appelle l'API Anthropic directement. Il n'écrit aucun résultat en
+ * base, mais journalise sa DÉPENSE dans ai_runs (route « eval ») : elle tombe
+ * sur la même facture que l'application, et le kill-switch de lib/budget.js ne
+ * protège que ce qu'il voit.
  */
 
 import { writeFileSync, mkdirSync } from "fs";
@@ -52,6 +55,54 @@ const HAIKU_EXTRACT = args.includes("--haiku-extract"); // passe 1 sur Haiku
 const LIMIT = (() => { const i = args.indexOf("--limit"); return i >= 0 ? Number(args[i + 1]) || 0 : 0; })();
 
 const API_URL = "https://api.anthropic.com/v1/messages";
+
+// ── Comptabilité ──────────────────────────────────────────────────────────────
+// Ce script dépense de l'argent réel sur la même facture que l'application.
+// Tant qu'il ne journalisait rien, sa dépense restait invisible au kill-switch
+// de lib/budget.js : en juillet 2026, la console Anthropic facturait 15,20 $
+// quand ai_runs n'en voyait que 9,88 € — l'écart venant d'appels comme ceux-ci.
+// Un garde-fou budgétaire que les scripts de développement contournent ne
+// protège que ce qu'il voit.
+//
+// Journalisation au mieux : jamais bloquante, jamais fatale. Une évaluation ne
+// doit pas échouer parce que la base est injoignable.
+const TARIF = {
+  haiku: { in: 0.25, out: 1.25 },
+  sonnet: { in: 2.8, out: 14.0 },
+  searchParK: 9.3,
+};
+
+async function journaliserAiRun({ usage, searchCount = 0, model = MODEL }) {
+  const url = process.env.SUPABASE_URL;
+  const cle = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !cle || !usage) return;
+
+  const tarif = String(model).includes("haiku") ? TARIF.haiku : TARIF.sonnet;
+  const cout = ((usage.input_tokens ?? 0) / 1e6) * tarif.in
+    + ((usage.output_tokens ?? 0) / 1e6) * tarif.out
+    + (searchCount / 1000) * TARIF.searchParK;
+
+  try {
+    await fetch(`${url}/rest/v1/ai_runs`, {
+      method: "POST",
+      headers: {
+        apikey: cle,
+        Authorization: `Bearer ${cle}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        route: "eval",
+        input_tokens: usage.input_tokens ?? 0,
+        output_tokens: usage.output_tokens ?? 0,
+        web_search_count: searchCount,
+        cost_eur: Math.round(cout * 100000) / 100000,
+      }),
+    });
+  } catch {
+    // Silencieux : l'évaluation prime sur sa propre comptabilité.
+  }
+}
 
 // Appel Anthropic via fetch brut (pas de SDK — cohérent avec lib/anthropic.js,
 // aucune dépendance npm à installer). Retry léger sur 429/529.
@@ -105,6 +156,8 @@ async function anthropicCall({ system, user, model, maxTokens = 2500, webSearch 
   } catch {
     // JSON malformé — signalé en aval par les checks (json_valid: false)
   }
+  await journaliserAiRun({ usage: data.usage, searchCount, model });
+
   return { json, usage: data.usage, searchCount, rawText: text };
 }
 
