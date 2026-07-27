@@ -79,7 +79,7 @@ Copie `.env.example` vers `.env.local` et remplis :
 | `RESEARCH_EXTRACT_MODEL` | modèle de la passe d'extraction : `haiku` (défaut) ou `sonnet` | `haiku` |
 | `RESEARCH_MAX_SEARCHES` | nb max de recherches web par qualification | `2` |
 | `DAILY_RESEARCH_CAP` | plafond de recherches/analyses par 24 h (nombre d'appels) | `50` |
-| `MONTHLY_BUDGET_EUR` | **kill-switch budgétaire** en € — coupe tout au-delà | `15` |
+| `MONTHLY_BUDGET_EUR` | **kill-switch budgétaire** en € — coupe tout au-delà | `13` |
 | `BUDGET_PACING` | `off` désarme le lissage sur le mois (voir ci-dessous) | actif |
 | `FRESHNESS_TTL_DAYS` | durée de validité du cache de recherche | `14` |
 | `AUTO_QUALIFY` | qualification autonome des contacts scrapés (`off` = 100 % manuel) | `on` |

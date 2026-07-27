@@ -79,8 +79,12 @@ describe("budgetMessage — dire la bonne cause", () => {
 describe("monthlyBudgetEur", () => {
   afterEach(() => { delete process.env.MONTHLY_BUDGET_EUR; });
 
-  it("vaut 15 € par défaut", () => {
-    expect(monthlyBudgetEur()).toBe(15);
+  // 13 et non 15 : ai_runs sous-estime la facture d'environ un tiers, et à 15 €
+  // la coupure applicative tombait vers 19,70 $ — au ras d'un plafond de compte
+  // à 20 $, donc après qu'Anthropic ait déjà coupé. Les deux plafonds ne se
+  // protègent l'un l'autre que s'ils sont accordés.
+  it("vaut 13 € par défaut, accordé au plafond de compte", () => {
+    expect(monthlyBudgetEur()).toBe(13);
   });
 
   it("suit la variable d'environnement", () => {

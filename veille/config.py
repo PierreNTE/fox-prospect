@@ -91,7 +91,11 @@ MODELE_LLM = _env("VEILLE_MODELE_LLM", "claude-haiku-4-5-20251001")
 # lib/constants.js. À corriger AUX DEUX ENDROITS si les tarifs changent.
 TARIF_LLM = {"entree_par_m_eur": 0.25, "sortie_par_m_eur": 1.25}
 
-BUDGET_MENSUEL_EUR = float(_env("MONTHLY_BUDGET_EUR", "15"))
+# 13 et non 15 : doit rester ALIGNÉ sur monthlyBudgetEur() de lib/budget.js.
+# Deux moitiés du système qui partagent une facture ne peuvent pas avoir deux
+# plafonds. La valeur tient compte du fait qu'ai_runs sous-estime la facture
+# d'environ un tiers (voir le commentaire de lib/budget.js).
+BUDGET_MENSUEL_EUR = float(_env("MONTHLY_BUDGET_EUR", "13"))
 
 # BGE-M3 : multilingue, 1024 dimensions — la valeur déclarée par la migration
 # v12 (halfvec(1024)). Changer de modèle impose de changer la colonne.
