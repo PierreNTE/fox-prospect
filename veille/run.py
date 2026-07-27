@@ -82,7 +82,26 @@ def _fenetre(source):
     Lui appliquer la fenêtre courte de TED — qui publie des centaines d'avis par
     jour — revenait à ne la lire que les jours où elle publiait, c'est-à-dire
     presque jamais.
+
+    Deux valeurs ne suffisent pourtant pas : la cadence varie bien plus d'une
+    source à l'autre que ne le capture un booléen. La page « A la une » de
+    Crédit Agricole publie une fois par mois, avec des creux de sept semaines —
+    sa dernière entrée avait 39 jours pour une fenêtre de 21, si bien qu'elle
+    n'a JAMAIS rapporté un seul document depuis son ajout, sans jamais lever
+    d'erreur non plus. `config.fenetre_jours` permet de la régler à sa cadence
+    réelle plutôt que de pousser la fenêtre commune pour toutes les autres.
+
+    Élargir ne coûte rien : l'unicité d'`url_hash` écarte les entrées déjà
+    connues, seules les nouvelles atteignent le filtre et le jugement.
     """
+    explicite = (source.get("config") or {}).get("fenetre_jours")
+    if explicite is not None:
+        try:
+            return max(1, int(explicite))
+        except (TypeError, ValueError):
+            # Une valeur illisible ne doit pas priver la source de collecte :
+            # on retombe sur la règle générale.
+            print(f"  {source.get('label')} : fenetre_jours illisible ({explicite!r}), valeur par défaut")
     return FENETRE_JOURS_PRESSE if source.get("account_id") else FENETRE_JOURS
 
 
