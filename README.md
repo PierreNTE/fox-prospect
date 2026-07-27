@@ -16,9 +16,11 @@ Pour chaque prospect (DSI, RSSI, responsable infra…), l'app :
 Next.js 14 (App Router, JavaScript) · Supabase (Postgres, RLS) · API Anthropic
 (`claude-sonnet-4-6` + `claude-haiku-4-5` + web search) · Vercel (hébergement, free tier).
 
-Coût de fonctionnement : ~0,06-0,16 € par prospect qualifié (recherche web 2 passes +
-génération). Vercel et Supabase en free tier. Tous les appels LLM sont journalisés
-(table `ai_runs`) et visibles dans la page **Analyse**.
+Coût de fonctionnement **mesuré** sur juillet 2026 (215 qualifications réelles) :
+**0,038 € par prospect qualifié**, 0,21 € par analyse de compte, 0,0005 € par
+jugement de veille. Vercel et Supabase en free tier. Les appels LLM de l'app
+sont journalisés (`ai_runs`) et visibles dans la page **Analyse**, sous un
+double plafond mensuel et lissé (voir *Variables d'environnement*).
 
 ---
 
@@ -36,14 +38,30 @@ génération). Vercel et Supabase en free tier. Tous les appels LLM sont journal
    | `supabase/migration-sprint2.sql` | import LinkedIn, champs enrichissement |
    | `supabase/migration-sprint3.sql` | accounts, account_contacts (organigramme), `prospects.account_id` |
    | `supabase/migration-quickwins.sql` | `ai_runs` (journal des coûts LLM) |
+   | `supabase/migration-scraping.sql` | `scrape_jobs`, `scrape_results` (worker GitHub Actions) |
    | `supabase/migration-v1.sql` | companies (SIREN), company_signals (signaux d'achat datés) |
    | `supabase/migration-v2.sql` | `settings.icp`, `prospects.email_confidence/email_source` |
    | `supabase/migration-v3.sql` | `events` (timeline commerciale), `push_subscriptions` |
    | `supabase/migration-v4.sql` … `migration-v6.sql` | statuts simplifiés (P2), interactions (P3), briefs (P4) |
-   | `supabase/migration-v7-fondations.sql` | index uniques + dédup prospects, `company_signals.account_id`, cache `company_research`, RPC budget |
-   | `supabase/migration-v8-cockpit.sql` | `prospects.tags`, vues sauvegardées |
-   | `supabase/migration-v9-saas.sql` | orgs/membres, `org_id` partout, policies RLS, purge RGPD |
-   | `supabase/migration-v10-scale.sql` | vue `hot_accounts` (signal < 14 j sans contact < 30 j) |
+   | `supabase/migration-v7-fiche-compte.sql` | refonte de la fiche compte, organigramme enrichi |
+   | `supabase/migration-v8-documents.sql` | documents rattachés (devis, comptes-rendus, contrats) |
+   | `supabase/migration-v9-tasks.sql` | agenda / tâches |
+   | `supabase/migration-v10-opportunities.sql` | opportunités, pipeline de vente (Jalon 2) |
+   | `supabase/migration-v11-ia.sql` | copilote IA (Jalon 3) |
+   | `supabase/migration-v12-veille.sql` | module de veille : documents, sources, pgvector `halfvec(1024)` |
+   | `supabase/migration-v13-sources-presse.sql` | sources de presse (flux RSS / Atom) |
+   | `supabase/migration-v14-flux-par-compte.sql` | flux de veille rattachés à un compte (salles de presse) |
+   | `supabase/migration-v15-config-ted.sql` | configuration TED conforme à l'API |
+   | `supabase/migration-v16-ia-veille.sql` | étage de jugement IA de la veille |
+   | `supabase/migration-v17-sources-muettes.sql` | `last_document_at` — distinguer « a tourné » de « a rapporté » |
+   | `supabase/migration-v18-fondations-s1.sql` | index uniques + dédup prospects, cache `company_research`, RPC budget |
+   | `supabase/migration-v19-scale-s5.sql` | vue `hot_accounts` (signal < 14 j sans contact < 30 j) |
+
+   > `v18` et `v19` portaient les numéros `v7` et `v10` sur une branche restée à
+   > part ; ils ont été renumérotés au rebasage du 26 juillet 2026, les numéros
+   > d'origine ayant été attribués entre-temps. Ils sont **facultatifs** : le
+   > code de `main` ne dépend d'aucun des deux (`hot_accounts` n'est interrogée
+   > nulle part, la colonne `tags` non plus).
 
 3. Récupère dans **Project Settings → API** : l'URL du projet et la clé `service_role`
    (jamais l'anon key — la clé reste côté serveur uniquement).
@@ -59,12 +77,28 @@ Copie `.env.example` vers `.env.local` et remplis :
 | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) → API Keys | requis |
 | `APP_USER` / `APP_PASSWORD` | protègent l'app (page de connexion + Basic Auth) | requis en prod |
 | `RESEARCH_EXTRACT_MODEL` | modèle de la passe d'extraction : `haiku` (défaut) ou `sonnet` | `haiku` |
-| `RESEARCH_MAX_SEARCHES` | nb max de recherches web par qualification | `4` |
-| `DAILY_RESEARCH_CAP` | plafond de recherches/analyses par 24 h (sécurité budget) | `50` |
+| `RESEARCH_MAX_SEARCHES` | nb max de recherches web par qualification | `2` |
+| `DAILY_RESEARCH_CAP` | plafond de recherches/analyses par 24 h (nombre d'appels) | `50` |
+| `MONTHLY_BUDGET_EUR` | **kill-switch budgétaire** en € — coupe tout au-delà | `15` |
+| `BUDGET_PACING` | `off` désarme le lissage sur le mois (voir ci-dessous) | actif |
 | `FRESHNESS_TTL_DAYS` | durée de validité du cache de recherche | `14` |
-| `CRON_SECRET` | protège les routes cron (veille auto) | requis pour la veille |
-| `WATCH_BATCH` | nb de comptes rafraîchis par passage de veille | `2` |
-| `FRANCE_TRAVAIL_CLIENT_ID` / `_SECRET` | collecte des offres IT (signaux recrutement) | optionnel |
+| `AUTO_QUALIFY` | qualification autonome des contacts scrapés (`off` = 100 % manuel) | `on` |
+| `JOBS_PER_RUN` | nb max de jobs traités par passage du drain | `8` |
+| `CRON_SECRET` | protège les routes cron | requis pour les crons |
+| `GITHUB_DISPATCH_TOKEN` / `GITHUB_REPO` | déclenchement instantané du worker de scraping | recommandé |
+
+**Deux barrières budgétaires, pas une.** `MONTHLY_BUDGET_EUR` borne le mois ;
+un **lissage** borne le rythme. Au jour D d'un mois de N jours, la dépense
+cumulée ne peut excéder `budget × D/N`, plus une réserve de 15 % pour que le
+1ᵉʳ du mois reste utilisable. Ce n'est pas une enveloppe qui se périme :
+l'autorisation porte sur le cumul, donc une semaine sans usage reste
+disponible ensuite. Motivation : en juillet 2026, les 15 € ont été consommés
+entre le 1ᵉʳ et le 4, laissant vingt-trois jours sans outil.
+
+> ⚠️ Le kill-switch ne protège que ce qu'il **voit** — la somme de
+> `ai_runs.cost_eur`. Tout script appelant l'API Anthropic sans journaliser
+> reste invisible. `scripts/eval.mjs` journalise (route `eval`) ;
+> `scripts/contact-sources/discover.py` **pas encore**.
 
 ⚠️ **`APP_PASSWORD` est obligatoire en production** : sans lui, n'importe qui trouvant l'URL consomme ta clé API Anthropic.
 
@@ -78,7 +112,7 @@ cookie sécurisé. Le formulaire de login est protégé par un **rate-limiting**
 ```bash
 npm install
 npm run dev    # → http://localhost:3000
-npm test       # tests unitaires (scoring, NBA, schémas, enrich, rate-limit)
+npm test       # 49 tests unitaires — scoring, NBA, schémas, enrich, signaux, budget
 ```
 
 ### 4. Déploiement Vercel
@@ -132,9 +166,57 @@ historique). Le coût est journalisé **par passe** (modèles distincts) dans `a
 
 ### Veille automatique
 
-Deux crons Vercel quotidiens (`vercel.json`) : `refresh-accounts` (réanalyse les comptes
-les plus anciens en *Veille auto*, dans la limite de `DAILY_RESEARCH_CAP`/`WATCH_BATCH`)
-et `collect-signals` (offres IT France Travail + marchés publics BOAMP).
+Deux mécanismes distincts, qu'il vaut mieux ne pas confondre.
+
+**Rafraîchissement des comptes** — un cron Vercel quotidien (`vercel.json`,
+04:30 UTC → `/api/cron/refresh-accounts`) réanalyse les comptes les plus anciens
+en *Veille auto*, borné par `DAILY_RESEARCH_CAP` et le budget mensuel. Vercel
+Hobby = 2 crons maximum, 1 exécution/jour.
+
+**Module de veille** (`veille/`, Python) — un passage quotidien sur GitHub
+Actions (`.github/workflows/veille-daily.yml`, 04:30 UTC) qui collecte des
+signaux d'achat hors du portefeuille existant :
+
+```
+collecte → filtre lexical → rattachement à un compte → jugement IA → signal
+```
+
+- **Sources** : TED (avis de marché et d'attribution, une requête par pays pour
+  que le pays le plus prolixe ne confisque pas le quota) et flux RSS/Atom —
+  presse IT et salles de presse rattachées à un compte.
+- **Jugement** (`claude-haiku-4-5`, sans web search) : ne voit que les documents
+  dont le rattachement est fragile ou l'énoncé étranger. Il tranche deux
+  questions — est-ce bien ce compte, est-ce un signal d'achat exploitable — et
+  on lui demande d'abord de **refuser**. Mesuré : ~0,0005 € par jugement,
+  plafonné à `VEILLE_MAX_LLM` par passage, environ 1 document retenu sur 7.
+- **Recherche sémantique** : embeddings BGE-M3 (1024 dim., `halfvec`, index
+  HNSW cosinus), calculés sur le runner — aucun coût d'API.
+
+Variables (secrets/variables GitHub, toutes facultatives sauf les deux premières) :
+
+| Clé | Rôle | Défaut |
+|---|---|---|
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | écriture en base | requis |
+| `ANTHROPIC_API_KEY` | sans elle, le passage tourne **sans jugement** | recommandé |
+| `VEILLE_MAX_LLM` | jugements par passage | `20` |
+| `VEILLE_MAX_DOCS` | documents par source | `400` |
+| `VEILLE_FENETRE_JOURS` | fenêtre de collecte générale | `2` |
+| `VEILLE_FENETRE_PRESSE` | fenêtre des flux rattachés à un compte | `21` |
+| `VEILLE_PAYS` | codes ISO3 collectés | `FRA,DEU,GBR` |
+| `VEILLE_MAX_EMBED` | vecteurs calculés par passage | `400` |
+
+Une source peut surcharger sa propre fenêtre via `config.fenetre_jours` en base :
+une salle de presse qui publie une fois par mois n'a pas la cadence de TED.
+
+> ⚠️ GitHub Actions exporte `${{ vars.X }}` comme **chaîne vide** quand la
+> variable de dépôt n'existe pas. `os.environ.get(nom, defaut)` ne sert alors
+> jamais son défaut. `veille/config.py` passe par un helper `_env()` qui traite
+> la chaîne vide comme une absence — sans lui, le passage meurt à l'import.
+
+> ⚠️ GitHub **désactive les crons après 60 jours** sans activité sur le dépôt.
+> Pour une veille, c'est le pire mode de panne : une collecte arrêtée est
+> indiscernable de « rien ne se passe chez mes comptes ». D'où l'étape de signal
+> de vie en fin de passage (`VEILLE_HEARTBEAT_URL`).
 
 ### Confort
 
@@ -146,7 +228,10 @@ mobile (barre d'onglets, « Ajouter à l'écran d'accueil »).
 ## Banc d'essai qualité (eval)
 
 Le harnais `scripts/eval.mjs` mesure la qualité des sorties LLM sur un jeu de cas de
-référence (grands comptes FR), sans toucher la base — appels Anthropic directs en `fetch`.
+référence (grands comptes FR) par appels Anthropic directs en `fetch`. Il n'écrit
+aucun résultat en base, mais **journalise sa dépense** dans `ai_runs` (route
+`eval`) : elle tombe sur la même facture que l'application, et un garde-fou
+budgétaire ne protège que ce qu'il voit.
 
 ```bash
 npm run eval            # 2 passes (extraction Haiku)
@@ -272,8 +357,20 @@ Mesure l'effet avec le banc d'essai (`npm run eval`).
 
 - **V1** : import, recherche/qualification, score de fit, accroches, brouillons multi-canal, pipeline, opt-out.
 - **V2** : import LinkedIn, enrichissement email/téléphone, Fluent Design, PWA, ICP, scoring déterministe.
-- **V3** : comptes & cartographie DSI, signaux d'achat (SIREN/BOAMP/France Travail), veille auto, recherche 2 passes, analytics & events, export CRM, mode sombre, harnais d'eval.
-- **V4 (en cours)** : scraping automatisé (worker GitHub Actions + Brave) → découverte continue des décideurs et de leurs coordonnées, alimentation du **CRM maison**.
+- **V3** : comptes & cartographie DSI, signaux d'achat, recherche 2 passes, analytics & events, export CRM, mode sombre, harnais d'eval.
+- **V4** : scraping automatisé (worker GitHub Actions + Brave) → découverte continue des décideurs et de leurs coordonnées, alimentation du **CRM maison**.
+- **V5** : opportunités et pipeline de vente, agenda/tâches, documents rattachés, copilote IA.
+- **V6 (en cours)** : module de veille — collecte TED + presse, rattachement aux comptes,
+  jugement IA, recherche sémantique. Le pipeline tourne quotidiennement ; le
+  goulot n'est plus la collecte mais la **liste de comptes suivis** — un passage
+  type écarte ~160 acheteurs publics réels faute de compte correspondant.
+
+**Connecteurs prévus, pas encore écrits** : `emploi` (France Travail, Adzuna),
+`registre` (GLEIF, Companies House), `boamp`, `fts` (Find a Tender — seul moyen
+d'avoir des avis britanniques, TED n'en porte plus depuis le Brexit). Leurs
+sources existent en base mais sont **désactivées** : `run.py` ne connaît que
+`ted` et `rss`, et une source active qu'aucun code n'exécute se présente comme
+saine.
 
 ### Vision CRM maison
 
