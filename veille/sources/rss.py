@@ -90,6 +90,35 @@ def _date_entree(entree):
     return None
 
 
+def _diagnostic(url, url_finale, type_recu, brut, flux):
+    """Message d'échec qui nomme la cause au lieu de la faire deviner.
+
+    `flux illisible : <unknown>:8:22: not well-formed (invalid token)` est la
+    coordonnée d'un caractère dans un document qu'on ne conserve pas — elle ne
+    dit ni ce qui a été reçu, ni d'où. The Register a échoué ainsi sur le runner
+    GitHub tout en se lisant sans erreur depuis un poste de travail : sans le
+    type MIME, l'URL finale et les premiers octets, l'écart n'était pas
+    diagnosticable à distance.
+
+    Les trois causes réelles d'un « flux illisible » sont une page HTML
+    (interstitiel de consentement, défi anti-robot, page d'erreur), une
+    redirection qui a emmené ailleurs, et un XML réellement cassé. Le message
+    doit permettre de trancher entre les trois d'un seul coup d'œil.
+    """
+    debut = (brut or b"")[:400].decode("utf-8", "replace").strip()
+    apercu = ESPACES.sub(" ", debut)[:160]
+    morceaux = [f"flux illisible : {getattr(flux, 'bozo_exception', 'inconnu')}"]
+    if type_recu and "xml" not in type_recu:
+        morceaux.append(f"type reçu « {type_recu} » — ce n'est pas du XML")
+    if url_finale and url_finale != url:
+        morceaux.append(f"redirigé vers {url_finale}")
+    if not brut:
+        morceaux.append("réponse VIDE")
+    else:
+        morceaux.append(f"{len(brut)} octets, début : {apercu}")
+    return " · ".join(morceaux)
+
+
 def collecter(source, depuis_jours=2, plafond=200, **_):
     """Collecte les entrées récentes d'un flux. Renvoie (documents, curseur)."""
     import feedparser        # importé ici : inutile quand seul TED tourne
@@ -104,12 +133,14 @@ def collecter(source, depuis_jours=2, plafond=200, **_):
     })
     with urllib.request.urlopen(requete, timeout=20) as reponse:
         brut = reponse.read()
+        url_finale = reponse.url
+        type_recu = (reponse.headers.get("content-type") or "").split(";")[0].strip()
 
     flux = feedparser.parse(brut)
     # `bozo` signale un flux malformé. feedparser sait souvent le lire quand
     # même : on n'échoue que si rien n'a pu être extrait.
     if flux.bozo and not flux.entries:
-        raise RuntimeError(f"flux illisible : {getattr(flux, 'bozo_exception', 'inconnu')}")
+        raise RuntimeError(_diagnostic(url, url_finale, type_recu, brut, flux))
 
     limite = (datetime.now(timezone.utc).date() - timedelta(days=depuis_jours)).isoformat()
     config = source.get("config") or {}
