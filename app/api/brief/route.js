@@ -5,7 +5,7 @@ import { briefSystemPrompt, briefUserPrompt } from "@/lib/prompts-brief";
 import { validateBrief } from "@/lib/schemas";
 import { logAiRun } from "@/lib/ai-runs";
 import { logEvent } from "@/lib/events";
-import { checkMonthlyBudget } from "@/lib/budget";
+import { checkMonthlyBudget, budgetMessage } from "@/lib/budget";
 import { getEnvConfig, MODEL_SONNET } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -35,7 +35,7 @@ export async function POST(request) {
   const budget = await checkMonthlyBudget(supabase);
   if (budget.exceeded) {
     return NextResponse.json(
-      { error: `Plafond IA mensuel atteint (${budget.spent.toFixed(2)} € / ${budget.budget} €). Le brief sera de nouveau disponible le 1er du mois.` },
+      { error: budgetMessage(budget) },
       { status: 429 }
     );
   }

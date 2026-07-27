@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { analyzeAccount } from "@/lib/account-analyze";
 import { drainJobQueue } from "@/lib/process-jobs";
-import { checkMonthlyBudget } from "@/lib/budget";
+import { checkMonthlyBudget, budgetMessage } from "@/lib/budget";
 import { enqueueAutoQualif } from "@/lib/auto-qualif";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +31,7 @@ export async function GET(request) {
   // MONTHLY_BUDGET_EUR (sinon le cron tournerait tous les jours sans plafond €).
   const budgetState = await checkMonthlyBudget(supabase);
   if (budgetState.exceeded) {
-    return NextResponse.json({ refreshed: 0, reason: `budget mensuel atteint (${budgetState.spent.toFixed(2)} € / ${budgetState.budget} €)` });
+    return NextResponse.json({ refreshed: 0, reason: budgetMessage(budgetState) });
   }
 
   // Budget déjà consommé sur 24 h (comptes rafraîchis).

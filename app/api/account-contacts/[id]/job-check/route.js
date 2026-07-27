@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { callClaudeJson } from "@/lib/anthropic";
-import { checkMonthlyBudget } from "@/lib/budget";
+import { checkMonthlyBudget, budgetMessage } from "@/lib/budget";
 import { logAiRun } from "@/lib/ai-runs";
 import { MODEL_HAIKU } from "@/lib/constants";
 import { jobCheckSystemPrompt, jobCheckUserPrompt } from "@/lib/prompts-ia";
@@ -24,7 +24,7 @@ export async function POST(_request, { params }) {
   const budget = await checkMonthlyBudget(supabase);
   if (budget.exceeded) {
     return NextResponse.json(
-      { error: `Plafond mensuel atteint (${budget.spent.toFixed(2)} € / ${budget.budget} €). Reprise le 1er du mois.` },
+      { error: budgetMessage(budget) },
       { status: 429 }
     );
   }
