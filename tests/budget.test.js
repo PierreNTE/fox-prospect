@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { pacingState, budgetMessage, monthlyBudgetEur } from "@/lib/budget";
+import { pacingState, budgetMessage, monthlyBudgetEur, dailyLlmCount } from "@/lib/budget";
 
 // Le lissage est né d'un constat de facture : en juillet 2026, les 15 € du mois
 // ont été consommés entre le 1er et le 4, laissant vingt-trois jours sans outil.
@@ -91,5 +91,38 @@ describe("monthlyBudgetEur", () => {
   it("suit la variable d'environnement", () => {
     process.env.MONTHLY_BUDGET_EUR = "40";
     expect(monthlyBudgetEur()).toBe(40);
+  });
+});
+
+// Ce compteur a existé en deux exemplaires qui ne comptaient pas la même chose :
+// la route manuelle comptait les lignes `research`, le drain autonome comptait
+// les comptes rafraîchis. Comme la file est faite de jobs `research_prospect`,
+// qui ne touchent jamais `accounts.last_refreshed_at`, le compteur du drain
+// valait zéro en permanence et son plafond ne mordait jamais. Le défaut a vécu
+// des semaines sans se voir — d'où ces tests, qui verrouillent le fait que les
+// DEUX sources de dépense entrent dans le compte.
+describe("dailyLlmCount — plafond quotidien partagé", () => {
+  const supabaseFactice = (comptes) => ({
+    from: (table) => ({
+      select: () => ({ gte: () => Promise.resolve({ count: comptes[table] ?? 0 }) }),
+    }),
+  });
+
+  it("additionne les qualifications et les analyses de comptes", async () => {
+    const n = await dailyLlmCount(supabaseFactice({ research: 30, accounts: 12 }));
+    expect(n).toBe(42);
+  });
+
+  it("compte les qualifications seules — le cas que le drain ratait", async () => {
+    const n = await dailyLlmCount(supabaseFactice({ research: 47, accounts: 0 }));
+    expect(n).toBe(47);
+  });
+
+  it("compte les analyses de comptes seules", async () => {
+    expect(await dailyLlmCount(supabaseFactice({ research: 0, accounts: 9 }))).toBe(9);
+  });
+
+  it("traite un compte absent comme zéro et non comme NaN", async () => {
+    expect(await dailyLlmCount(supabaseFactice({}))).toBe(0);
   });
 });

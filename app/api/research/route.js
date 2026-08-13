@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { getEnvConfig } from "@/lib/constants";
-import { checkMonthlyBudget, budgetMessage } from "@/lib/budget";
+import { checkMonthlyBudget, budgetMessage, dailyLlmCount } from "@/lib/budget";
 import { runResearch } from "@/lib/research";
 
 export const dynamic = "force-dynamic";
@@ -22,12 +22,10 @@ export async function POST(request) {
 
   const { dailyCap } = getEnvConfig();
 
-  const dailySince = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const { count: dailyCount } = await supabase
-    .from("research")
-    .select("*", { count: "exact", head: true })
-    .gte("created_at", dailySince);
-  if ((dailyCount ?? 0) >= dailyCap) {
+  // Même compteur que le drain autonome : les deux chemins puisent dans la même
+  // enveloppe quotidienne, ils doivent donc la mesurer de la même façon.
+  const dailyCount = await dailyLlmCount(supabase);
+  if (dailyCount >= dailyCap) {
     return NextResponse.json(
       { error: "Plafond quotidien de recherches atteint (sécurité budget). Modifiable via DAILY_RESEARCH_CAP." },
       { status: 429 }
