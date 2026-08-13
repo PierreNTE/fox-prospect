@@ -107,6 +107,13 @@ export default function AccountsClient({ initialAccounts = null, veille = [] }) 
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // Import SIRENE. `sireneePage` est un curseur : l'API renvoie `next_page`, et
+  // le conserver évite de re-scanner les mêmes sociétés à chaque clic — sans
+  // lui, le deuxième import ne rapporterait que des doublons.
+  const [importing, setImporting] = useState(false);
+  const [sirenePage, setSirenePage] = useState(1);
+  const [sireneResult, setSireneResult] = useState(null);
+
   // Synchronise le filtre dans l'URL sans re-rendu serveur (replaceState :
   // pas de navigation App Router, donc pas de refetch à chaque frappe).
   useEffect(() => {
@@ -126,6 +133,25 @@ export default function AccountsClient({ initialAccounts = null, veille = [] }) 
     setBusy(false);
     if (!ok) { setError(err); return; }
     router.push(`/accounts/${data.account.id}`);
+  };
+
+  // Inflow de nouveaux comptes depuis l'API publique recherche-entreprises,
+  // filtrée sur l'ICP des réglages. L'endpoint existait mais n'avait aucun
+  // appelant : le levier documenté pour tenir 200-300 prospects/mois n'était
+  // branché nulle part, d'où une liste de comptes figée.
+  const importSirene = async () => {
+    setImporting(true); setError(""); setSireneResult(null);
+    const { ok, data, error: err } = await fetchJson("/api/accounts/import-sirene", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ limit: 50, page: sirenePage }),
+    });
+    setImporting(false);
+    if (!ok) { setError(err); return; }
+    setSireneResult(data);
+    setSirenePage(data.next_page || sirenePage + 8);
+    // Les comptes viennent du rendu serveur : sans ce refresh, la liste
+    // n'afficherait les nouveaux venus qu'au prochain chargement de page.
+    if (data.imported > 0) router.refresh();
   };
 
   const filtered = (accounts || [])
@@ -174,6 +200,55 @@ export default function AccountsClient({ initialAccounts = null, veille = [] }) 
             Ajouter
           </Button>
         </div>
+      </Card>
+
+      {/* ── Élargir la liste depuis SIRENE ──
+          Le nombre de comptes suivis plafonne tout le reste : la veille ne crée
+          un signal que pour un compte de cette liste. Ajouter des comptes ne
+          coûte RIEN en IA — l'import les crée hors veille (auto_watch=false),
+          c'est toi qui décides ensuite lesquels surveiller. */}
+      <Card style={{ padding: "18px 20px" }}>
+        <Body1 style={{ fontWeight: 700, fontSize: 15, display: "block", marginBottom: 4 }}>
+          Élargir la liste depuis SIRENE
+        </Body1>
+        <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginBottom: 12 }}>
+          Base officielle des entreprises, filtrée sur ton ICP (Réglages). Gratuit, sans clé,
+          et sans coût IA : les comptes arrivent hors veille, tu choisis lesquels surveiller.
+        </Caption1>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <Button appearance="primary" disabled={importing} onClick={importSirene}
+            icon={importing ? <Spinner size="tiny" /> : <BuildingMultiple24Regular />}>
+            {importing ? "Import en cours…" : "Importer des comptes"}
+          </Button>
+          {sirenePage > 1 && (
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
+              reprise à la page {sirenePage} — les sociétés déjà scannées ne le seront pas deux fois
+            </Caption1>
+          )}
+        </div>
+
+        {sireneResult && (
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--colorNeutralStroke2)" }}>
+            <Body1 style={{ fontWeight: 600, fontSize: 13, display: "block" }}>
+              {sireneResult.imported > 0
+                ? `${sireneResult.imported} compte${sireneResult.imported > 1 ? "s" : ""} ajouté${sireneResult.imported > 1 ? "s" : ""}`
+                : "Aucun nouveau compte sur ce lot"}
+            </Body1>
+            {/* Le détail explique un lot vide, qui sinon ressemble à une panne :
+                hors ICP = le filtre a fait son travail, doublons = déjà suivis. */}
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 2 }}>
+              {sireneResult.scanned} scannée{sireneResult.scanned > 1 ? "s" : ""} ·
+              {" "}{sireneResult.skipped_icp} hors ICP ·
+              {" "}{sireneResult.duplicates} déjà en base
+              {sireneResult.has_more ? " · d'autres pages disponibles" : " · fin de la base atteinte"}
+            </Caption1>
+            {sireneResult.sample?.length > 0 && (
+              <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 6 }}>
+                {sireneResult.sample.join(" · ")}
+              </Caption1>
+            )}
+          </div>
+        )}
       </Card>
 
       {/* ── Veille (IA3) : actus à fort impact, tous comptes. Zéro coût IA. ── */}
