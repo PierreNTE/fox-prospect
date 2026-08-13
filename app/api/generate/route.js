@@ -66,7 +66,7 @@ export async function POST(request) {
       .single();
     if (error) throw new Error(error.message);
 
-    logAiRun({ route: "generate", prospectId, usage, webSearchCount });
+    await logAiRun({ route: "generate", prospectId, usage, webSearchCount });
     logEvent({ kind: "draft_generated", prospectId });
 
     return NextResponse.json({ drafts: saved });

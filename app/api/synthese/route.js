@@ -44,7 +44,7 @@ export async function POST(request) {
   const days = Number.isFinite(Number(json?.delai_jours)) ? Math.max(0, Math.min(120, Number(json.delai_jours))) : 7;
   const follow = days > 0 ? new Date(Date.now() + days * 86400000).toISOString().slice(0, 10) : null;
 
-  logAiRun({ route: "synthese", prospectId, usage, webSearchCount: 0, model: MODEL_HAIKU });
+  await logAiRun({ route: "synthese", prospectId, usage, webSearchCount: 0, model: MODEL_HAIKU });
 
   return NextResponse.json({
     synthese: {

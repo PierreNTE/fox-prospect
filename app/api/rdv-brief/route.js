@@ -52,7 +52,7 @@ export async function POST(request) {
 
   const now = new Date().toISOString();
   await supabase.from("accounts").update({ rdv_brief: brief, rdv_brief_at: now }).eq("id", accountId);
-  logAiRun({ route: "rdv_brief", accountId, usage, webSearchCount: 0 });
+  await logAiRun({ route: "rdv_brief", accountId, usage, webSearchCount: 0 });
 
   return NextResponse.json({ brief, cached: false, generated_at: now });
 }

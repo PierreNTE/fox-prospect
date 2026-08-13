@@ -42,7 +42,7 @@ export async function POST(request) {
 
     const result = validateLinkedinImport(raw);
 
-    logAiRun({ route: "import-linkedin", usage, webSearchCount, model: MODEL_HAIKU });
+    await logAiRun({ route: "import-linkedin", usage, webSearchCount, model: MODEL_HAIKU });
 
     return NextResponse.json({
       prospect: {

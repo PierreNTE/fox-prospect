@@ -83,7 +83,7 @@ export async function POST(request) {
       .single();
     if (updateError) throw new Error(updateError.message);
 
-    logAiRun({ route: "enrich", prospectId, usage, webSearchCount, model: MODEL_HAIKU });
+    await logAiRun({ route: "enrich", prospectId, usage, webSearchCount, model: MODEL_HAIKU });
 
     return NextResponse.json({ prospect: saved, enrichment: result });
   } catch (e) {

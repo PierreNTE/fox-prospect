@@ -52,7 +52,7 @@ export async function POST(_request, { params }) {
     .update({ job_check_status: statut, job_check_note: note, job_checked_at: new Date().toISOString() })
     .eq("id", id);
 
-  logAiRun({ route: "job_check", accountId: contact.account_id, usage, webSearchCount, model: MODEL_HAIKU });
+  await logAiRun({ route: "job_check", accountId: contact.account_id, usage, webSearchCount, model: MODEL_HAIKU });
 
   return NextResponse.json({ statut, note, result: json });
 }

@@ -73,7 +73,7 @@ export async function POST(request) {
       .select().single();
     if (insErr) throw new Error(insErr.message);
 
-    logAiRun({ route: "brief", prospectId, usage, webSearchCount, model: MODEL_SONNET });
+    await logAiRun({ route: "brief", prospectId, usage, webSearchCount, model: MODEL_SONNET });
     logEvent({ kind: "enrich_done", prospectId, note: "Brief commercial généré" });
 
     return NextResponse.json({ brief: saved });
