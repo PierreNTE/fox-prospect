@@ -107,11 +107,10 @@ export default function AccountsClient({ initialAccounts = null, veille = [] }) 
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Import SIRENE. `sireneePage` est un curseur : l'API renvoie `next_page`, et
-  // le conserver évite de re-scanner les mêmes sociétés à chaque clic — sans
-  // lui, le deuxième import ne rapporterait que des doublons.
+  // Import SIRENE. Le curseur de pagination vit désormais côté serveur
+  // (settings.sirene_page) : un état d'écran repartait de zéro à chaque
+  // rechargement, et l'import rescannait alors des pages déjà vues.
   const [importing, setImporting] = useState(false);
-  const [sirenePage, setSirenePage] = useState(1);
   const [sireneResult, setSireneResult] = useState(null);
 
   // Synchronise le filtre dans l'URL sans re-rendu serveur (replaceState :
@@ -143,12 +142,11 @@ export default function AccountsClient({ initialAccounts = null, veille = [] }) 
     setImporting(true); setError(""); setSireneResult(null);
     const { ok, data, error: err } = await fetchJson("/api/accounts/import-sirene", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ limit: 50, page: sirenePage }),
+      body: JSON.stringify({ limit: 50 }),   // la page vient du curseur serveur
     });
     setImporting(false);
     if (!ok) { setError(err); return; }
     setSireneResult(data);
-    setSirenePage(data.next_page || sirenePage + 8);
     // Les comptes viennent du rendu serveur : sans ce refresh, la liste
     // n'afficherait les nouveaux venus qu'au prochain chargement de page.
     if (data.imported > 0) router.refresh();
@@ -220,11 +218,9 @@ export default function AccountsClient({ initialAccounts = null, veille = [] }) 
             icon={importing ? <Spinner size="tiny" /> : <BuildingMultiple24Regular />}>
             {importing ? "Import en cours…" : "Importer des comptes"}
           </Button>
-          {sirenePage > 1 && (
-            <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
-              reprise à la page {sirenePage} — les sociétés déjà scannées ne le seront pas deux fois
-            </Caption1>
-          )}
+          <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
+            reprend automatiquement où le dernier import s'est arrêté
+          </Caption1>
         </div>
 
         {sireneResult && (
@@ -240,7 +236,9 @@ export default function AccountsClient({ initialAccounts = null, veille = [] }) 
               {sireneResult.scanned} scannée{sireneResult.scanned > 1 ? "s" : ""} ·
               {" "}{sireneResult.skipped_icp} hors ICP ·
               {" "}{sireneResult.duplicates} déjà en base
-              {sireneResult.has_more ? " · d'autres pages disponibles" : " · fin de la base atteinte"}
+              {sireneResult.has_more
+                ? ` · prochain import à la page ${sireneResult.next_page}`
+                : " · fin de la base atteinte"}
             </Caption1>
             {sireneResult.sample?.length > 0 && (
               <Caption1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 6 }}>

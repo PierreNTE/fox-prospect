@@ -32,9 +32,19 @@ const EFFECTIF_TRANCHES = {
   "53": [10000, 19999], "54": [20000, 49999], "55": [50000, 99999], "56": [100000, null],
 };
 
+// L'API rend le code APE en forme d'affichage — « 84.11Z », six caractères —
+// alors que le code INSEE canonique en fait cinq (« 8411Z ») et que la colonne
+// companies.naf_code est un char(5). Sans cette normalisation, CHAQUE upsert du
+// référentiel échouait sur un dépassement de longueur, et l'échec était avalé
+// deux fois : upsertCompany ignore `error`, puis l'appelant fait `.catch(() =>
+// null)`. Résultat observé le 2026-08-15 : 25 comptes importés, 25 company_id à
+// null, référentiel vide. Le filtre ICP, lui, ne lisait que les deux premiers
+// caractères et n'a jamais rien vu.
+const normaliserNaf = (code) => (code || "").replace(/[^0-9A-Za-z]/g, "").toUpperCase().slice(0, 5);
+
 function parseSireneResult(r) {
   const siege = r.siege || {};
-  const naf = r.activite_principale || siege.activite_principale || "";
+  const naf = normaliserNaf(r.activite_principale || siege.activite_principale);
   const code = r.tranche_effectif_salarie || siege.tranche_effectif_salarie || "";
   const [emin, emax] = EFFECTIF_TRANCHES[code] || [null, null];
   return {
@@ -57,7 +67,7 @@ export async function POST(request) {
   const supabase = getSupabase();
 
   // ICP par défaut depuis les réglages (l'utilisateur peut surcharger via body).
-  const { data: settings } = await supabase.from("settings").select("icp").eq("id", 1).single();
+  const { data: settings } = await supabase.from("settings").select("icp, sirene_page").eq("id", 1).single();
   const icp = settings?.icp || {};
 
   const categories = body.categories || ["ETI", "GE"];
@@ -69,7 +79,12 @@ export async function POST(request) {
   const departements = body.departements || null; // array de codes (optionnel)
 
   const target = Math.min(Number(body.limit) || 25, 50); // nouveaux comptes voulus / appel
-  const startPage = Math.max(1, Number(body.page) || 1);
+  // Reprise depuis le curseur PERSISTÉ, pas depuis 1. Le corps de requête reste
+  // prioritaire pour rejouer une plage précise ; sans lui on continue là où le
+  // dernier import s'est arrêté, même des jours plus tard et depuis un autre
+  // navigateur. Un curseur en mémoire d'écran repartait de zéro à chaque
+  // rechargement et ne ramenait plus que des doublons.
+  const startPage = Math.max(1, Number(body.page) || settings?.sirene_page || 1);
   const maxPagesPerCall = 8; // borne le temps de réponse (8 × 25 = 200 scannés max)
 
   // Dédup : noms de comptes déjà en base (l'index unique est sur lower(name)).
@@ -155,13 +170,20 @@ export async function POST(request) {
     }
   }
 
+  // Avance le curseur, y compris — et surtout — quand le lot n'a rien retenu :
+  // un lot entièrement composé de doublons est exactement celui qu'il ne faut
+  // pas rejouer. `Math.max` empêche un rejeu ciblé via body.page de faire
+  // reculer la progression partagée.
+  const prochaine = Math.max(page, settings?.sirene_page || 1);
+  await supabase.from("settings").update({ sirene_page: prochaine }).eq("id", 1);
+
   return NextResponse.json({
     imported,
     duplicates,
     skipped_icp: skippedIcp,
     scanned,
     sample,
-    next_page: page,
+    next_page: prochaine,
     has_more: apiHasMore,
     total_results: totalResults,
   });
