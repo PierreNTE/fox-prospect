@@ -87,9 +87,31 @@ export async function POST(request) {
   const startPage = Math.max(1, Number(body.page) || settings?.sirene_page || 1);
   const maxPagesPerCall = 8; // borne le temps de réponse (8 × 25 = 200 scannés max)
 
-  // Dédup : noms de comptes déjà en base (l'index unique est sur lower(name)).
-  const { data: existing } = await supabase.from("accounts").select("name");
+  // Dédup à DEUX niveaux, et le SIREN passe en premier.
+  //
+  // Le nom seul ne suffit pas : une société a un nom d'usage et une raison
+  // sociale, et l'import ramène la seconde. « RATP » et « REGIE AUTONOME DES
+  // TRANSPORTS PARISIENS » ont ainsi coexisté comme deux comptes, tout comme
+  // EDF / ELECTRICITE DE FRANCE, SNCF / SOCIETE NATIONALE SNCF, Pôle emploi /
+  // FRANCE TRAVAIL — cinq paires fusionnées à la main le 2026-08-15, chacune
+  // avec les prospects d'un côté et le SIREN de l'autre.
+  //
+  // Le SIREN est l'identité juridique : deux libellés ne peuvent pas s'y
+  // soustraire. Le contrôle sur le nom reste en second filet, pour les comptes
+  // historiques qui n'ont pas encore de rattachement au référentiel.
+  const { data: existing } = await supabase.from("accounts").select("name, company_id");
   const known = new Set((existing || []).map((a) => (a.name || "").toLowerCase().trim()));
+
+  const companyIds = [...new Set((existing || []).map((a) => a.company_id).filter(Boolean))];
+  const knownSirens = new Set();
+  if (companyIds.length) {
+    // Deux requêtes simples plutôt qu'une jointure implicite : la résolution de
+    // relation de PostgREST échouerait silencieusement si la clé étrangère
+    // venait à manquer, et une dédup qui tombe en panne sans le dire crée
+    // exactement les doublons qu'elle doit empêcher.
+    const { data: cies } = await supabase.from("companies").select("siren").in("id", companyIds);
+    for (const c of cies || []) if (c.siren) knownSirens.add(c.siren);
+  }
 
   const toCreate = [];     // { sireneData } retenus
   let scanned = 0, skippedIcp = 0, duplicates = 0;
@@ -139,9 +161,13 @@ export async function POST(request) {
       if (effectifMin != null && sd.effectif_max != null && sd.effectif_max < effectifMin) { skippedIcp++; continue; }
       if (effectifMax != null && sd.effectif_min != null && sd.effectif_min > effectifMax) { skippedIcp++; continue; }
 
+      // SIREN d'abord : il attrape les paires nom d'usage / raison sociale que
+      // la comparaison de libellés laisse passer.
+      if (sd.siren && knownSirens.has(sd.siren)) { duplicates++; continue; }
       const key = sd.name.toLowerCase().trim();
       if (known.has(key)) { duplicates++; continue; }
-      known.add(key); // évite les doublons intra-lot
+      known.add(key);                              // doublons intra-lot
+      if (sd.siren) knownSirens.add(sd.siren);     // idem, sur l'identité juridique
       toCreate.push(sd);
       if (toCreate.length >= target) break;
     }
