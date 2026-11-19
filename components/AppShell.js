@@ -17,12 +17,14 @@ import {
   CalendarLtr24Regular,
   DataTrending24Regular,
   Pulse24Regular,
+  Call24Regular,
 } from "@fluentui/react-icons";
 
 // Navigation resserrée sur le flux commercial : le Compte est le point de
 // départ, puis les prospects, puis l'import. L'analyse reste joignable via le
 // bouton « Activité » de la barre du haut (écran secondaire).
 const NAV = [
+  { href: "/leads", label: "Leads", Icon: Call24Regular },
   { href: "/accounts", label: "Comptes", Icon: BuildingMultiple24Regular },
   { href: "/", label: "Prospects", Icon: Board24Regular },
   { href: "/agenda", label: "Agenda", Icon: CalendarLtr24Regular },

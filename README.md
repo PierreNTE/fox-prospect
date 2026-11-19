@@ -56,6 +56,7 @@ double plafond mensuel et lissé (voir *Variables d'environnement*).
    | `supabase/migration-v17-sources-muettes.sql` | `last_document_at` — distinguer « a tourné » de « a rapporté » |
    | `supabase/migration-v18-fondations-s1.sql` | index uniques + dédup prospects, cache `company_research`, RPC budget |
    | `supabase/migration-v19-scale-s5.sql` | vue `hot_accounts` (signal < 14 j sans contact < 30 j) |
+   | `supabase/migration-v23-dell-cold-calling.sql` | module cold calling Dell : import leads Salesforce, santé société, qualif infra + BANT, préparation d'appel |
 
    > `v18` et `v19` portaient les numéros `v7` et `v10` sur une branche restée à
    > part ; ils ont été renumérotés au rebasage du 26 juillet 2026, les numéros
@@ -406,3 +407,28 @@ avec la **source et la fraîcheur** de chaque donnée. Le système y tend par co
 Honnêteté : un mapping **« parfait »** avec **tous** les téléphones directs n'est pas atteignable
 gratuitement — c'est le cœur de l'offre des plateformes payantes. Le montage actuel vise un
 mapping **riche et fiable sur le nom/poste/LinkedIn/email**, complété à la demande.
+
+
+---
+
+## Module cold calling Dell (`/leads`)
+
+Flux : **PDF Salesforce → contrôle des sociétés → préparation d'appel → qualif → résumé Salesforce.**
+
+1. **Import** — page **Leads** : choisir l'export *Printable View* d'une liste de leads
+   (imprimé en PDF). Le PDF est lu **dans le navigateur** (unpdf) ; seuls le nom de
+   société, le statut du lead et la campagne sont envoyés et stockés. Les noms des
+   collaborateurs Dell (Account Owner, Buyer Lever) ne sont jamais enregistrés.
+2. **Santé société** (gratuit, sans IA) — pour chaque société : SIREN via l'API
+   Recherche d'entreprises (indice de commune ou de département lu entre parenthèses),
+   état administratif, puis procédures collectives au BODACC. Verdict : *active*,
+   *procédure en cours*, *fermée / liquidée* (à clôturer dans Salesforce), *à vérifier*.
+   Les comptes importés ont `auto_watch = false` pour ne pas partir dans la veille payante.
+3. **Préparer l'appel** (fiche compte, Sonnet + web search, mis en cache) — actu
+   exploitable, intitulés à chercher dans ZoomInfo, phrases pour passer le standard,
+   ouverture, questions de découverte, hypothèses d'environnement, objections.
+4. **Qualification Dell** (fiche compte, sauvegarde auto) — serveurs (nombre, marque,
+   modèle, hyperviseur, fin de maintenance), stockage et backup (marque, modèle,
+   volumétrie, fin de maintenance), BANT, interlocuteur et next step. Badges
+   *Opportunité qualifiée* / *BANT complet*, alerte des fins de maintenance à moins de
+   12 mois, et bouton **Copier** du résumé à coller dans Salesforce.
