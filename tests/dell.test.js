@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseLeadPages, dedupeByCompany, cleanCompanyName, usDateToIso } from "@/lib/salesforce-leads";
 import { nameScore, pickBestMatch, classifyBodacc, healthVerdict } from "@/lib/company-health";
-import { qualifProgress, salesforceSummary, monthsUntil, sanitizeQualif } from "@/lib/dell-qualif";
 
 // Fixture synthétique reproduisant la géométrie de l'export « Printable View »
 // Salesforce (positions mesurées sur un export réel ; noms inventés).
@@ -157,47 +156,6 @@ describe("classifyBodacc", () => {
   });
 });
 
-describe("qualification Dell", () => {
-  const now = new Date("2026-11-19");
-  const q = {
-    servers: { count: "12", brand: "HPE", model: "DL380 Gen10", hypervisor: "VMware vSphere 7", eos: "2027-03" },
-    storage: { brand: "NetApp", model: "FAS2750", capacity: "40 To", eos: "2026-09" },
-    bant: { budget: "150 k€ voté au BP 2027", authority: "DSI + DAF", need: "Sortir de VMware", consultation: "2027-01", deadline: "2027-06" },
-    call: { interlocutor: "Claire Martin", role: "DSI", next_step: "RDV AE le 02/12" },
-  };
-
-  it("détecte l'opportunité et le BANT complet", () => {
-    const p = qualifProgress(q, now);
-    expect(p.opportunity).toBe(true);
-    expect(p.nextStep).toBe(true);
-  });
-
-  it("n'appelle pas opportunité une fiche sans fin de maintenance", () => {
-    const p = qualifProgress({ servers: { count: "5", brand: "Dell", hypervisor: "Hyper-V" } }, now);
-    expect(p.opportunity).toBe(false);
-  });
-
-  it("repère les fins de maintenance dans les 12 mois, échues comprises", () => {
-    const p = qualifProgress(q, now);
-    expect(p.renewalSoon.map((e) => e.block)).toEqual(["storage", "servers"]);
-    expect(monthsUntil("2027-03", now)).toBe(4);
-  });
-
-  it("produit un résumé Salesforce lisible", () => {
-    const txt = salesforceSummary(q, { accountName: "ACME", date: now });
-    expect(txt).toContain("QUALIF INFRA — ACME — 19/11/2026");
-    expect(txt).toContain("SERVEURS : 12 serveur(s) · HPE · DL380 Gen10 · hyperviseur VMware vSphere 7 · fin de maintenance 03/2027");
-    expect(txt).toContain("STOCKAGE : NetApp · FAS2750 · 40 To · fin de maintenance 09/2026");
-    expect(txt).toContain("BACKUP : non qualifié");
-    expect(txt).toContain("- Timeline : consultation 01/2027 · mise en place 06/2027");
-    expect(txt).toContain("NEXT STEP : RDV AE le 02/12");
-  });
-
-  it("nettoie la fiche reçue du client", () => {
-    expect(sanitizeQualif({ servers: { count: "3", hack: "x" }, evil: { a: 1 } })).toEqual({ servers: { count: "3" } });
-  });
-});
-
 import { vi, afterEach } from "vitest";
 import { checkCompanyHealth } from "@/lib/company-health";
 
@@ -317,5 +275,48 @@ describe("ocrWordsToItems — PDF sans texte relu par OCR", () => {
     ];
     const { rows } = parseLeadPages([{ height: 792, items: ocrWordsToItems(words, S) }]);
     expect(rows).toEqual([expect.objectContaining({ company: "ACME SANTE", status: "Working" })]);
+  });
+});
+
+import { normalizeCallPrep, contactsToInsert, explainAiError } from "@/lib/prompts-call-prep";
+import { normalizeSireneResult } from "@/lib/sirene";
+
+describe("fiche d'approche", () => {
+  const raw = {
+    identite: "PME industrielle",
+    coordonnees: { site: "www.acme.fr", standard: "04 74 00 00 00", email_generique: "contact@acme.fr", format_email: "null" },
+    contacts: [
+      { prenom: "Claire", nom: "Martin", poste: "DSI", linkedin_url: "https://www.linkedin.com/in/claire", confiance: "haute" },
+      { prenom: "", nom: "", poste: "Responsable infra" },
+      { prenom: "Paul", nom: "Durand", poste: "DAF", linkedin_url: "linkedin.com/in/paul", confiance: "inventée" },
+    ],
+    messages: { email: { objet: "Votre parc serveurs", corps: "Bonjour…" }, linkedin_invitation: "x".repeat(400) },
+  };
+  const prep = normalizeCallPrep(raw);
+
+  it("nettoie la réponse du modèle (URL, null textuels, contacts vides)", () => {
+    expect(prep.coordonnees.site).toBeNull(); // pas d'URL absolue → rejeté
+    expect(prep.coordonnees.format_email).toBeNull();
+    expect(prep.contacts.map((c) => c.nom)).toEqual(["Martin", "Durand"]);
+    expect(prep.contacts[1]).toMatchObject({ linkedin_url: null, confiance: "basse" });
+    expect(prep.messages.linkedin_invitation.length).toBe(300);
+  });
+
+  it("ajoute les interlocuteurs à l'organigramme sans doublon", () => {
+    const rows = contactsToInsert(prep, [{ first_name: "claire", last_name: "MARTIN" }], "acc-1");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ account_id: "acc-1", first_name: "Paul", last_name: "Durand", role: "DAF", role_confidence: "incertain" });
+  });
+
+  it("traduit les erreurs de l'API Anthropic", () => {
+    expect(explainAiError('Anthropic API 400: {"error":{"message":"Your credit balance is too low"}}')).toMatch(/Crédit Anthropic épuisé/);
+    expect(explainAiError("Anthropic API 401: invalid x-api-key")).toMatch(/Clé API/);
+    expect(explainAiError("autre chose")).toBe("autre chose");
+  });
+});
+
+describe("normalizeSireneResult", () => {
+  it("ramène le code NAF à 5 caractères (colonne char(5))", () => {
+    expect(normalizeSireneResult({ siren: "1", activite_principale: "62.01Z", siege: {} }).naf_code).toBe("6201Z");
   });
 });

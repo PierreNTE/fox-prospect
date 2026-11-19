@@ -25,7 +25,7 @@ import { ArrowUpload24Regular, Search24Regular, ArrowClockwise24Regular } from "
 import { fetchJson } from "@/lib/fetch-json";
 import { dedupeByCompany, parsePastedCompanies } from "@/lib/salesforce-leads";
 import { readLeadsPdf } from "@/lib/salesforce-pdf";
-import { HEALTH_META } from "@/lib/dell-qualif";
+import { HEALTH_META } from "@/lib/health-meta";
 
 const BRAND = "#5B53E6";
 
@@ -187,6 +187,69 @@ function ImportCard({ onImported }) {
   );
 }
 
+// Préparation en lot des fiches d'approche (IA + web), un compte après l'autre.
+// S'arrête seul sur une erreur de budget ou d'API répétée.
+function BatchPrepCard({ leads, onDone }) {
+  const todo = leads.filter((l) => l.health_status === "active" && !/closed/i.test(l.sf_lead_status || "") && !l.call_prep_at);
+  const [running, setRunning] = useState(false);
+  const [done, setDone] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [log, setLog] = useState([]);
+  const stopRef = useRef(false);
+
+  async function run() {
+    const list = todo;
+    setRunning(true); setDone(0); setTotal(list.length); setLog([]); stopRef.current = false;
+    let failuresInRow = 0;
+    for (let i = 0; i < list.length; i++) {
+      if (stopRef.current) break;
+      const r = await fetchJson("/api/call-prep", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: list[i].id }),
+      });
+      setDone(i + 1);
+      if (!r.ok) {
+        failuresInRow++;
+        setLog((l) => [`${list[i].name} : ${r.error}`, ...l].slice(0, 6));
+        if (r.status === 429 || failuresInRow >= 2) {
+          setLog((l) => ["Arrêt : erreur répétée ou plafond budgétaire atteint.", ...l]);
+          break;
+        }
+      } else {
+        failuresInRow = 0;
+        const n = r.data?.prep?.contacts?.length || 0;
+        setLog((l) => [`${list[i].name} : ${n} interlocuteur(s)`, ...l].slice(0, 6));
+      }
+    }
+    setRunning(false);
+    onDone();
+  }
+
+  return (
+    <Card style={{ padding: "16px 20px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <Body1><strong>Fiches d'approche</strong></Body1>
+        <Caption1 style={{ flex: 1, minWidth: 220 }}>
+          Pour chaque compte à appeler : interlocuteurs IT, standard, email, actu, email + LinkedIn + relance prêts.
+          ≈ 1 min et ≈ 0,10 € par compte, sous ton plafond budgétaire.
+        </Caption1>
+        <Button appearance="primary" disabled={running || !todo.length} onClick={run}>
+          {todo.length ? `Préparer ${todo.length} compte(s)` : "Tout est préparé"}
+        </Button>
+        {running && <Button onClick={() => { stopRef.current = true; }}>Arrêter</Button>}
+      </div>
+      {(running || done > 0) && (
+        <div style={{ marginTop: 10 }}>
+          <ProgressBar value={total ? done / total : 0} />
+          <Caption1>{done} / {total}{running ? " — garde cette page ouverte" : ""}</Caption1>
+          {log.map((x, i) => <Caption1 key={i} style={{ display: "block", color: "var(--colorNeutralForeground2)" }}>{x}</Caption1>)}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function LeadsClient({ initialLeads = [] }) {
   const [leads, setLeads] = useState(initialLeads);
   const [filter, setFilter] = useState("todo");
@@ -229,11 +292,13 @@ export default function LeadsClient({ initialLeads = [] }) {
       <div>
         <Title2>Leads Salesforce</Title2>
         <Caption1 style={{ display: "block" }}>
-          Contrôle des sociétés avant l'appel, puis qualification infra + BANT sur la fiche compte.
+          Contrôle des sociétés, puis fiche d'approche par compte : interlocuteurs, coordonnées et messages prêts.
         </Caption1>
       </div>
 
       <ImportCard onImported={reload} />
+
+      {leads.length > 0 && <BatchPrepCard leads={leads} onDone={reload} />}
 
       <Card style={{ padding: "16px 16px 20px" }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -261,7 +326,7 @@ export default function LeadsClient({ initialLeads = [] }) {
                   <TableHeaderCell>Santé</TableHeaderCell>
                   <TableHeaderCell>SIRENE</TableHeaderCell>
                   <TableHeaderCell>Lead</TableHeaderCell>
-                  <TableHeaderCell>Qualif</TableHeaderCell>
+                  <TableHeaderCell>Fiche d'approche</TableHeaderCell>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -281,7 +346,11 @@ export default function LeadsClient({ initialLeads = [] }) {
                       </TableCell>
                       <TableCell><Caption1>{l.sf_lead_status}{l.sf_campaign ? ` · ${l.sf_campaign}` : ""}</Caption1></TableCell>
                       <TableCell>
-                        <Caption1>{l.qualif_started ? "En cours" : ""}{l.call_prep_at ? " · appel préparé" : ""}</Caption1>
+                        <Caption1>
+                          {l.call_prep_at
+                            ? `${l.contacts_found} interlocuteur(s)${l.standard_phone ? ` · ${l.standard_phone}` : ""}`
+                            : "—"}
+                        </Caption1>
                       </TableCell>
                     </TableRow>
                   );
