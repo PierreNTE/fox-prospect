@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Card, Body1, Caption1, Badge, Button, Spinner } from "@fluentui/react-components";
 import { ShieldCheckmark24Regular, ArrowClockwise24Regular } from "@fluentui/react-icons";
 import { fetchJson } from "@/lib/fetch-json";
-import { HEALTH_META } from "@/lib/dell-qualif";
+import { HEALTH_META } from "@/lib/health-meta";
 
 export default function HealthCard({ account, onDone, onError }) {
   const [busy, setBusy] = useState(false);

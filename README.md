@@ -424,11 +424,11 @@ Flux : **PDF Salesforce → contrôle des sociétés → préparation d'appel �
    état administratif, puis procédures collectives au BODACC. Verdict : *active*,
    *procédure en cours*, *fermée / liquidée* (à clôturer dans Salesforce), *à vérifier*.
    Les comptes importés ont `auto_watch = false` pour ne pas partir dans la veille payante.
-3. **Préparer l'appel** (fiche compte, Sonnet + web search, mis en cache) — actu
-   exploitable, intitulés à chercher dans ZoomInfo, phrases pour passer le standard,
-   ouverture, questions de découverte, hypothèses d'environnement, objections.
-4. **Qualification Dell** (fiche compte, sauvegarde auto) — serveurs (nombre, marque,
-   modèle, hyperviseur, fin de maintenance), stockage et backup (marque, modèle,
-   volumétrie, fin de maintenance), BANT, interlocuteur et next step. Badges
-   *Opportunité qualifiée* / *BANT complet*, alerte des fins de maintenance à moins de
-   12 mois, et bouton **Copier** du résumé à coller dans Salesforce.
+3. **Fiche d'approche** (fiche compte, ou en lot depuis **Leads** ; Sonnet + web search,
+   ≈ 0,10 € par compte, mise en cache) — interlocuteurs IT identifiés publiquement
+   (ajoutés aux contacts du compte, puis « Enrichir » pour email / téléphone),
+   standard, site, email générique et format des emails, actualité, angle, et messages
+   prêts : email (« Ouvrir dans Outlook », pré-rempli), invitation et message LinkedIn,
+   relance J+7, phrases pour passer le standard. « Planifier la séquence » crée les
+   tâches dans l'Agenda (email + LinkedIn J0, appel J+3, relance J+7). Rien n'est
+   envoyé automatiquement.
