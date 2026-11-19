@@ -231,3 +231,58 @@ describe("checkCompanyHealth — enchaînement SIRENE → BODACC (fetch simulé)
     expect(r.verdict.label).toMatch(/BODACC non consulté/);
   });
 });
+
+import { parsePastedCompanies } from "@/lib/salesforce-leads";
+
+describe("parseLeadPages — variantes d'export", () => {
+  const mk = (labels, rows) => [{
+    height: 792,
+    items: [
+      ...labels.map(([str, x]) => ({ str, x, y: 78 })),
+      ...rows.flatMap(([company, date, status], i) => [
+        { str: status, x: 82, y: 92 + i * 18 },
+        { str: company, x: 343, y: 92 + i * 18 },
+        { str: date, x: 437.2, y: 92 + i * 18 },
+      ]),
+    ],
+  }];
+
+  it("lit un export Salesforce en français", () => {
+    const { rows } = parseLeadPages(mk(
+      [["Nom", 44], ["Statut du lead", 82.5], ["Société", 343.5], ["Date de création", 437.7]],
+      [["ACME", "14/10/2026", "Nouveau"], ["BETA", "15/10/2026", "En cours"]]
+    ));
+    expect(rows.map((r) => r.company)).toEqual(["ACME", "BETA"]);
+    expect(rows[1].status).toBe("En cours");
+  });
+
+  it("recolle un intitulé découpé en morceaux (« Created » + « Date »)", () => {
+    const { rows } = parseLeadPages(mk(
+      [["Lead Status", 82.5], ["Company", 343.5], ["Created", 437.7, 22], ["Date", 459]],
+      [["ACME", "10/14/2026", "New"]]
+    ).map((p) => ({ ...p, items: p.items.map((i) => (i.str === "Created" ? { ...i, w: 20 } : i)) })));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("ne prend pas une ligne « Société Générale » pour un en-tête", () => {
+    const pages = mk([["Lead Status", 82.5], ["Company", 343.5], ["Created Date", 437.7]], [["ACME", "10/14/2026", "New"]]);
+    pages.push({ height: 792, items: [
+      { str: "Working", x: 82, y: 40 }, { str: "Société Générale", x: 343, y: 40 }, { str: "10/15/2026", x: 437.2, y: 40 },
+    ] });
+    const { rows } = parseLeadPages(pages);
+    expect(rows.map((r) => r.company)).toEqual(["ACME", "Société Générale"]);
+  });
+
+  it("explique un échec (diagnostic)", () => {
+    const { rows, diagnostic } = parseLeadPages([{ height: 792, items: [{ str: "Bonjour", x: 10, y: 10 }] }]);
+    expect(rows).toHaveLength(0);
+    expect(diagnostic).toMatchObject({ pages: 1, headerFound: false, sample: ["Bonjour"] });
+  });
+});
+
+describe("parsePastedCompanies", () => {
+  it("une société par ligne, dédoublonnée, en-tête et colonnes ignorés", () => {
+    const r = parsePastedCompanies("Company\tStatus\nACME\tNew\nacme\nBETA SANTE;Working\n\n");
+    expect(r.map((x) => x.company)).toEqual(["ACME", "BETA SANTE"]);
+  });
+});
