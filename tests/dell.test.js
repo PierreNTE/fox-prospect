@@ -285,4 +285,10 @@ describe("parsePastedCompanies", () => {
     const r = parsePastedCompanies("Company\tStatus\nACME\tNew\nacme\nBETA SANTE;Working\n\n");
     expect(r.map((x) => x.company)).toEqual(["ACME", "BETA SANTE"]);
   });
+
+  it("prend la colonne Company d'un tableau copié depuis Salesforce", () => {
+    const txt = "Name\tLead Status\tAccount\tCompany\tCreated Date\nOutbound Lead\tWorking\tACME GROUP\tACME (Lyon)\t07/10/2026\nOutbound Lead\tNew\tBETA\tBETA SANTE\t07/10/2026";
+    const r = parsePastedCompanies(txt);
+    expect(r.map((x) => [x.company, x.status])).toEqual([["ACME (Lyon)", "Working"], ["BETA SANTE", "New"]]);
+  });
 });
