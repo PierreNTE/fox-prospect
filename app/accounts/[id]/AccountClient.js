@@ -38,6 +38,9 @@ import { fetchJson } from "@/lib/fetch-json";
 import DocumentsCard from "@/components/DocumentsCard";
 import SignalsCard from "@/components/SignalsCard";
 import BudgetHint from "@/components/BudgetHint";
+import HealthCard from "@/components/HealthCard";
+import CallPrepCard from "@/components/CallPrepCard";
+import DellQualifCard from "@/components/DellQualifCard";
 
 const BRAND = "#5B53E6";
 const GREEN = "#107C10";
@@ -1082,6 +1085,12 @@ export default function AccountClient({ id, initialData = null }) {
           <Body1 style={{ color: "var(--colorNeutralForeground1)", lineHeight: 1.6 }}>{account.summary}</Body1>
         </Card>
       )}
+
+      {/* ── Cold calling Dell : santé société → préparation d'appel → qualif ── */}
+      <HealthCard account={account} onDone={load} onError={setError} />
+      <CallPrepCard accountId={id} prep={account.call_prep} generatedAt={account.call_prep_at} onDone={load} onError={setError} />
+      <DellQualifCard key={id} accountId={id} accountName={account.name}
+        initial={account.dell_qualif || {}} savedAt={account.dell_qualif_at} />
 
       {/* ── 1. Signaux de veille ──
           Placés AVANT les actualités : ils portent un lien vérifiable et une
