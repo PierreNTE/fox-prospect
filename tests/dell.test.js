@@ -292,3 +292,30 @@ describe("parsePastedCompanies", () => {
     expect(r.map((x) => [x.company, x.status])).toEqual([["ACME (Lyon)", "Working"], ["BETA SANTE", "New"]]);
   });
 });
+
+import { ocrWordsToItems } from "@/lib/salesforce-leads";
+
+describe("ocrWordsToItems — PDF sans texte relu par OCR", () => {
+  const S = 300 / 72;
+  const w = (text, x, y, width = text.length * 5) => ({
+    text, bbox: { x0: x * S, y0: (y - 6) * S, x1: (x + width) * S, y1: y * S },
+  });
+
+  it("recolle les mots d'une cellule mais pas deux colonnes voisines", () => {
+    const items = ocrWordsToItems([
+      w("Created", 437.7, 78, 22), w("Date", 461, 78, 13), w("Campaign", 500, 78, 26),
+      w("CAFE", 343, 92, 15), w("DE", 359.5, 92.6, 7), w("PARIS", 368, 92, 18),
+    ], S);
+    expect(items.map((i) => i.str)).toEqual(["Created Date", "Campaign", "CAFE DE PARIS"]);
+    expect(items[0].x).toBeCloseTo(437.7, 1);
+  });
+
+  it("alimente parseLeadPages comme un vrai PDF", () => {
+    const words = [
+      w("Lead", 82.5, 78, 13), w("Status", 97, 78, 18), w("Company", 343.5, 78, 25), w("Created", 437.7, 78, 22), w("Date", 461, 78, 13),
+      w("Working", 82, 92.5, 24), w("ACME", 343, 92.5, 18), w("SANTE", 363, 92.5, 21), w("05/11/2026", 437.2, 92.5, 30),
+    ];
+    const { rows } = parseLeadPages([{ height: 792, items: ocrWordsToItems(words, S) }]);
+    expect(rows).toEqual([expect.objectContaining({ company: "ACME SANTE", status: "Working" })]);
+  });
+});

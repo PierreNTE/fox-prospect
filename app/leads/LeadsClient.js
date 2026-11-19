@@ -34,6 +34,7 @@ const BATCH = 6;
 function ImportCard({ onImported }) {
   const inputRef = useRef(null);
   const [parsing, setParsing] = useState(false);
+  const [ocrStep, setOcrStep] = useState(null); // { page, pages } pendant la lecture OCR
   const [parsed, setParsed] = useState(null); // { companies, total, rows }
   const [statuses, setStatuses] = useState({ New: true, Working: true, "Closed by Sales": false });
   const [running, setRunning] = useState(false);
@@ -47,22 +48,23 @@ function ImportCard({ onImported }) {
   async function onFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setError(null); setSummary(null); setDiag(null); setParsing(true);
+    setError(null); setSummary(null); setDiag(null); setParsing(true); setOcrStep(null);
     try {
-      const { rows, total, diagnostic } = await readLeadsPdf(file);
+      const { rows, total, diagnostic, ocr } = await readLeadsPdf(file, { onProgress: setOcrStep });
       if (!rows.length) {
         setDiag(diagnostic);
         throw new Error(
           diagnostic?.textItems
             ? "Aucun lead reconnu : je ne trouve pas la ligne d'en-tête (Company / Société, Created Date…). Détail ci-dessous — ou colle la liste des sociétés."
-            : "Ce PDF ne contient pas de texte lisible (PDF image ou capture d'écran). Imprime la vue « Printable View » en PDF depuis le navigateur, ou colle la liste des sociétés."
+            : "Ce PDF ne contient pas de texte et l'OCR n'a pas retrouvé le tableau. Imprime la vue « Printable View » avec « Enregistrer au format PDF », ou colle la liste des sociétés."
         );
       }
-      setParsed({ rows, total, companies: dedupeByCompany(rows) });
+      setParsed({ rows, total, ocr, companies: dedupeByCompany(rows) });
     } catch (err) {
       setError(err.message);
     } finally {
       setParsing(false);
+      setOcrStep(null);
       e.target.value = "";
     }
   }
@@ -114,6 +116,9 @@ function ImportCard({ onImported }) {
           {parsing ? "Lecture du PDF…" : "Choisir le PDF"}
         </Button>
         {parsing && <Spinner size="tiny" />}
+        {parsing && ocrStep && (
+          <Caption1>PDF sans texte : lecture par OCR, page {ocrStep.page}/{ocrStep.pages}… (≈ 10 s par page)</Caption1>
+        )}
       </div>
 
       <details style={{ marginTop: 14 }}>
@@ -132,7 +137,14 @@ function ImportCard({ onImported }) {
           <Caption1>
             {parsed.rows.length} leads lus{parsed.total ? ` sur ${parsed.total} annoncés` : ""} ·{" "}
             {parsed.companies.length} sociétés distinctes
+            {parsed.ocr ? " · lu par OCR : vérifie l'orthographe des noms avant d'importer" : ""}
           </Caption1>
+          <details style={{ marginTop: 6 }}>
+            <summary style={{ cursor: "pointer" }}><Caption1>Voir les sociétés lues</Caption1></summary>
+            <Caption1 style={{ display: "block", marginTop: 6, lineHeight: 1.6 }}>
+              {parsed.companies.map((c) => `${c.company}${c.status ? ` (${c.status})` : ""}`).join(" · ")}
+            </Caption1>
+          </details>
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 8 }}>
             {Object.entries(counts).map(([st, n]) => (
               <Checkbox key={st} label={`${st} (${n})`} checked={statuses[st] ?? true}
