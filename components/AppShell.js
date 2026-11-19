@@ -51,6 +51,12 @@ export default function AppShell({ children }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Page de connexion : écran seul, sans navigation ni appels de fond
+  // (le bandeau hors ligne interrogeait /api/prospects avant la connexion).
+  if (path === "/login") {
+    return <main id="main-content" style={{ padding: "0 16px" }}>{children}</main>;
+  }
+
   return (
     <div className="app-shell">
       {/* Lien d'évitement : premier élément focusable, visible uniquement au

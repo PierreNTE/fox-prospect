@@ -76,7 +76,7 @@ export default function LoginPage() {
         </div>
       </form>
       <p className="sub small" style={{ marginTop: 14, textAlign: "center" }}>
-        Session conservée 30 jours sur cet appareil.
+        Session mémorisée 1 an sur cet appareil.
       </p>
     </div>
   );

@@ -3,7 +3,9 @@ import { SESSION_COOKIE, sessionToken } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-const THIRTY_DAYS = 60 * 60 * 24 * 30;
+// Session mémorisée un an sur l'appareil : on ne ressaisit pas l'identifiant à
+// chaque visite. Changer APP_PASSWORD invalide toutes les sessions d'un coup.
+const ONE_YEAR = 60 * 60 * 24 * 365;
 const WINDOW_MS = 15 * 60 * 1000; // 15 min
 const MAX_ATTEMPTS = 10;
 
@@ -67,7 +69,7 @@ export async function POST(request) {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: THIRTY_DAYS,
+    maxAge: ONE_YEAR,
     path: "/",
   });
   return response;

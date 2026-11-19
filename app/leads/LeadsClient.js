@@ -12,6 +12,7 @@ import {
   Spinner,
   Checkbox,
   Input,
+  Textarea,
   ProgressBar,
   Table,
   TableHeader,
@@ -22,7 +23,7 @@ import {
 } from "@fluentui/react-components";
 import { ArrowUpload24Regular, Search24Regular, ArrowClockwise24Regular } from "@fluentui/react-icons";
 import { fetchJson } from "@/lib/fetch-json";
-import { dedupeByCompany } from "@/lib/salesforce-leads";
+import { dedupeByCompany, parsePastedCompanies } from "@/lib/salesforce-leads";
 import { readLeadsPdf } from "@/lib/salesforce-pdf";
 import { HEALTH_META } from "@/lib/dell-qualif";
 
@@ -39,15 +40,24 @@ function ImportCard({ onImported }) {
   const [done, setDone] = useState(0);
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState(null);
+  const [diag, setDiag] = useState(null);
+  const [paste, setPaste] = useState("");
   const stopRef = useRef(false);
 
   async function onFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setError(null); setSummary(null); setParsing(true);
+    setError(null); setSummary(null); setDiag(null); setParsing(true);
     try {
-      const { rows, total } = await readLeadsPdf(file);
-      if (!rows.length) throw new Error("Aucun lead reconnu. Est-ce bien l'export « Printable View » d'une liste de leads ?");
+      const { rows, total, diagnostic } = await readLeadsPdf(file);
+      if (!rows.length) {
+        setDiag(diagnostic);
+        throw new Error(
+          diagnostic?.textItems
+            ? "Aucun lead reconnu : je ne trouve pas la ligne d'en-tête (Company / Société, Created Date…). Détail ci-dessous — ou colle la liste des sociétés."
+            : "Ce PDF ne contient pas de texte lisible (PDF image ou capture d'écran). Imprime la vue « Printable View » en PDF depuis le navigateur, ou colle la liste des sociétés."
+        );
+      }
       setParsed({ rows, total, companies: dedupeByCompany(rows) });
     } catch (err) {
       setError(err.message);
@@ -106,6 +116,17 @@ function ImportCard({ onImported }) {
         {parsing && <Spinner size="tiny" />}
       </div>
 
+      <details style={{ marginTop: 14 }}>
+        <summary style={{ cursor: "pointer" }}><Caption1>Ou coller une liste de sociétés (une par ligne, ou colonnes copiées depuis Salesforce / Excel)</Caption1></summary>
+        <Textarea value={paste} onChange={(_, d) => setPaste(d.value)} resize="vertical" rows={6}
+          placeholder={"ACME INDUSTRIE\nBETA SANTE (Lyon)\nCommune de Buxy (71)"} style={{ width: "100%", marginTop: 8 }} />
+        <Button style={{ marginTop: 8 }} disabled={!paste.trim() || running} onClick={() => {
+          const rows = parsePastedCompanies(paste);
+          setError(null); setDiag(null); setSummary(null);
+          setParsed({ rows, total: null, companies: dedupeByCompany(rows) });
+        }}>Utiliser cette liste</Button>
+      </details>
+
       {parsed && (
         <div style={{ marginTop: 16 }}>
           <Caption1>
@@ -142,6 +163,14 @@ function ImportCard({ onImported }) {
         </div>
       )}
       {error && <Caption1 style={{ color: "#C50F1F", display: "block", marginTop: 10 }}>{error}</Caption1>}
+      {diag && (
+        <pre style={{ marginTop: 8, padding: 10, borderRadius: 8, fontSize: 11.5, whiteSpace: "pre-wrap",
+          background: "var(--colorNeutralBackground3)" }}>
+          {`Pages : ${diag.pages} · fragments de texte : ${diag.textItems} · en-tête trouvé : ${diag.headerFound ? "oui" : "non"}`}
+          {diag.columns?.length ? `\nColonnes : ${diag.columns.join(", ")}` : ""}
+          {diag.sample?.length ? `\nDébut du texte lu :\n- ${diag.sample.join("\n- ")}` : ""}
+        </pre>
+      )}
     </Card>
   );
 }

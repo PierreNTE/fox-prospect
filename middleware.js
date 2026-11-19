@@ -59,10 +59,11 @@ export async function middleware(request) {
 
   // API : 401 explicite ; pages : redirection vers le formulaire de connexion.
   if (pathname.startsWith("/api/")) {
-    return new NextResponse("Authentification requise", {
-      status: 401,
-      headers: { "WWW-Authenticate": 'Basic realm="Fox Prospect"' },
-    });
+    // Pas d'en-tête WWW-Authenticate : il faisait surgir la fenêtre native de
+    // connexion du navigateur dès qu'un appel de fond (bandeau hors ligne,
+    // recherche…) partait avant la connexion. La page /login est la seule porte ;
+    // Basic Auth reste ACCEPTÉ ci-dessus pour curl et l'outillage.
+    return new NextResponse("Authentification requise", { status: 401 });
   }
   // Deep-link préservé : on mémorise la destination pour y revenir après
   // connexion (fiche épinglée sur l'écran d'accueil PWA, URL partagée…).
