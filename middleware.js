@@ -79,6 +79,6 @@ export const config = {
   // elles ne contiennent rien de sensible et l'installation mobile les
   // télécharge parfois sans cookie.
   matcher: [
-    "/((?!_next/|favicon.ico|manifest.webmanifest|sw.js|icon-192.png|icon-512.png|apple-touch-icon.png).*)",
+    "/((?!_next/|ocr/|favicon.ico|manifest.webmanifest|sw.js|icon-192.png|icon-512.png|apple-touch-icon.png).*)",
   ],
 };
