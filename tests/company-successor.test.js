@@ -151,3 +151,28 @@ describe("successeur cité par son nom", () => {
     expect(s).toMatchObject({ siren: NEW, confidence: "forte", reason: "fusion" });
   });
 });
+
+describe("noms Salesforce collés avec « / »", () => {
+  it("essaie chaque partie si le nom complet échoue", async () => {
+    const { checkCompanyHealth } = await import("@/lib/company-health");
+    const calls = [];
+    const orig = global.fetch;
+    global.fetch = async (url) => {
+      const u = new URL(url);
+      calls.push(u.searchParams.get("q") || u.searchParams.get("where"));
+      const q = u.searchParams.get("q");
+      const results = q === "BETA INDUSTRIE"
+        ? [{ siren: NEW, nom_complet: "BETA INDUSTRIE", etat_administratif: "A", siege: {} }]
+        : [];
+      return new Response(JSON.stringify(u.hostname.includes("recherche") ? { results } : { results: [] }), { status: 200 });
+    };
+    try {
+      const c = await checkCompanyHealth({ query: "ALPHA/BETA INDUSTRIE", hint: "" });
+      expect(c.match?.siren).toBe(NEW);
+      expect(c.verdict.status).toBe("active");
+      expect(calls).toContain("BETA INDUSTRIE");
+    } finally {
+      global.fetch = orig;
+    }
+  });
+});
