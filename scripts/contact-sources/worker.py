@@ -258,7 +258,11 @@ def main():
     except Exception:  # noqa: BLE001 — jamais bloquant
         pass
 
-    jobs = sb(f"scrape_jobs?status=eq.pending&order=created_at.asc&limit={JOB_BATCH}") or []
+    # Leads Salesforce (agent hebdo) d'abord : ce sont les comptes appelés cette
+    # semaine ; la veille automatique (created_by=auto) complète le lot.
+    jobs = sb(f"scrape_jobs?status=eq.pending&created_by=eq.leads-agent&order=created_at.asc&limit={JOB_BATCH}") or []
+    if len(jobs) < JOB_BATCH:
+        jobs += sb(f"scrape_jobs?status=eq.pending&or=(created_by.is.null,created_by.neq.leads-agent)&order=created_at.asc&limit={JOB_BATCH - len(jobs)}") or []
     print(f"=== worker : {len(jobs)} job(s) pending (cap {JOB_BATCH}) ===")
     if not jobs:
         return

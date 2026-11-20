@@ -3,7 +3,7 @@ import { getSupabase } from "@/lib/supabase";
 import { recheckAccount } from "@/lib/leads-import";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 // Revérifie SIRENE + BODACC pour un compte (gratuit, aucun appel IA).
 export async function POST(_request, { params }) {

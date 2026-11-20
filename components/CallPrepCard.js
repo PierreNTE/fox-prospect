@@ -8,7 +8,7 @@ import { useMemo, useState } from "react";
 import { Card, Body1, Caption1, Button, Spinner, Select, Badge } from "@fluentui/react-components";
 import {
   Sparkle24Regular, Copy24Regular, Mail24Regular, Phone24Regular, Globe24Regular,
-  LinkSquare24Regular, CalendarAdd24Regular, Checkmark24Regular, PersonSearch24Regular,
+  LinkSquare24Regular, CalendarAdd24Regular, Checkmark24Regular, PersonSearch24Regular, Search24Regular,
 } from "@fluentui/react-icons";
 import { fetchJson } from "@/lib/fetch-json";
 
@@ -40,6 +40,23 @@ function CopyButton({ text, label = "Copier" }) {
         try { await navigator.clipboard.writeText(text); setOk(true); setTimeout(() => setOk(false), 1800); } catch {}
       }}>
       {ok ? "Copié" : label}
+    </Button>
+  );
+}
+
+// ZoomInfo (licence Dell) : jamais interrogé automatiquement — ses conditions
+// interdisent l'accès robotisé. Le bouton copie le nom et ouvre ZoomInfo dans un
+// onglet : la recherche reste manuelle (coller + Entrée).
+function ZoomInfoButton({ name }) {
+  const [ok, setOk] = useState(false);
+  return (
+    <Button size="small" appearance="outline" icon={ok ? <Checkmark24Regular /> : <Search24Regular />}
+      title="Copie le nom de la société et ouvre ZoomInfo : colle-le dans la recherche"
+      onClick={async () => {
+        try { await navigator.clipboard.writeText(name || ""); setOk(true); setTimeout(() => setOk(false), 2500); } catch {}
+        window.open("https://app.zoominfo.com/", "_blank", "noopener,noreferrer");
+      }}>
+      {ok ? "Nom copié · colle-le" : "ZoomInfo"}
     </Button>
   );
 }
@@ -122,6 +139,7 @@ export default function CallPrepCard({ accountId, accountName, contacts = [], pr
           <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Fiche d'approche</Body1>
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <ZoomInfoButton name={accountName} />
           {prep && (
             <Button size="small" appearance="outline" disabled={planning}
               icon={planning ? <Spinner size="tiny" /> : <CalendarAdd24Regular />} onClick={planSequence}>

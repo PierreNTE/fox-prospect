@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Card,
@@ -189,8 +189,19 @@ function ImportCard({ onImported }) {
 
 // Préparation en lot des fiches d'approche (IA + web), un compte après l'autre.
 // S'arrête seul sur une erreur de budget ou d'API répétée.
+// Les leads arrivent déjà triés par priorité (A > B > C) : on prépare d'abord les
+// meilleurs, et seulement les N premiers, pour ne pas vider le budget du mois
+// sur des comptes qui ne seront jamais appelés.
+const PREP_COST_EUR = 0.1;
+const PREP_LIMITS = [10, 25, 0]; // 0 = tous
+
 function BatchPrepCard({ leads, onDone }) {
-  const todo = leads.filter((l) => l.health_status === "active" && !/closed/i.test(l.sf_lead_status || "") && !l.call_prep_at);
+  const [limit, setLimit] = useState(10);
+  const [includeC, setIncludeC] = useState(false);
+  const eligible = leads.filter((l) =>
+    l.health_status === "active" && !/closed/i.test(l.sf_lead_status || "") && !l.call_prep_at
+    && l.priority?.tier !== "X" && (includeC || l.priority?.tier !== "C"));
+  const todo = limit ? eligible.slice(0, limit) : eligible;
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(0);
@@ -232,12 +243,25 @@ function BatchPrepCard({ leads, onDone }) {
         <Body1><strong>Fiches d'approche</strong></Body1>
         <Caption1 style={{ flex: 1, minWidth: 220 }}>
           Pour chaque compte à appeler : interlocuteurs IT, standard, email, actu, email + LinkedIn + relance prêts.
-          ≈ 1 min et ≈ 0,10 € par compte, sous ton plafond budgétaire.
+          ≈ 1 min et ≈ 0,10 € par compte, sous ton plafond budgétaire. Les comptes les mieux classés passent en premier.
         </Caption1>
         <Button appearance="primary" disabled={running || !todo.length} onClick={run}>
-          {todo.length ? `Préparer ${todo.length} compte(s)` : "Tout est préparé"}
+          {todo.length
+            ? `Préparer ${todo.length} compte(s) · ≈ ${(todo.length * PREP_COST_EUR).toFixed(2).replace(".", ",")} €`
+            : "Tout est préparé"}
         </Button>
         {running && <Button onClick={() => { stopRef.current = true; }}>Arrêter</Button>}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <Caption1>Combien :</Caption1>
+        {PREP_LIMITS.map((n) => (
+          <Button key={n} size="small" appearance={limit === n ? "primary" : "secondary"} disabled={running}
+            onClick={() => setLimit(n)}>
+            {n ? `Top ${n}` : `Tous (${eligible.length})`}
+          </Button>
+        ))}
+        <Checkbox label="Inclure la priorité C" checked={includeC} disabled={running}
+          onChange={(_, d) => setIncludeC(!!d.checked)} />
       </div>
       {(running || done > 0) && (
         <div style={{ marginTop: 10 }}>
@@ -250,11 +274,219 @@ function BatchPrepCard({ leads, onDone }) {
   );
 }
 
+// Agent hebdomadaire (lib/leads-agent.js) : lancé automatiquement à la fin d'un
+// import, il met en file les fiches d'approche des meilleurs comptes A/B. Le
+// worker (toutes les 2 h) les prépare sans que la page reste ouverte.
+function AgentCard({ status, lastRun, onRun, running }) {
+  const s = status || {};
+  const leftThisWeek = Math.max(0, (s.max ?? 0) - (s.week ?? 0));
+  return (
+    <Card style={{ padding: "16px 20px", borderLeft: "3px solid var(--colorPaletteGreenBorderActive)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <Body1><strong>Agent automatique</strong></Body1>
+        <Caption1 style={{ flex: 1, minWidth: 220 }}>
+          À chaque import, prépare seul les fiches d'approche des comptes A et B (web public : site, standard,
+          interlocuteurs IT, actu, messages). Jusqu'à {s.max ?? "…"} fiches par semaine, sous ton plafond budgétaire.
+          Prêtes dans les 2 h, page fermée.
+        </Caption1>
+        <Button disabled={running || !leftThisWeek} onClick={onRun}>
+          {running ? <Spinner size="tiny" /> : "Lancer maintenant"}
+        </Button>
+      </div>
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        <Badge appearance="tint" color="informative">En file : {s.pending ?? 0}</Badge>
+        <Badge appearance="tint" color="success">Prêtes (7 j) : {s.done ?? 0}</Badge>
+        {s.error > 0 && <Badge appearance="tint" color="danger">Échecs : {s.error}</Badge>}
+        <Badge appearance="tint" color="subtle">Reste cette semaine : {leftThisWeek}</Badge>
+        {(s.scrape?.pending || s.scrape?.running || s.scrape?.done) ? (
+          <Badge appearance="tint" color="brand" title="Découverte des décideurs IT (LinkedIn public) + email, par le worker de scraping toutes les 6 h. Résultats dans Scraping.">
+            Décideurs IT : {s.scrape.done || 0} comptes faits · {(s.scrape.pending || 0) + (s.scrape.running || 0)} en file
+          </Badge>
+        ) : null}
+      </div>
+      {lastRun && (
+        <Caption1 style={{ display: "block", marginTop: 8 }}>
+          {lastRun.error
+            ? lastRun.error
+            : lastRun.queued
+              ? `${lastRun.queued} fiche(s) mise(s) en file : ${lastRun.names.slice(0, 5).join(", ")}${lastRun.names.length > 5 ? "…" : ""}`
+              : "Aucun nouveau compte A/B à préparer (ou plafond de la semaine atteint)."}
+          {lastRun.scrape?.queued ? ` · ${lastRun.scrape.queued} compte(s) envoyé(s) à la recherche des décideurs IT.` : ""}
+        </Caption1>
+      )}
+      {s.pending > 0 && s.last_error && (
+        <Caption1 style={{ display: "block", marginTop: 4, color: "var(--colorPaletteDarkOrangeForeground1)" }}>
+          Dernier blocage : {s.last_error.slice(0, 160)}
+        </Caption1>
+      )}
+    </Card>
+  );
+}
+
+// Fermées / introuvables : relance le contrôle, qui cherche désormais si la
+// société continue sous un autre nom (absorption, changement de nom, rachat).
+function SuccessorRecheckCard({ leads, onDone }) {
+  const todo = leads.filter((l) => l.health_status === "fermee" || l.health_status === "introuvable");
+  const [running, setRunning] = useState(false);
+  const [done, setDone] = useState(0);
+  const [found, setFound] = useState(0);
+  if (!todo.length) return null;
+
+  async function run() {
+    setRunning(true); setDone(0); setFound(0);
+    let n = 0;
+    for (let i = 0; i < todo.length; i++) {
+      const r = await fetchJson(`/api/accounts/${todo[i].id}/health`, { method: "POST" });
+      if (r.ok && r.data?.health?.health_detail?.successor) n++;
+      setDone(i + 1); setFound(n);
+      await new Promise((res) => setTimeout(res, 300));
+    }
+    setRunning(false);
+    onDone();
+  }
+
+  return (
+    <Card style={{ padding: "14px 20px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <Body1><strong>Radiées ou introuvables</strong></Body1>
+        <Caption1 style={{ flex: 1, minWidth: 220 }}>
+          Une société radiée vit souvent sous un autre nom : absorption, changement de dénomination, rachat.
+          Le BODACC est fouillé pour retrouver le successeur (gratuit).
+        </Caption1>
+        <Button disabled={running} onClick={run}>
+          {running ? `${done} / ${todo.length}…` : `Rechercher les repreneurs (${todo.length})`}
+        </Button>
+      </div>
+      {(running || done > 0) && (
+        <Caption1 style={{ display: "block", marginTop: 8 }}>
+          {found} société(s) retrouvée(s) sous un autre nom{running ? "" : " — voir le filtre « Repris / renommés »"}.
+        </Caption1>
+      )}
+    </Card>
+  );
+}
+
+// Collecte web gratuite (sans IA) : site, standard, emails, LinkedIn, outils,
+// marchés publics. Lancée seule après chaque import ; aussi faite chaque matin
+// par le cron Vercel (15 comptes) si la page n'est pas restée ouverte.
+function IntelBatchCard({ state, onRun, onStop }) {
+  const { remaining, running, done, log } = state;
+  return (
+    <Card style={{ padding: "14px 20px", borderLeft: "3px solid #0F7B6C" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <Body1><strong>Collecte d'infos publiques</strong></Body1>
+        <Caption1 style={{ flex: 1, minWidth: 220 }}>
+          Site officiel vérifié par SIREN, standard, emails, LinkedIn société, outils repérés (Microsoft 365, VMware,
+          Veeam…), emails probables des dirigeants, marchés publics IT. Gratuit, sans IA, ≈ 15 s par compte.
+        </Caption1>
+        {running
+          ? <Button onClick={onStop}>Arrêter</Button>
+          : <Button appearance="primary" disabled={!remaining} onClick={onRun}>
+              {remaining ? `Collecter (${remaining} compte${remaining > 1 ? "s" : ""})` : "Tout est collecté"}
+            </Button>}
+      </div>
+      {(running || done > 0) && (
+        <div style={{ marginTop: 8 }}>
+          {running && <ProgressBar />}
+          <Caption1 style={{ display: "block" }}>
+            {done} compte(s) collecté(s){running ? ` — reste ${remaining}, garde la page ouverte (sinon le cron du matin prend le relais)` : ""}
+          </Caption1>
+          {log.map((x, i) => <Caption1 key={i} style={{ display: "block", color: "var(--colorNeutralForeground2)" }}>{x}</Caption1>)}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function IntelCell({ i }) {
+  if (!i) return <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>—</Caption1>;
+  if (i.error) return <Caption1 title={i.error}>échec</Caption1>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      {i.phone && <Caption1><a href={`tel:${i.phone.replace(/\s/g, "")}`}>{i.phone}</a></Caption1>}
+      <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>
+        {[i.site ? "site" : null, i.emails ? `${i.emails} email(s)` : null, i.linkedin ? "LinkedIn" : null, i.mail, i.contracts ? `${i.contracts} marché(s)` : null]
+          .filter(Boolean).join(" · ") || "rien trouvé"}
+      </Caption1>
+      {i.tech?.length > 0 && <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>{i.tech.join(", ")}</Caption1>}
+    </div>
+  );
+}
+
+const TIER_COLOR = { A: "success", B: "warning", C: "informative", X: "subtle" };
+
+// Priorité d'appel déterministe (lib/lead-priority.js) ; le détail des points au survol.
+function PriorityBadge({ p }) {
+  if (!p) return <Caption1>—</Caption1>;
+  const title = [...(p.reasons || []), ...(p.flags || []).map((f) => `⚠ ${f}`)].join("\n");
+  return (
+    <Badge appearance="tint" color={TIER_COLOR[p.tier] || "subtle"} title={title}>
+      {p.tier === "X" ? "—" : `${p.tier} · ${p.score}`}
+    </Badge>
+  );
+}
+
 export default function LeadsClient({ initialLeads = [] }) {
   const [leads, setLeads] = useState(initialLeads);
   const [filter, setFilter] = useState("todo");
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const [agent, setAgent] = useState(null);
+  const [agentRun, setAgentRun] = useState(null);
+  const [agentBusy, setAgentBusy] = useState(false);
+
+  useEffect(() => {
+    fetchJson("/api/leads/agent").then((r) => { if (r.ok) setAgent(r.data); });
+  }, []);
+
+  async function runAgent() {
+    setAgentBusy(true);
+    const r = await fetchJson("/api/leads/agent", { method: "POST" });
+    if (r.ok) { setAgentRun(r.data); setAgent(r.data.status); }
+    else setAgentRun({ error: r.error });
+    setAgentBusy(false);
+  }
+
+  const [intel, setIntel] = useState({ remaining: 0, running: false, done: 0, log: [] });
+  const intelStop = useRef(false);
+
+  useEffect(() => {
+    fetchJson("/api/leads/intel").then((r) => { if (r.ok) setIntel((x) => ({ ...x, remaining: r.data.remaining })); });
+  }, []);
+
+  async function runIntel() {
+    intelStop.current = false;
+    setIntel((x) => ({ ...x, running: true, done: 0, log: [] }));
+    let done = 0;
+    let failures = 0;
+    for (;;) {
+      if (intelStop.current) break;
+      const r = await fetchJson("/api/leads/intel", { method: "POST" });
+      if (!r.ok) {
+        failures++;
+        setIntel((x) => ({ ...x, log: [`Erreur : ${r.error}`, ...x.log].slice(0, 5) }));
+        if (failures >= 2) break;
+        continue;
+      }
+      failures = 0;
+      const res = r.data.results || [];
+      done += res.length;
+      const lines = res.map((x) => (x.error ? `${x.name} : échec` : `${x.name} : ${x.site ? "site" : "pas de site"}, ${x.phones} tél., ${x.emails} email(s), ${x.tech} outil(s)`));
+      setIntel((x) => ({ ...x, done, remaining: r.data.remaining, log: [...lines, ...x.log].slice(0, 5) }));
+      if (!res.length || !r.data.remaining) break;
+    }
+    setIntel((x) => ({ ...x, running: false }));
+    reload();
+  }
+
+  async function afterImport() {
+    await reload();
+    await runAgent();
+    // Collecte gratuite des nouveaux comptes, sans attendre (la page reste utilisable).
+    const r = await fetchJson("/api/leads/intel");
+    if (r.ok && r.data.remaining) { setIntel((x) => ({ ...x, remaining: r.data.remaining })); runIntel(); }
+  }
 
   async function reload() {
     setLoading(true);
@@ -264,10 +496,14 @@ export default function LeadsClient({ initialLeads = [] }) {
   }
 
   const counts = useMemo(() => {
-    const c = { all: leads.length, todo: 0 };
+    const c = { all: leads.length, todo: 0, new: 0, missing: 0 };
     for (const l of leads) {
       c[l.health_status] = (c[l.health_status] || 0) + 1;
       if (l.health_status === "active" && !/closed/i.test(l.sf_lead_status || "")) c.todo++;
+      if (l.is_new) c.new++;
+      if (l.missing_from_last_import) c.missing++;
+      if (l.successor) c.successor = (c.successor || 0) + 1;
+      if (l.health_status === "fermee" || l.health_status === "introuvable") c.recheck = (c.recheck || 0) + 1;
     }
     return c;
   }, [leads]);
@@ -276,14 +512,20 @@ export default function LeadsClient({ initialLeads = [] }) {
     if (q && !l.name.toLowerCase().includes(q.toLowerCase())) return false;
     if (filter === "all") return true;
     if (filter === "todo") return l.health_status === "active" && !/closed/i.test(l.sf_lead_status || "");
+    if (filter === "new") return l.is_new;
+    if (filter === "missing") return l.missing_from_last_import;
+    if (filter === "successor") return !!l.successor;
     return l.health_status === filter;
   });
 
   const FILTERS = [
     ["todo", "À appeler"],
+    ["new", "Nouveaux (7 j)"],
     ["vigilance", HEALTH_META.vigilance.label],
     ["fermee", "À clôturer dans Salesforce"],
     ["introuvable", HEALTH_META.introuvable.label],
+    ["successor", "Repris / renommés"],
+    ["missing", "Absents du dernier import"],
     ["all", "Tous"],
   ];
 
@@ -296,9 +538,15 @@ export default function LeadsClient({ initialLeads = [] }) {
         </Caption1>
       </div>
 
-      <ImportCard onImported={reload} />
+      <ImportCard onImported={afterImport} />
+
+      {leads.length > 0 && <IntelBatchCard state={intel} onRun={runIntel} onStop={() => { intelStop.current = true; }} />}
+
+      {leads.length > 0 && <AgentCard status={agent} lastRun={agentRun} onRun={runAgent} running={agentBusy} />}
 
       {leads.length > 0 && <BatchPrepCard leads={leads} onDone={reload} />}
+
+      <SuccessorRecheckCard leads={leads} onDone={reload} />
 
       <Card style={{ padding: "16px 16px 20px" }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -322,9 +570,11 @@ export default function LeadsClient({ initialLeads = [] }) {
             <Table size="small" aria-label="Leads Salesforce">
               <TableHeader>
                 <TableRow>
+                  <TableHeaderCell style={{ width: 84 }}>Priorité</TableHeaderCell>
                   <TableHeaderCell>Société (Salesforce)</TableHeaderCell>
                   <TableHeaderCell>Santé</TableHeaderCell>
                   <TableHeaderCell>SIRENE</TableHeaderCell>
+                  <TableHeaderCell>Infos publiques</TableHeaderCell>
                   <TableHeaderCell>Lead</TableHeaderCell>
                   <TableHeaderCell>Fiche d'approche</TableHeaderCell>
                 </TableRow>
@@ -334,7 +584,30 @@ export default function LeadsClient({ initialLeads = [] }) {
                   const m = HEALTH_META[l.health_status] || { label: "—", color: "subtle" };
                   return (
                     <TableRow key={l.id}>
-                      <TableCell><Link href={`/accounts/${l.id}`}>{l.name}</Link></TableCell>
+                      <TableCell>
+                        <PriorityBadge p={l.priority} />
+                      </TableCell>
+                      <TableCell>
+                        <Link href={`/accounts/${l.id}`}>{l.name}</Link>
+                        {l.is_new && <Badge appearance="filled" color="brand" size="small" style={{ marginLeft: 6 }}>Nouveau</Badge>}
+                        {l.missing_from_last_import && (
+                          <Badge appearance="outline" color="subtle" size="small" style={{ marginLeft: 6 }}
+                            title="Absent du dernier export : lead réattribué ou clos dans Salesforce">Absent</Badge>
+                        )}
+                        {l.successor && (
+                          <Caption1 style={{ display: "block", color: l.successor.confidence === "forte" ? "#107C10" : "var(--colorPaletteDarkOrangeForeground1)" }}>
+                            {l.successor.confidence === "forte" ? "→ Continue sous" : "→ Piste :"} {l.successor.name} ({l.successor.reason_label})
+                          </Caption1>
+                        )}
+                        {l.priority?.angle && (
+                          <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground2)" }}>{l.priority.angle}</Caption1>
+                        )}
+                        {l.priority?.flags?.length > 0 && (
+                          <Caption1 style={{ display: "block", color: "var(--colorPaletteDarkOrangeForeground1)" }}>
+                            ⚠ {l.priority.flags.join(" · ")}
+                          </Caption1>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Badge appearance="tint" color={m.color} title={l.health_label}>{m.label}</Badge>
                       </TableCell>
@@ -344,6 +617,7 @@ export default function LeadsClient({ initialLeads = [] }) {
                           {l.match_confidence === "probable" ? " (?)" : ""}
                         </Caption1>
                       </TableCell>
+                      <TableCell><IntelCell i={l.intel} /></TableCell>
                       <TableCell><Caption1>{l.sf_lead_status}{l.sf_campaign ? ` · ${l.sf_campaign}` : ""}</Caption1></TableCell>
                       <TableCell>
                         <Caption1>

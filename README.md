@@ -57,6 +57,9 @@ double plafond mensuel et lissé (voir *Variables d'environnement*).
    | `supabase/migration-v18-fondations-s1.sql` | index uniques + dédup prospects, cache `company_research`, RPC budget |
    | `supabase/migration-v19-scale-s5.sql` | vue `hot_accounts` (signal < 14 j sans contact < 30 j) |
    | `supabase/migration-v23-dell-cold-calling.sql` | module cold calling Dell : import leads Salesforce, santé société, qualif infra + BANT, préparation d'appel |
+   | `supabase/migration-v24-leads-priorite.sql` | suivi hebdo des leads Salesforce : `sf_first_seen_at` / `sf_last_seen_at` (badges « Nouveau » / « Absent ») |
+   | `supabase/migration-v26-collecte-web.sql` | `accounts.web_intel` / `web_intel_at` : collecte web gratuite par compte |
+   | `supabase/migration-v25-agent-leads.sql` | jobs `call_prep` (agent hebdo des leads) et `enrich_contact` ajoutés à la contrainte `jobs_kind_check` |
 
    > `v18` et `v19` portaient les numéros `v7` et `v10` sur une branche restée à
    > part ; ils ont été renumérotés au rebasage du 26 juillet 2026, les numéros
@@ -132,7 +135,7 @@ cookie sécurisé. Le formulaire de login est protégé par un **rate-limiting**
 ```bash
 npm install
 npm run dev    # → http://localhost:3000
-npm test       # 49 tests unitaires — scoring, NBA, schémas, enrich, signaux, budget
+npm test       # tests unitaires — scoring, NBA, schémas, enrich, signaux, budget
 ```
 
 ### 4. Déploiement Vercel
@@ -432,3 +435,47 @@ Flux : **PDF Salesforce → contrôle des sociétés → préparation d'appel �
    relance J+7, phrases pour passer le standard. « Planifier la séquence » crée les
    tâches dans l'Agenda (email + LinkedIn J0, appel J+3, relance J+7). Rien n'est
    envoyé automatiquement.
+4. **Priorité d'appel** (`lib/lead-priority.js`, gratuit, sans IA) — chaque lead reçoit
+   une priorité **A / B / C** (0-100) calculée sur les données publiques déjà
+   récupérées : effectif, secteur NAF, catégorie INSEE, établissements, CA publié,
+   statut Working. Malus : holding (64.20Z), acheteur public, association,
+   procédure collective, rapprochement SIRENE incertain. Le détail des points
+   s'affiche au survol, avec un angle d'appel orienté infra. La liste est triée par
+   priorité, et la préparation en lot traite d'abord les meilleurs comptes, par
+   paquets **Top 10 / Top 25** (priorité C exclue par défaut), coût estimé affiché.
+   Poids réglables dans `LEAD_PRIORITY_CONFIG`.
+5. **Suivi hebdomadaire** (migration v24) — badge **Nouveau** pour les leads apparus
+   dans les 7 derniers jours, filtre **Absents du dernier import** pour les leads
+   réattribués ou clos dans Salesforce. Sans la migration, l'app fonctionne comme en
+   v23 (repli automatique).
+6. **Agent automatique** (`lib/leads-agent.js`, migration v25) — à la fin de chaque
+   import (ou bouton « Lancer maintenant »), met en file `jobs` (kind `call_prep`) la
+   fiche d'approche des comptes **A et B** actifs, ouverts et non préparés, dans l'ordre
+   de priorité. Le worker GitHub Actions (toutes les 2 h) et le cron Vercel les
+   préparent sans page ouverte. Plafond glissant **`AGENT_PREP_MAX`** fiches / 7 jours
+   (défaut 15 ≈ 1,50 €), en plus du kill-switch `MONTHLY_BUDGET_EUR` ; un plafond
+   budgétaire ou un crédit Anthropic épuisé replanifie le job au lieu de l'abandonner.
+   **ZoomInfo n'est jamais interrogé automatiquement** (licence Dell nominative, accès
+   robotisé interdit) : le bouton « ZoomInfo » de la fiche copie le nom et ouvre l'outil.
+7. **Radiées → successeur** (`lib/company-successor.js`) — une société fermée ou
+   introuvable est recherchée au BODACC : radiation après fusion-absorption / TUP /
+   plan de cession (SIREN cités, clé de Luhn), annonces citant son nom d'un bloc
+   (« ancienne dénomination », « précédent propriétaire »). Successeur actif : le
+   compte redevient appelable sous son identité (`health_detail.successor`,
+   `predecessor`). Homonyme actif seul : simple piste. Bouton « Rechercher les
+   repreneurs » sur /leads.
+8. **Collecte d'infos publiques** (`lib/account-intel.js`, migration v26, gratuit,
+   sans IA) — site officiel (site connu → Wikidata par SIREN → Brave Search si
+   `BRAVE_API_KEY` → domaines devinés existant au DNS), vérifié par le SIREN des
+   mentions légales ; accueil + mentions + contact + à propos + recrutement (robots.txt
+   respecté) : standard, emails, LinkedIn société, hébergeur, outils cités (VMware,
+   Veeam, NetApp…) ; DNS : messagerie (Microsoft 365 / Google), passerelle, DMARC,
+   services SaaS (SPF / TXT) ; emails probables des dirigeants (motif observé ou
+   courant, seulement si le domaine a un MX) ; acheteur public : avis BOAMP
+   informatiques. Lancée après chaque import (page ouverte) et par le cron Vercel du
+   matin (`INTEL_PER_CRON`, défaut 15) — indépendante de GitHub Actions et du crédit IA.
+9. **Décideurs IT (worker de scraping)** — l'agent envoie aussi les comptes A/B actifs
+   au worker `scrape-worker` (GitHub Actions, toutes les 6 h, gratuit, sans IA) :
+   découverte des postes IT et emails, résultats dans **Scraping** (à promouvoir en
+   contacts). Un compte n'est envoyé qu'une fois ; plafond `SCRAPE_WEEKLY_MAX`
+   (défaut 25 / 7 jours). Les jobs des leads passent avant ceux de la veille.

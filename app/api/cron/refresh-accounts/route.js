@@ -4,6 +4,7 @@ import { analyzeAccount } from "@/lib/account-analyze";
 import { drainJobQueue } from "@/lib/process-jobs";
 import { checkMonthlyBudget, budgetMessage } from "@/lib/budget";
 import { enqueueAutoQualif } from "@/lib/auto-qualif";
+import { collectAndSave, pendingIntelAccounts } from "@/lib/account-intel";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // plusieurs analyses à la suite (Fluid Compute)
@@ -24,6 +25,20 @@ export async function GET(request) {
   }
 
   const supabase = getSupabase();
+  // En premier : collecte web gratuite (sans IA, hors budget) des leads Salesforce pas encore
+  // collectés : ne dépend ni de GitHub Actions ni du crédit Anthropic.
+  let intel = { done: 0 };
+  try {
+    const started = Date.now();
+    const pending = await pendingIntelAccounts(supabase, { limit: Number(process.env.INTEL_PER_CRON) || 15 });
+    for (const a of pending) {
+      if (Date.now() - started > 120_000) break; // marge sous maxDuration
+      await collectAndSave(supabase, a).then(() => { intel.done++; }).catch(() => {});
+    }
+  } catch (e) {
+    intel = { error: e.message };
+  }
+
   const dailyCap = Number(process.env.DAILY_RESEARCH_CAP) || 50;
   const batch = Number(process.env.WATCH_BATCH) || 2; // nb max de comptes par exécution
 
@@ -31,7 +46,7 @@ export async function GET(request) {
   // MONTHLY_BUDGET_EUR (sinon le cron tournerait tous les jours sans plafond €).
   const budgetState = await checkMonthlyBudget(supabase);
   if (budgetState.exceeded) {
-    return NextResponse.json({ refreshed: 0, reason: budgetMessage(budgetState) });
+    return NextResponse.json({ refreshed: 0, reason: budgetMessage(budgetState), intel });
   }
 
   // Budget déjà consommé sur 24 h (comptes rafraîchis).
@@ -44,7 +59,7 @@ export async function GET(request) {
   const room = Math.max(0, dailyCap - (spent ?? 0));
   const limit = Math.min(batch, room);
   if (limit === 0) {
-    return NextResponse.json({ refreshed: 0, reason: "plafond quotidien atteint" });
+    return NextResponse.json({ refreshed: 0, reason: "plafond quotidien atteint", intel });
   }
 
   // Comptes à surveiller, les plus anciens d'abord (jamais analysés en tête).
@@ -87,5 +102,5 @@ export async function GET(request) {
     queue = { error: e.message };
   }
 
-  return NextResponse.json({ refreshed: done.length, details: done, autoq, queue });
+  return NextResponse.json({ refreshed: done.length, details: done, autoq, queue, intel });
 }

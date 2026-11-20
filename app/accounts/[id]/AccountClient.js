@@ -40,6 +40,7 @@ import SignalsCard from "@/components/SignalsCard";
 import BudgetHint from "@/components/BudgetHint";
 import HealthCard from "@/components/HealthCard";
 import CallPrepCard from "@/components/CallPrepCard";
+import IntelCard from "@/components/IntelCard";
 
 const BRAND = "#5B53E6";
 const GREEN = "#107C10";
@@ -1087,6 +1088,7 @@ export default function AccountClient({ id, initialData = null }) {
 
       {/* ── Prospection : santé société → fiche d'approche (contacts, coordonnées, messages) ── */}
       <HealthCard account={account} onDone={load} onError={setError} />
+      <IntelCard account={account} onDone={load} onError={setError} />
       <CallPrepCard accountId={id} accountName={account.name} contacts={contacts} prep={account.call_prep}
         generatedAt={account.call_prep_at} onDone={load} onError={setError} />
 
