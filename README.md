@@ -58,6 +58,7 @@ double plafond mensuel et lissé (voir *Variables d'environnement*).
    | `supabase/migration-v19-scale-s5.sql` | vue `hot_accounts` (signal < 14 j sans contact < 30 j) |
    | `supabase/migration-v23-dell-cold-calling.sql` | module cold calling Dell : import leads Salesforce, santé société, qualif infra + BANT, préparation d'appel |
    | `supabase/migration-v24-leads-priorite.sql` | suivi hebdo des leads Salesforce : `sf_first_seen_at` / `sf_last_seen_at` (badges « Nouveau » / « Absent ») |
+   | `supabase/migration-v26-collecte-web.sql` | `accounts.web_intel` / `web_intel_at` : collecte web gratuite par compte |
    | `supabase/migration-v25-agent-leads.sql` | jobs `call_prep` (agent hebdo des leads) et `enrich_contact` ajoutés à la contrainte `jobs_kind_check` |
 
    > `v18` et `v19` portaient les numéros `v7` et `v10` sur une branche restée à
@@ -456,3 +457,20 @@ Flux : **PDF Salesforce → contrôle des sociétés → préparation d'appel �
    budgétaire ou un crédit Anthropic épuisé replanifie le job au lieu de l'abandonner.
    **ZoomInfo n'est jamais interrogé automatiquement** (licence Dell nominative, accès
    robotisé interdit) : le bouton « ZoomInfo » de la fiche copie le nom et ouvre l'outil.
+7. **Radiées → successeur** (`lib/company-successor.js`) — une société fermée ou
+   introuvable est recherchée au BODACC : radiation après fusion-absorption / TUP /
+   plan de cession (SIREN cités, clé de Luhn), annonces citant son nom d'un bloc
+   (« ancienne dénomination », « précédent propriétaire »). Successeur actif : le
+   compte redevient appelable sous son identité (`health_detail.successor`,
+   `predecessor`). Homonyme actif seul : simple piste. Bouton « Rechercher les
+   repreneurs » sur /leads.
+8. **Collecte d'infos publiques** (`lib/account-intel.js`, migration v26, gratuit,
+   sans IA) — site officiel (site connu → Wikidata par SIREN → Brave Search si
+   `BRAVE_API_KEY` → domaines devinés existant au DNS), vérifié par le SIREN des
+   mentions légales ; accueil + mentions + contact + à propos + recrutement (robots.txt
+   respecté) : standard, emails, LinkedIn société, hébergeur, outils cités (VMware,
+   Veeam, NetApp…) ; DNS : messagerie (Microsoft 365 / Google), passerelle, DMARC,
+   services SaaS (SPF / TXT) ; emails probables des dirigeants (motif observé ou
+   courant, seulement si le domaine a un MX) ; acheteur public : avis BOAMP
+   informatiques. Lancée après chaque import (page ouverte) et par le cron Vercel du
+   matin (`INTEL_PER_CRON`, défaut 15) — indépendante de GitHub Actions et du crédit IA.

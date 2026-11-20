@@ -360,6 +360,53 @@ function SuccessorRecheckCard({ leads, onDone }) {
   );
 }
 
+// Collecte web gratuite (sans IA) : site, standard, emails, LinkedIn, outils,
+// marchés publics. Lancée seule après chaque import ; aussi faite chaque matin
+// par le cron Vercel (15 comptes) si la page n'est pas restée ouverte.
+function IntelBatchCard({ state, onRun, onStop }) {
+  const { remaining, running, done, log } = state;
+  return (
+    <Card style={{ padding: "14px 20px", borderLeft: "3px solid #0F7B6C" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <Body1><strong>Collecte d'infos publiques</strong></Body1>
+        <Caption1 style={{ flex: 1, minWidth: 220 }}>
+          Site officiel vérifié par SIREN, standard, emails, LinkedIn société, outils repérés (Microsoft 365, VMware,
+          Veeam…), emails probables des dirigeants, marchés publics IT. Gratuit, sans IA, ≈ 15 s par compte.
+        </Caption1>
+        {running
+          ? <Button onClick={onStop}>Arrêter</Button>
+          : <Button appearance="primary" disabled={!remaining} onClick={onRun}>
+              {remaining ? `Collecter (${remaining} compte${remaining > 1 ? "s" : ""})` : "Tout est collecté"}
+            </Button>}
+      </div>
+      {(running || done > 0) && (
+        <div style={{ marginTop: 8 }}>
+          {running && <ProgressBar />}
+          <Caption1 style={{ display: "block" }}>
+            {done} compte(s) collecté(s){running ? ` — reste ${remaining}, garde la page ouverte (sinon le cron du matin prend le relais)` : ""}
+          </Caption1>
+          {log.map((x, i) => <Caption1 key={i} style={{ display: "block", color: "var(--colorNeutralForeground2)" }}>{x}</Caption1>)}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function IntelCell({ i }) {
+  if (!i) return <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>—</Caption1>;
+  if (i.error) return <Caption1 title={i.error}>échec</Caption1>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      {i.phone && <Caption1><a href={`tel:${i.phone.replace(/\s/g, "")}`}>{i.phone}</a></Caption1>}
+      <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>
+        {[i.site ? "site" : null, i.emails ? `${i.emails} email(s)` : null, i.linkedin ? "LinkedIn" : null, i.mail, i.contracts ? `${i.contracts} marché(s)` : null]
+          .filter(Boolean).join(" · ") || "rien trouvé"}
+      </Caption1>
+      {i.tech?.length > 0 && <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>{i.tech.join(", ")}</Caption1>}
+    </div>
+  );
+}
+
 const TIER_COLOR = { A: "success", B: "warning", C: "informative", X: "subtle" };
 
 // Priorité d'appel déterministe (lib/lead-priority.js) ; le détail des points au survol.
@@ -395,9 +442,44 @@ export default function LeadsClient({ initialLeads = [] }) {
     setAgentBusy(false);
   }
 
+  const [intel, setIntel] = useState({ remaining: 0, running: false, done: 0, log: [] });
+  const intelStop = useRef(false);
+
+  useEffect(() => {
+    fetchJson("/api/leads/intel").then((r) => { if (r.ok) setIntel((x) => ({ ...x, remaining: r.data.remaining })); });
+  }, []);
+
+  async function runIntel() {
+    intelStop.current = false;
+    setIntel((x) => ({ ...x, running: true, done: 0, log: [] }));
+    let done = 0;
+    let failures = 0;
+    for (;;) {
+      if (intelStop.current) break;
+      const r = await fetchJson("/api/leads/intel", { method: "POST" });
+      if (!r.ok) {
+        failures++;
+        setIntel((x) => ({ ...x, log: [`Erreur : ${r.error}`, ...x.log].slice(0, 5) }));
+        if (failures >= 2) break;
+        continue;
+      }
+      failures = 0;
+      const res = r.data.results || [];
+      done += res.length;
+      const lines = res.map((x) => (x.error ? `${x.name} : échec` : `${x.name} : ${x.site ? "site" : "pas de site"}, ${x.phones} tél., ${x.emails} email(s), ${x.tech} outil(s)`));
+      setIntel((x) => ({ ...x, done, remaining: r.data.remaining, log: [...lines, ...x.log].slice(0, 5) }));
+      if (!res.length || !r.data.remaining) break;
+    }
+    setIntel((x) => ({ ...x, running: false }));
+    reload();
+  }
+
   async function afterImport() {
     await reload();
     await runAgent();
+    // Collecte gratuite des nouveaux comptes, sans attendre (la page reste utilisable).
+    const r = await fetchJson("/api/leads/intel");
+    if (r.ok && r.data.remaining) { setIntel((x) => ({ ...x, remaining: r.data.remaining })); runIntel(); }
   }
 
   async function reload() {
@@ -452,6 +534,8 @@ export default function LeadsClient({ initialLeads = [] }) {
 
       <ImportCard onImported={afterImport} />
 
+      {leads.length > 0 && <IntelBatchCard state={intel} onRun={runIntel} onStop={() => { intelStop.current = true; }} />}
+
       {leads.length > 0 && <AgentCard status={agent} lastRun={agentRun} onRun={runAgent} running={agentBusy} />}
 
       {leads.length > 0 && <BatchPrepCard leads={leads} onDone={reload} />}
@@ -484,6 +568,7 @@ export default function LeadsClient({ initialLeads = [] }) {
                   <TableHeaderCell>Société (Salesforce)</TableHeaderCell>
                   <TableHeaderCell>Santé</TableHeaderCell>
                   <TableHeaderCell>SIRENE</TableHeaderCell>
+                  <TableHeaderCell>Infos publiques</TableHeaderCell>
                   <TableHeaderCell>Lead</TableHeaderCell>
                   <TableHeaderCell>Fiche d'approche</TableHeaderCell>
                 </TableRow>
@@ -526,6 +611,7 @@ export default function LeadsClient({ initialLeads = [] }) {
                           {l.match_confidence === "probable" ? " (?)" : ""}
                         </Caption1>
                       </TableCell>
+                      <TableCell><IntelCell i={l.intel} /></TableCell>
                       <TableCell><Caption1>{l.sf_lead_status}{l.sf_campaign ? ` · ${l.sf_campaign}` : ""}</Caption1></TableCell>
                       <TableCell>
                         <Caption1>
