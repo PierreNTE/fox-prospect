@@ -30,6 +30,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
+      # Leads Salesforce, gratuit et sans IA : collecte d'infos publiques, recherche
+      # des successeurs des radiées, puis agent (mise en file des fiches et des
+      # recherches de décideurs IT). Jamais bloquant pour le drain qui suit.
+      - name: Leads — collecte web, successeurs, agent
+        continue-on-error: true
+        env:
+          BASE_URL: ${{ vars.APP_BASE_URL || 'https://fox-prospect.vercel.app' }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then echo "::warning::CRON_SECRET absent — étape ignorée."; exit 0; fi
+          resp=$(curl -sS --max-time 320 -H "Authorization: Bearer $CRON_SECRET" "$BASE_URL/api/cron/leads-intel")
+          echo "$resp" | jq '{intel: (.intel | length), successor: (.successor | length), agent, duration_ms, error}' || echo "$resp" | head -c 500
+
       - name: Drainer la file jusqu'à épuisement (ou plafond budget)
         env:
           # URL de prod (Variable repo facultative ; défaut = domaine Vercel).
