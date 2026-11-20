@@ -42,6 +42,31 @@ export default function HealthCard({ account, onDone, onError }) {
           {d.match_confidence === "probable" ? " · rapprochement probable, à confirmer" : ""}
         </Caption1>
       )}
+      {d.predecessor?.siren && d.successor?.confidence === "forte" && (
+        <Caption1 style={{ display: "block", marginTop: 4, color: "var(--colorNeutralForeground2)" }}>
+          Société d'origine : {d.predecessor.name || "—"} · SIREN{" "}
+          <a href={`https://annuaire-entreprises.data.gouv.fr/entreprise/${d.predecessor.siren}`} target="_blank" rel="noreferrer">{d.predecessor.siren}</a>
+          {" "}({d.predecessor.label})
+        </Caption1>
+      )}
+      {d.successor && (
+        <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 8, background: "var(--colorNeutralBackground3)" }}>
+          <Caption1 style={{ display: "block" }}>
+            <strong>{d.successor.confidence === "forte" ? "Continue sous :" : "Piste à vérifier :"}</strong>{" "}
+            {d.successor.name} · SIREN{" "}
+            <a href={`https://annuaire-entreprises.data.gouv.fr/entreprise/${d.successor.siren}`} target="_blank" rel="noreferrer">{d.successor.siren}</a>
+            {" "}— {d.successor.reason_label}{d.successor.date ? ` (${String(d.successor.date).slice(0, 10)})` : ""}
+          </Caption1>
+          {d.successor.evidence && (
+            <Caption1 style={{ display: "block", marginTop: 4, color: "var(--colorNeutralForeground2)", fontStyle: "italic" }}>
+              BODACC : {d.successor.evidence.slice(0, 260)}
+            </Caption1>
+          )}
+          {d.successor.confidence === "forte" && (
+            <Caption1 style={{ display: "block", marginTop: 4 }}>Pense à renommer le compte dans Salesforce.</Caption1>
+          )}
+        </div>
+      )}
       {d.procedure_nature && (
         <Caption1 style={{ display: "block", marginTop: 4 }}>
           BODACC : {d.procedure_nature}{d.procedure_date ? ` (${d.procedure_date})` : ""}

@@ -317,6 +317,49 @@ function AgentCard({ status, lastRun, onRun, running }) {
   );
 }
 
+// Fermées / introuvables : relance le contrôle, qui cherche désormais si la
+// société continue sous un autre nom (absorption, changement de nom, rachat).
+function SuccessorRecheckCard({ leads, onDone }) {
+  const todo = leads.filter((l) => l.health_status === "fermee" || l.health_status === "introuvable");
+  const [running, setRunning] = useState(false);
+  const [done, setDone] = useState(0);
+  const [found, setFound] = useState(0);
+  if (!todo.length) return null;
+
+  async function run() {
+    setRunning(true); setDone(0); setFound(0);
+    let n = 0;
+    for (let i = 0; i < todo.length; i++) {
+      const r = await fetchJson(`/api/accounts/${todo[i].id}/health`, { method: "POST" });
+      if (r.ok && r.data?.health?.health_detail?.successor) n++;
+      setDone(i + 1); setFound(n);
+      await new Promise((res) => setTimeout(res, 300));
+    }
+    setRunning(false);
+    onDone();
+  }
+
+  return (
+    <Card style={{ padding: "14px 20px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <Body1><strong>Radiées ou introuvables</strong></Body1>
+        <Caption1 style={{ flex: 1, minWidth: 220 }}>
+          Une société radiée vit souvent sous un autre nom : absorption, changement de dénomination, rachat.
+          Le BODACC est fouillé pour retrouver le successeur (gratuit).
+        </Caption1>
+        <Button disabled={running} onClick={run}>
+          {running ? `${done} / ${todo.length}…` : `Rechercher les repreneurs (${todo.length})`}
+        </Button>
+      </div>
+      {(running || done > 0) && (
+        <Caption1 style={{ display: "block", marginTop: 8 }}>
+          {found} société(s) retrouvée(s) sous un autre nom{running ? "" : " — voir le filtre « Repris / renommés »"}.
+        </Caption1>
+      )}
+    </Card>
+  );
+}
+
 const TIER_COLOR = { A: "success", B: "warning", C: "informative", X: "subtle" };
 
 // Priorité d'appel déterministe (lib/lead-priority.js) ; le détail des points au survol.
@@ -371,6 +414,8 @@ export default function LeadsClient({ initialLeads = [] }) {
       if (l.health_status === "active" && !/closed/i.test(l.sf_lead_status || "")) c.todo++;
       if (l.is_new) c.new++;
       if (l.missing_from_last_import) c.missing++;
+      if (l.successor) c.successor = (c.successor || 0) + 1;
+      if (l.health_status === "fermee" || l.health_status === "introuvable") c.recheck = (c.recheck || 0) + 1;
     }
     return c;
   }, [leads]);
@@ -381,6 +426,7 @@ export default function LeadsClient({ initialLeads = [] }) {
     if (filter === "todo") return l.health_status === "active" && !/closed/i.test(l.sf_lead_status || "");
     if (filter === "new") return l.is_new;
     if (filter === "missing") return l.missing_from_last_import;
+    if (filter === "successor") return !!l.successor;
     return l.health_status === filter;
   });
 
@@ -390,6 +436,7 @@ export default function LeadsClient({ initialLeads = [] }) {
     ["vigilance", HEALTH_META.vigilance.label],
     ["fermee", "À clôturer dans Salesforce"],
     ["introuvable", HEALTH_META.introuvable.label],
+    ["successor", "Repris / renommés"],
     ["missing", "Absents du dernier import"],
     ["all", "Tous"],
   ];
@@ -408,6 +455,8 @@ export default function LeadsClient({ initialLeads = [] }) {
       {leads.length > 0 && <AgentCard status={agent} lastRun={agentRun} onRun={runAgent} running={agentBusy} />}
 
       {leads.length > 0 && <BatchPrepCard leads={leads} onDone={reload} />}
+
+      <SuccessorRecheckCard leads={leads} onDone={reload} />
 
       <Card style={{ padding: "16px 16px 20px" }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -453,6 +502,11 @@ export default function LeadsClient({ initialLeads = [] }) {
                         {l.missing_from_last_import && (
                           <Badge appearance="outline" color="subtle" size="small" style={{ marginLeft: 6 }}
                             title="Absent du dernier export : lead réattribué ou clos dans Salesforce">Absent</Badge>
+                        )}
+                        {l.successor && (
+                          <Caption1 style={{ display: "block", color: l.successor.confidence === "forte" ? "#107C10" : "var(--colorPaletteDarkOrangeForeground1)" }}>
+                            {l.successor.confidence === "forte" ? "→ Continue sous" : "→ Piste :"} {l.successor.name} ({l.successor.reason_label})
+                          </Caption1>
                         )}
                         {l.priority?.angle && (
                           <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground2)" }}>{l.priority.angle}</Caption1>
