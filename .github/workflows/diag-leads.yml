@@ -1,0 +1,23 @@
+name: diag-leads
+
+# Diagnostic manuel de la collecte des leads (bouton « Run workflow »).
+# Appelle /api/cron/leads-intel?debug=1 : sondes sur des données publiques
+# connues + compteurs ANONYMES pour les comptes radiés (aucun nom de lead :
+# les journaux d'un dépôt public sont publics).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Diagnostic
+        env:
+          BASE_URL: ${{ vars.APP_BASE_URL || 'https://fox-prospect.vercel.app' }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl -sS --max-time 300 -H "Authorization: Bearer $CRON_SECRET" "$BASE_URL/api/cron/leads-intel?debug=1" | jq .
