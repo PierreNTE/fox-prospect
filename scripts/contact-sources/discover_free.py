@@ -145,6 +145,12 @@ def company_core(company):
     return [t for t in _norm(base).split() if t not in _LEGAL and len(t) >= 2]
 
 
+DECIDER_RE = re.compile(
+    r"informati|\bDSI\b|\bIT\b|syst[eè]mes?|r[ée]seaux?|infrastructure|num[ée]rique|digital|\bCTO\b|\bCIO\b|RSSI|"
+    r"cyber|cloud|datacenter|technique|\bDAF\b|financ|g[ée]rant|pr[ée]sident|directeur g[ée]n[ée]ral|\bDG\b|CEO|fondateur|"
+    r"directrice g[ée]n[ée]rale|directeur des services|\bDGS\b|secr[ée]taire g[ée]n[ée]ral", re.I)
+
+
 def mentions_company(text, company):
     """Le texte (titre + extrait du résultat) cite-t-il vraiment la société ?"""
     core = company_core(company)
@@ -191,6 +197,10 @@ def brave_contacts(query, company, must_match=False):
         # Leads : on ne garde que les profils dont le résultat cite la société
         # (sinon Brave renvoie les DSI d'autres entreprises).
         if must_match and not mentions_company(f"{res.get('title') or ''} {res.get('description') or ''}", company):
+            continue
+        # …et seulement les postes qui décident de l'informatique (IT, ou direction
+        # dans une PME). Évite les commerciaux / chauffeurs de la même société.
+        if must_match and not DECIDER_RE.search(f"{title} {res.get('description') or ''}"):
             continue
         out.append({
             "company": company,

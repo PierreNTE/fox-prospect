@@ -5,13 +5,13 @@ import { recheckAccount } from "@/lib/leads-import";
 import { runLeadsAgent } from "@/lib/leads-agent";
 import { wikidataWebsite } from "@/lib/account-intel";
 import { fetchBodaccFull, searchBodaccText, lookupSiren } from "@/lib/company-health";
-import { recordText, linkReason, extractSirens, successorCandidates } from "@/lib/company-successor";
+import { recordText, linkReason, extractSirens, successorCandidates, successorNames } from "@/lib/company-successor";
 import { dnsIntel } from "@/lib/dns-intel";
 
 // Diagnostic réseau (?debug=1) : sondes sur des données publiques connues, et
 // pour les comptes radiés uniquement des COMPTEURS anonymes (journaux publics).
 async function diagnostics(supabase) {
-  const t = async (fn) => { const s = Date.now(); try { return { ok: true, ms: Date.now() - s, ...(await fn()) }; } catch (e) { return { ok: false, ms: Date.now() - s, error: e.message.slice(0, 160) }; } };
+  const t = async (fn) => { const s = Date.now(); try { const r = await fn(); return { ok: true, ms: Date.now() - s, ...r }; } catch (e) { return { ok: false, ms: Date.now() - s, error: e.message.slice(0, 160) }; } };
   const probes = {
     wikidata: await t(async () => ({ site: await wikidataWebsite("424761419") })),
     dns: await t(async () => { const d = await dnsIntel("ovhcloud.com"); return { mail: d?.mail_provider, services: d?.services?.length }; }),
@@ -43,6 +43,7 @@ async function diagnostics(supabase) {
         own_familles: [...new Set(own.map((x) => x.familleavis))].join(","),
         byName: byName.length, byName_reason: byName.filter((x) => linkReason(recordText(x))).length,
         candidates: cands.length, reasons: cands.map((c) => c.reason).join(","), etats: active.join(","),
+        names_cited: successorNames(own).length,
       };
     });
     successor.push({ compte: i + 1, has_siren: !!siren, ...r });
@@ -61,7 +62,7 @@ export const maxDuration = 300;
 //   3. agent : mise en file des fiches IA (si crédit) et des recherches de
 //      décideurs IT (worker de scraping).
 // ?dry=1 : ne fait que compter (diagnostic).
-const SUCCESSOR_SINCE = "2026-11-20T08:30:00Z"; // mise en service de la recherche de successeur
+const SUCCESSOR_SINCE = "2026-11-20T10:30:00Z"; // v2 : successeur cité par son nom — tout revérifier une fois
 
 function authorized(request) {
   const secret = (process.env.CRON_SECRET || "").trim();

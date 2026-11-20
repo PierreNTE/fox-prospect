@@ -128,3 +128,51 @@ describe("nom cité d'un bloc", () => {
     expect(successorCandidates([], byName, { oldName: "Dupont Informatique" })).toEqual([]);
   });
 });
+
+import { successorNames } from "@/lib/company-successor";
+
+describe("successeur cité par son nom", () => {
+  it("extrait le nom de l'absorbante sans SIREN", () => {
+    const own = [{ dateparution: "2025-04-01", radiationaurcs: JSON.stringify({ commentaire: "Radiation du RCS suite à fusion-absorption par la société NOUVELLE INFORMATIQUE SAS, RCS Lyon" }) }];
+    expect(successorNames(own)[0]).toMatchObject({ name: "NOUVELLE INFORMATIQUE SAS", reason: "fusion" });
+  });
+  it("cessionnaire d'un plan de cession", () => {
+    const own = [{ dateparution: "2024-02-01", jugement: JSON.stringify({ nature: "Jugement arrêtant le plan de cession", complementJugement: "au profit de la société REPRISE OUEST, dont le siège" }) }];
+    expect(successorNames(own)[0]?.name).toBe("REPRISE OUEST");
+  });
+  it("trouve l'absorbante active au SIRENE", async () => {
+    const own = [{ dateparution: "2025-04-01", registre: [OLD], radiationaurcs: JSON.stringify({ commentaire: "Radiation suite à fusion-absorption par la société NOUVELLE SAS." }) }];
+    const net = {
+      fetchRecords: async () => own, searchText: async () => [], lookupSiren: async () => null,
+      searchName: async () => [{ siren: NEW, nom_complet: "NOUVELLE SAS", etat_administratif: "A" }],
+      classify: async () => null,
+    };
+    const s = await findSuccessor({ query: "Ancienne", closed: { siren: OLD }, results: [] }, net);
+    expect(s).toMatchObject({ siren: NEW, confidence: "forte", reason: "fusion" });
+  });
+});
+
+describe("noms Salesforce collés avec « / »", () => {
+  it("essaie chaque partie si le nom complet échoue", async () => {
+    const { checkCompanyHealth } = await import("@/lib/company-health");
+    const calls = [];
+    const orig = global.fetch;
+    global.fetch = async (url) => {
+      const u = new URL(url);
+      calls.push(u.searchParams.get("q") || u.searchParams.get("where"));
+      const q = u.searchParams.get("q");
+      const results = q === "BETA INDUSTRIE"
+        ? [{ siren: NEW, nom_complet: "BETA INDUSTRIE", etat_administratif: "A", siege: {} }]
+        : [];
+      return new Response(JSON.stringify(u.hostname.includes("recherche") ? { results } : { results: [] }), { status: 200 });
+    };
+    try {
+      const c = await checkCompanyHealth({ query: "ALPHA/BETA INDUSTRIE", hint: "" });
+      expect(c.match?.siren).toBe(NEW);
+      expect(c.verdict.status).toBe("active");
+      expect(calls).toContain("BETA INDUSTRIE");
+    } finally {
+      global.fetch = orig;
+    }
+  });
+});
