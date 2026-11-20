@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Card,
@@ -189,8 +189,19 @@ function ImportCard({ onImported }) {
 
 // Préparation en lot des fiches d'approche (IA + web), un compte après l'autre.
 // S'arrête seul sur une erreur de budget ou d'API répétée.
+// Les leads arrivent déjà triés par priorité (A > B > C) : on prépare d'abord les
+// meilleurs, et seulement les N premiers, pour ne pas vider le budget du mois
+// sur des comptes qui ne seront jamais appelés.
+const PREP_COST_EUR = 0.1;
+const PREP_LIMITS = [10, 25, 0]; // 0 = tous
+
 function BatchPrepCard({ leads, onDone }) {
-  const todo = leads.filter((l) => l.health_status === "active" && !/closed/i.test(l.sf_lead_status || "") && !l.call_prep_at);
+  const [limit, setLimit] = useState(10);
+  const [includeC, setIncludeC] = useState(false);
+  const eligible = leads.filter((l) =>
+    l.health_status === "active" && !/closed/i.test(l.sf_lead_status || "") && !l.call_prep_at
+    && l.priority?.tier !== "X" && (includeC || l.priority?.tier !== "C"));
+  const todo = limit ? eligible.slice(0, limit) : eligible;
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(0);
@@ -232,12 +243,25 @@ function BatchPrepCard({ leads, onDone }) {
         <Body1><strong>Fiches d'approche</strong></Body1>
         <Caption1 style={{ flex: 1, minWidth: 220 }}>
           Pour chaque compte à appeler : interlocuteurs IT, standard, email, actu, email + LinkedIn + relance prêts.
-          ≈ 1 min et ≈ 0,10 € par compte, sous ton plafond budgétaire.
+          ≈ 1 min et ≈ 0,10 € par compte, sous ton plafond budgétaire. Les comptes les mieux classés passent en premier.
         </Caption1>
         <Button appearance="primary" disabled={running || !todo.length} onClick={run}>
-          {todo.length ? `Préparer ${todo.length} compte(s)` : "Tout est préparé"}
+          {todo.length
+            ? `Préparer ${todo.length} compte(s) · ≈ ${(todo.length * PREP_COST_EUR).toFixed(2).replace(".", ",")} €`
+            : "Tout est préparé"}
         </Button>
         {running && <Button onClick={() => { stopRef.current = true; }}>Arrêter</Button>}
+      </div>
+      <div style={{ display: "flex", gap: 6, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <Caption1>Combien :</Caption1>
+        {PREP_LIMITS.map((n) => (
+          <Button key={n} size="small" appearance={limit === n ? "primary" : "secondary"} disabled={running}
+            onClick={() => setLimit(n)}>
+            {n ? `Top ${n}` : `Tous (${eligible.length})`}
+          </Button>
+        ))}
+        <Checkbox label="Inclure la priorité C" checked={includeC} disabled={running}
+          onChange={(_, d) => setIncludeC(!!d.checked)} />
       </div>
       {(running || done > 0) && (
         <div style={{ marginTop: 10 }}>
@@ -250,11 +274,88 @@ function BatchPrepCard({ leads, onDone }) {
   );
 }
 
+// Agent hebdomadaire (lib/leads-agent.js) : lancé automatiquement à la fin d'un
+// import, il met en file les fiches d'approche des meilleurs comptes A/B. Le
+// worker (toutes les 2 h) les prépare sans que la page reste ouverte.
+function AgentCard({ status, lastRun, onRun, running }) {
+  const s = status || {};
+  const leftThisWeek = Math.max(0, (s.max ?? 0) - (s.week ?? 0));
+  return (
+    <Card style={{ padding: "16px 20px", borderLeft: "3px solid var(--colorPaletteGreenBorderActive)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <Body1><strong>Agent automatique</strong></Body1>
+        <Caption1 style={{ flex: 1, minWidth: 220 }}>
+          À chaque import, prépare seul les fiches d'approche des comptes A et B (web public : site, standard,
+          interlocuteurs IT, actu, messages). Jusqu'à {s.max ?? "…"} fiches par semaine, sous ton plafond budgétaire.
+          Prêtes dans les 2 h, page fermée.
+        </Caption1>
+        <Button disabled={running || !leftThisWeek} onClick={onRun}>
+          {running ? <Spinner size="tiny" /> : "Lancer maintenant"}
+        </Button>
+      </div>
+      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+        <Badge appearance="tint" color="informative">En file : {s.pending ?? 0}</Badge>
+        <Badge appearance="tint" color="success">Prêtes (7 j) : {s.done ?? 0}</Badge>
+        {s.error > 0 && <Badge appearance="tint" color="danger">Échecs : {s.error}</Badge>}
+        <Badge appearance="tint" color="subtle">Reste cette semaine : {leftThisWeek}</Badge>
+      </div>
+      {lastRun && (
+        <Caption1 style={{ display: "block", marginTop: 8 }}>
+          {lastRun.error
+            ? lastRun.error
+            : lastRun.queued
+              ? `${lastRun.queued} fiche(s) mise(s) en file : ${lastRun.names.slice(0, 5).join(", ")}${lastRun.names.length > 5 ? "…" : ""}`
+              : "Aucun nouveau compte A/B à préparer (ou plafond de la semaine atteint)."}
+        </Caption1>
+      )}
+      {s.pending > 0 && s.last_error && (
+        <Caption1 style={{ display: "block", marginTop: 4, color: "var(--colorPaletteDarkOrangeForeground1)" }}>
+          Dernier blocage : {s.last_error.slice(0, 160)}
+        </Caption1>
+      )}
+    </Card>
+  );
+}
+
+const TIER_COLOR = { A: "success", B: "warning", C: "informative", X: "subtle" };
+
+// Priorité d'appel déterministe (lib/lead-priority.js) ; le détail des points au survol.
+function PriorityBadge({ p }) {
+  if (!p) return <Caption1>—</Caption1>;
+  const title = [...(p.reasons || []), ...(p.flags || []).map((f) => `⚠ ${f}`)].join("\n");
+  return (
+    <Badge appearance="tint" color={TIER_COLOR[p.tier] || "subtle"} title={title}>
+      {p.tier === "X" ? "—" : `${p.tier} · ${p.score}`}
+    </Badge>
+  );
+}
+
 export default function LeadsClient({ initialLeads = [] }) {
   const [leads, setLeads] = useState(initialLeads);
   const [filter, setFilter] = useState("todo");
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const [agent, setAgent] = useState(null);
+  const [agentRun, setAgentRun] = useState(null);
+  const [agentBusy, setAgentBusy] = useState(false);
+
+  useEffect(() => {
+    fetchJson("/api/leads/agent").then((r) => { if (r.ok) setAgent(r.data); });
+  }, []);
+
+  async function runAgent() {
+    setAgentBusy(true);
+    const r = await fetchJson("/api/leads/agent", { method: "POST" });
+    if (r.ok) { setAgentRun(r.data); setAgent(r.data.status); }
+    else setAgentRun({ error: r.error });
+    setAgentBusy(false);
+  }
+
+  async function afterImport() {
+    await reload();
+    await runAgent();
+  }
 
   async function reload() {
     setLoading(true);
@@ -264,10 +365,12 @@ export default function LeadsClient({ initialLeads = [] }) {
   }
 
   const counts = useMemo(() => {
-    const c = { all: leads.length, todo: 0 };
+    const c = { all: leads.length, todo: 0, new: 0, missing: 0 };
     for (const l of leads) {
       c[l.health_status] = (c[l.health_status] || 0) + 1;
       if (l.health_status === "active" && !/closed/i.test(l.sf_lead_status || "")) c.todo++;
+      if (l.is_new) c.new++;
+      if (l.missing_from_last_import) c.missing++;
     }
     return c;
   }, [leads]);
@@ -276,14 +379,18 @@ export default function LeadsClient({ initialLeads = [] }) {
     if (q && !l.name.toLowerCase().includes(q.toLowerCase())) return false;
     if (filter === "all") return true;
     if (filter === "todo") return l.health_status === "active" && !/closed/i.test(l.sf_lead_status || "");
+    if (filter === "new") return l.is_new;
+    if (filter === "missing") return l.missing_from_last_import;
     return l.health_status === filter;
   });
 
   const FILTERS = [
     ["todo", "À appeler"],
+    ["new", "Nouveaux (7 j)"],
     ["vigilance", HEALTH_META.vigilance.label],
     ["fermee", "À clôturer dans Salesforce"],
     ["introuvable", HEALTH_META.introuvable.label],
+    ["missing", "Absents du dernier import"],
     ["all", "Tous"],
   ];
 
@@ -296,7 +403,9 @@ export default function LeadsClient({ initialLeads = [] }) {
         </Caption1>
       </div>
 
-      <ImportCard onImported={reload} />
+      <ImportCard onImported={afterImport} />
+
+      {leads.length > 0 && <AgentCard status={agent} lastRun={agentRun} onRun={runAgent} running={agentBusy} />}
 
       {leads.length > 0 && <BatchPrepCard leads={leads} onDone={reload} />}
 
@@ -322,6 +431,7 @@ export default function LeadsClient({ initialLeads = [] }) {
             <Table size="small" aria-label="Leads Salesforce">
               <TableHeader>
                 <TableRow>
+                  <TableHeaderCell style={{ width: 84 }}>Priorité</TableHeaderCell>
                   <TableHeaderCell>Société (Salesforce)</TableHeaderCell>
                   <TableHeaderCell>Santé</TableHeaderCell>
                   <TableHeaderCell>SIRENE</TableHeaderCell>
@@ -334,7 +444,25 @@ export default function LeadsClient({ initialLeads = [] }) {
                   const m = HEALTH_META[l.health_status] || { label: "—", color: "subtle" };
                   return (
                     <TableRow key={l.id}>
-                      <TableCell><Link href={`/accounts/${l.id}`}>{l.name}</Link></TableCell>
+                      <TableCell>
+                        <PriorityBadge p={l.priority} />
+                      </TableCell>
+                      <TableCell>
+                        <Link href={`/accounts/${l.id}`}>{l.name}</Link>
+                        {l.is_new && <Badge appearance="filled" color="brand" size="small" style={{ marginLeft: 6 }}>Nouveau</Badge>}
+                        {l.missing_from_last_import && (
+                          <Badge appearance="outline" color="subtle" size="small" style={{ marginLeft: 6 }}
+                            title="Absent du dernier export : lead réattribué ou clos dans Salesforce">Absent</Badge>
+                        )}
+                        {l.priority?.angle && (
+                          <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground2)" }}>{l.priority.angle}</Caption1>
+                        )}
+                        {l.priority?.flags?.length > 0 && (
+                          <Caption1 style={{ display: "block", color: "var(--colorPaletteDarkOrangeForeground1)" }}>
+                            ⚠ {l.priority.flags.join(" · ")}
+                          </Caption1>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Badge appearance="tint" color={m.color} title={l.health_label}>{m.label}</Badge>
                       </TableCell>
