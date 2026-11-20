@@ -44,3 +44,22 @@ describe("agent hebdomadaire des leads", () => {
     expect(estPanneEnvironnement("Your credit balance is too low")).toBe(true);
   });
 });
+
+import { selectScrapeTargets } from "@/lib/leads-agent";
+
+describe("recherche des décideurs IT (worker de scraping)", () => {
+  const leads = [
+    { id: "a", health_status: "active", priority: { tier: "A" } },
+    { id: "b", health_status: "active", priority: { tier: "B" }, call_prep_at: "2026-11-01" },
+    { id: "c", health_status: "active", priority: { tier: "C" } },
+    { id: "f", health_status: "fermee", priority: { tier: "X" } },
+    { id: "k", health_status: "active", sf_lead_status: "Closed", priority: { tier: "A" } },
+  ];
+  it("A/B actifs et ouverts, même déjà préparés par l'IA", () => {
+    expect(selectScrapeTargets(leads, { room: 10 }).map((l) => l.id)).toEqual(["a", "b"]);
+  });
+  it("jamais deux fois le même compte, plafond respecté", () => {
+    expect(selectScrapeTargets(leads, { room: 10, already: new Set(["a"]) }).map((l) => l.id)).toEqual(["b"]);
+    expect(selectScrapeTargets(leads, { room: 1 }).map((l) => l.id)).toEqual(["a"]);
+  });
+});

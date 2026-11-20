@@ -298,6 +298,11 @@ function AgentCard({ status, lastRun, onRun, running }) {
         <Badge appearance="tint" color="success">Prêtes (7 j) : {s.done ?? 0}</Badge>
         {s.error > 0 && <Badge appearance="tint" color="danger">Échecs : {s.error}</Badge>}
         <Badge appearance="tint" color="subtle">Reste cette semaine : {leftThisWeek}</Badge>
+        {(s.scrape?.pending || s.scrape?.running || s.scrape?.done) ? (
+          <Badge appearance="tint" color="brand" title="Découverte des décideurs IT (LinkedIn public) + email, par le worker de scraping toutes les 6 h. Résultats dans Scraping.">
+            Décideurs IT : {s.scrape.done || 0} comptes faits · {(s.scrape.pending || 0) + (s.scrape.running || 0)} en file
+          </Badge>
+        ) : null}
       </div>
       {lastRun && (
         <Caption1 style={{ display: "block", marginTop: 8 }}>
@@ -306,6 +311,7 @@ function AgentCard({ status, lastRun, onRun, running }) {
             : lastRun.queued
               ? `${lastRun.queued} fiche(s) mise(s) en file : ${lastRun.names.slice(0, 5).join(", ")}${lastRun.names.length > 5 ? "…" : ""}`
               : "Aucun nouveau compte A/B à préparer (ou plafond de la semaine atteint)."}
+          {lastRun.scrape?.queued ? ` · ${lastRun.scrape.queued} compte(s) envoyé(s) à la recherche des décideurs IT.` : ""}
         </Caption1>
       )}
       {s.pending > 0 && s.last_error && (
