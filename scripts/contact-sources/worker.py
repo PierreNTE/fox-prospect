@@ -152,7 +152,9 @@ def resolve_target(params):
                 domain = domain or bare_domain(a.get("website") or a.get("domain") or "")
         except Exception:  # noqa: BLE001
             pass
-    if not domain and company:
+    # Leads Salesforce : pas de domaine deviné (setippsetipp.com…) — sans domaine
+    # vérifié par la collecte web, on n'invente pas d'email.
+    if not domain and company and not params.get("no_guess_domain"):
         domain = slug_domain(company)  # deviné, confiance basse
     return company, domain, account_id
 
@@ -187,14 +189,17 @@ def process_job(job):
 
     update_job(job_id, status="running", started_at=now_iso(), progress=5)
     company, domain, account_id = resolve_target(params)
-    print(f"▶ job {job_id} [{kind}] {company} (domaine: {domain or '—'})")
+    # Dépôt public = journaux publics : aucun nom de société ni de personne.
+    print(f"▶ job {job_id} [{kind}] (domaine {'connu' if domain else 'absent'})")
+    strict = params.get("strict_match", False)
 
     found = enriched = blocked = 0
 
     # ── Découverte ────────────────────────────────────────────────────────────
     contacts = []
     if do_discover:
-        contacts, blk = discover_company(company, max_profiles=limit, extract=True, log=print)
+        contacts, blk = discover_company(company, roles=params.get("roles") or None, max_profiles=limit,
+                                         extract=True, log=print, must_match=strict, quiet=True)
         blocked += blk
         found = len(contacts)
         update_job(job_id, progress=55, stats={"found": found, "enriched": 0, "blocked": blocked})
@@ -218,13 +223,13 @@ def process_job(job):
                     enriched += 1
             except Exception as e:  # noqa: BLE001
                 blocked += 1
-                print(f"  ⚠ enrich KO ({contact.get('name')}): {str(e)[:80]}")
+                print(f"  ⚠ enrich KO : {str(e)[:80]}")
 
         email = (email_info or {}).get("best", {}).get("email") if email_info else None
         if is_optout(email):
-            print(f"  ⊘ opt-out, ignoré : {email}")
+            print("  ⊘ opt-out, ignoré")
         elif kind != "enrich" and already_seen(contact.get("linkedin_url"), email):
-            print(f"  = doublon, ignoré : {contact.get('name')}")
+            print("  = doublon, ignoré")
         elif kind == "enrich" and contact.get("_result_id"):
             # met à jour la ligne existante plutôt que d'en créer une
             if email_info and email_info.get("best"):

@@ -126,7 +126,39 @@ def ddg_links(query):
     return list(dict.fromkeys(out)), blocked
 
 
-def brave_contacts(query, company):
+import unicodedata
+
+_LEGAL = {"SA", "SAS", "SASU", "SARL", "EURL", "SCI", "SNC", "SCOP", "SEM", "GIE", "SE", "SELARL", "SELAS",
+          "STE", "SOCIETE", "ET", "DE", "DU", "DES", "LA", "LE", "LES", "L", "D", "AND", "THE", "GROUPE",
+          "GROUP", "FRANCE", "CIE", "COMPAGNIE"}
+
+
+def _norm(s):
+    s = unicodedata.normalize("NFD", s or "")
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn").upper()
+    return re.sub(r"[^A-Z0-9]+", " ", s).strip()
+
+
+def company_core(company):
+    """Mots distinctifs du nom (sans formes juridiques ni parenthèses)."""
+    base = re.sub(r"\(.*?\)", " ", company or "")
+    return [t for t in _norm(base).split() if t not in _LEGAL and len(t) >= 2]
+
+
+def mentions_company(text, company):
+    """Le texte (titre + extrait du résultat) cite-t-il vraiment la société ?"""
+    core = company_core(company)
+    if not core:
+        return False
+    words = set(_norm(text).split())
+    compact = _norm(text).replace(" ", "")
+    if all(t in words for t in core):
+        return True
+    joined = "".join(core)
+    return len(joined) >= 5 and joined in compact
+
+
+def brave_contacts(query, company, must_match=False):
     """Recherche Brave → contacts {company, name, headline, linkedin_url, source}
     lus DIRECTEMENT dans les snippets (titre + description), SANS fetch LinkedIn.
     Le titre LinkedIn est de la forme "Prénom Nom - Poste - Société | LinkedIn".
@@ -155,6 +187,10 @@ def brave_contacts(query, company):
         role = parts[1].strip() if len(parts) > 1 else (res.get("description") or "")[:120].strip()
         # Filtre les résultats qui ne sont pas un vrai profil (page login/générique).
         if not name or re.search(r"linkedin|s.identifier|s.inscrire|sign\s?up|join now|milliard|million", name, re.I):
+            continue
+        # Leads : on ne garde que les profils dont le résultat cite la société
+        # (sinon Brave renvoie les DSI d'autres entreprises).
+        if must_match and not mentions_company(f"{res.get('title') or ''} {res.get('description') or ''}", company):
             continue
         out.append({
             "company": company,
@@ -218,7 +254,8 @@ def extract_profile(url, retries=2):
 
 
 def discover_company(company, roles=None, max_profiles=4, extract=True,
-                     ddg_delay=DDG_DELAY_S, extract_delay=EXTRACT_DELAY_S, log=print):
+                     ddg_delay=DDG_DELAY_S, extract_delay=EXTRACT_DELAY_S, log=print,
+                     must_match=False, quiet=False):
     """Découvre des décideurs IT pour une société (importable par le worker).
 
     Renvoie (contacts, blocked) :
@@ -234,9 +271,10 @@ def discover_company(company, roles=None, max_profiles=4, extract=True,
     # pas de proxy. Nom + poste + URL viennent du titre/description du résultat Brave.
     if BRAVE_KEY:
         seen, contacts, blocked = set(), [], 0
+        name_q = f'"{" ".join(company_core(company))}"' if must_match else company
         for rq in roles:
-            q = f'{company} {rq} site:linkedin.com/in'
-            rows, blk = brave_contacts(q, company)
+            q = f'{name_q} {rq} site:linkedin.com/in'
+            rows, blk = brave_contacts(q, company, must_match=must_match)
             blocked += blk
             for c in rows:
                 if c["linkedin_url"] in seen:
@@ -245,15 +283,17 @@ def discover_company(company, roles=None, max_profiles=4, extract=True,
                 contacts.append(c)
             time.sleep(1.2)  # Brave free tier : ~1 req/s
         contacts = contacts[:max_profiles]
-        for c in contacts:
-            log(f"      • {c['name']} — {c['headline']}")
+        if not quiet:  # journaux publics : jamais de noms de personnes en mode worker
+            for c in contacts:
+                log(f"      • {c['name']} — {c['headline']}")
         log(f"   {len(contacts)} contact(s) via Brave")
         return contacts, blocked
 
     # ── Repli : scraping DDG + fetch profil (fragile, via proxy) ────────────────
     all_urls, blocked = [], 0
+    name_q = f'"{" ".join(company_core(company))}"' if must_match else company
     for rq in roles:
-        q = f'{company} {rq} site:linkedin.com/in'
+        q = f'{name_q} {rq} site:linkedin.com/in'
         links, is_blocked = ddg_links(q)
         if is_blocked:
             blocked += 1
@@ -267,6 +307,8 @@ def discover_company(company, roles=None, max_profiles=4, extract=True,
         prof = extract_profile(u)
         if prof.get("error"):
             blocked += 1
+        elif must_match and not mentions_company(" ".join(str(v) for v in prof.values()), company):
+            continue  # profil d'une autre société
         else:
             contacts.append({"company": company, **prof})
         time.sleep(extract_delay)
