@@ -150,3 +150,18 @@ describe("marchés publics (BOAMP)", () => {
     expect(n[0].ouvert).toBe(true);
   });
 });
+
+import { acceptGuess } from "@/lib/account-intel";
+
+describe("site deviné : garde-fous", () => {
+  it("SIREN trouvé = accepté", () => {
+    expect(acceptGuess({ match: "verifie", host: "x.fr" }, "Quoi que ce soit")).toBe(true);
+  });
+  it("nom court ou générique refusé sans SIREN", () => {
+    expect(acceptGuess({ match: "probable", host: "123.fr" }, "123")).toBe(false);
+    expect(acceptGuess({ match: "probable", host: "missionlocale.fr" }, "MISSION LOCALE DU LUBERON")).toBe(false);
+  });
+  it("nom distinctif identique au domaine = accepté", () => {
+    expect(acceptGuess({ match: "probable", host: "sofrica.com" }, "Sofrica")).toBe(true);
+  });
+});

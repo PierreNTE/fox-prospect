@@ -3,6 +3,52 @@ import { getSupabase } from "@/lib/supabase";
 import { collectAndSave, pendingIntelAccounts } from "@/lib/account-intel";
 import { recheckAccount } from "@/lib/leads-import";
 import { runLeadsAgent } from "@/lib/leads-agent";
+import { wikidataWebsite } from "@/lib/account-intel";
+import { fetchBodaccFull, searchBodaccText, lookupSiren } from "@/lib/company-health";
+import { recordText, linkReason, extractSirens, successorCandidates } from "@/lib/company-successor";
+import { dnsIntel } from "@/lib/dns-intel";
+
+// Diagnostic réseau (?debug=1) : sondes sur des données publiques connues, et
+// pour les comptes radiés uniquement des COMPTEURS anonymes (journaux publics).
+async function diagnostics(supabase) {
+  const t = async (fn) => { const s = Date.now(); try { return { ok: true, ms: Date.now() - s, ...(await fn()) }; } catch (e) { return { ok: false, ms: Date.now() - s, error: e.message.slice(0, 160) }; } };
+  const probes = {
+    wikidata: await t(async () => ({ site: await wikidataWebsite("424761419") })),
+    dns: await t(async () => { const d = await dnsIntel("ovhcloud.com"); return { mail: d?.mail_provider, services: d?.services?.length }; }),
+    bodacc_text: await t(async () => {
+      const r = await searchBodaccText("fusion-absorption");
+      const withReason = r.filter((x) => linkReason(recordText(x))).length;
+      return { n: r.length, withReason, keys: Object.keys(r[0] || {}).slice(0, 30), sirens: r.reduce((n, x) => n + extractSirens(recordText(x)).length, 0) };
+    }),
+    boamp: await t(async () => {
+      const res = await fetch(`https://boamp-datadila.opendatasoft.com/api/explore/v2.1/catalog/datasets/boamp/records?${new URLSearchParams({ where: '"Nantes" AND ("informatique")', limit: "5" })}`, { signal: AbortSignal.timeout(9000) });
+      const j = await res.json().catch(() => ({}));
+      return { status: res.status, n: j?.results?.length ?? null, keys: Object.keys(j?.results?.[0] || {}).slice(0, 40), err: j?.message?.slice?.(0, 160) };
+    }),
+  };
+  const { data: closed } = await supabase
+    .from("accounts").select("name, health_detail").eq("source", "salesforce")
+    .in("health_status", ["fermee", "introuvable"]).limit(12);
+  const successor = [];
+  for (const [i, a] of (closed || []).entries()) {
+    const siren = a.health_detail?.siren || a.health_detail?.predecessor?.siren || null;
+    const r = await t(async () => {
+      const own = siren ? await fetchBodaccFull(siren) : [];
+      const byName = await searchBodaccText(a.name);
+      const cands = successorCandidates(own, byName, { ownSiren: siren, oldName: a.name });
+      const active = [];
+      for (const c of cands.slice(0, 3)) active.push(((await lookupSiren(c.siren).catch(() => null))?.etat_administratif) || "?");
+      return {
+        own: own.length, own_reason: own.filter((x) => linkReason(recordText(x))).length,
+        own_familles: [...new Set(own.map((x) => x.familleavis))].join(","),
+        byName: byName.length, byName_reason: byName.filter((x) => linkReason(recordText(x))).length,
+        candidates: cands.length, reasons: cands.map((c) => c.reason).join(","), etats: active.join(","),
+      };
+    });
+    successor.push({ compte: i + 1, has_siren: !!siren, ...r });
+  }
+  return { probes, successor };
+}
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -38,6 +84,9 @@ export async function GET(request) {
     .eq("source", "salesforce").in("health_status", ["fermee", "introuvable"])
     .lt("health_checked_at", SUCCESSOR_SINCE).limit(Number(process.env.SUCCESSOR_PER_RUN) || 8);
 
+  if (new URL(request.url).searchParams.get("debug") === "1") {
+    return NextResponse.json(await diagnostics(supabase));
+  }
   if (dry) {
     return NextResponse.json({ dry: true, intel_pending: pending.map((a) => a.name), successor_pending: (toRecheck || []).map((a) => a.name) });
   }
