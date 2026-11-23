@@ -119,7 +119,7 @@ export async function GET(request) {
 
   const { data: noGroup } = await supabase.from("accounts").select("id, name")
     .eq("source", "salesforce").in("health_status", ["active", "vigilance"])
-    .not("health_detail", "cs", '{"groupe":null}').filter("health_detail->groupe", "is", null).limit(10);
+    .not("health_detail", "cs", '{"groupe":null}').filter("health_detail->groupe", "is", null).limit(30); // rattrapage des groupes sur les leads déjà importés (les nouveaux l'ont dès l'import)
   for (const a of noGroup || []) {
     if (Date.now() - started > budgetMs * 0.75) break;
     await recheckAccount(supabase, a).catch(() => {});
