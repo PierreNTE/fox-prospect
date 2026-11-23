@@ -80,3 +80,14 @@ describe("recherche du site officiel (worker)", () => {
     expect(selectSiteTargets(leads, { room: 10, already: new Set(["a"]) })).toEqual([]);
   });
 });
+
+import { unlikelyWebsite } from "@/lib/leads-agent";
+
+describe("structures sans site", () => {
+  it("SCI, sociétés civiles et holdings ne sont pas cherchées", () => {
+    expect(unlikelyWebsite({ name: "SCI DES TILLEULS" })).toBe(true);
+    expect(unlikelyWebsite({ name: "X", nature_juridique: "6540" })).toBe(true);
+    expect(unlikelyWebsite({ name: "X HOLDING", naf: "64.20Z" })).toBe(true);
+    expect(unlikelyWebsite({ name: "ATELIER DURAND", naf: "25.62B", nature_juridique: "5710" })).toBe(false);
+  });
+});

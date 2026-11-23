@@ -54,6 +54,8 @@ def has_siren(text, siren):
     return re.search(pat, text or "") is not None
 
 
+FR_TLDS = {"fr", "com", "eu", "net", "org", "info", "pro", "biz", "bzh", "paris", "alsace", "corsica", "re", "gf", "gp", "mq", "yt", "nc", "pf", "pm"}
+
 LEGAL_LINK = re.compile(r'href=["\']([^"\'#]+)["\'][^>]*>([^<]{0,80})', re.I)
 LEGAL_WORDS = re.compile(r"mention|l[ée]gal|legal|cgv|cgu|conditions|confidentialit|a-propos|qui-sommes|contact|imprint", re.I)
 
@@ -93,10 +95,19 @@ def verify_site(url, siren, company=""):
                 return "verifie", "SIREN dans les pages légales"
         except Exception:  # noqa: BLE001
             continue
+    # Repli « probable » (sites de groupe sans SIREN français, petites structures) :
+    # domaine identique au nom distinctif (≥ 6 caractères), extension française
+    # ou générique, et la page d'accueil cite bien la société.
     core = "".join(company_core(company)).lower()
-    label = re.sub(r"[^a-z0-9]", "", host.rsplit(".", 1)[0])
-    if len(core) >= 5 and label == core and mentions_company(_title(home), company):
-        return "probable", "domaine = nom et titre concordant"
+    parts = host.split(".")
+    label = re.sub(r"[^a-z0-9]", "", parts[-2] if len(parts) >= 2 else host)
+    tld = parts[-1] if parts else ""
+    page_text = re.sub(r"<[^>]+>", " ", home)
+    if (len(core) >= 6 and label == core and tld in FR_TLDS
+            and (mentions_company(_title(home), company) or mentions_company(page_text, company))):
+        return "probable", "domaine = nom, cité sur la page"
+    if label == core and tld not in FR_TLDS:
+        return None, f"extension étrangère (.{tld})"
     return None, "SIREN absent"
 
 
