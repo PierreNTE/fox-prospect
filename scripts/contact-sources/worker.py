@@ -187,16 +187,19 @@ def process_find_website(job):
     """Job find_website : site officiel vérifié par SIREN → écrit sur le compte."""
     job_id, params = job["id"], job.get("params") or {}
     update_job(job_id, status="running", started_at=now_iso(), progress=10)
-    url, tested = find_official_site(params.get("company") or "", params.get("commune") or "", params.get("siren") or "")
+    url, status, trials = find_official_site(params.get("company") or "", params.get("commune") or "", params.get("siren") or "")
     account_id = params.get("account_id")
     if url and account_id:
         host = urllib.parse.urlparse(url).hostname.removeprefix("www.")
         # web_intel_at remis à zéro : la collecte de l'appli repasse sur ce site.
         sb(f"accounts?id=eq.{account_id}", method="PATCH",
            body={"website": url, "domain": host, "web_intel_at": None})
+    # Candidats et raisons gardés en base (privée) pour diagnostic — jamais dans
+    # les journaux, publics avec le dépôt.
     update_job(job_id, status="done", progress=100, finished_at=now_iso(),
-               stats={"found": 1 if url else 0, "enriched": 0, "blocked": 0, "tested": tested})
-    print(f"✓ job {job_id} [find_website] {'site vérifié' if url else 'aucun site vérifié'} ({tested} candidat(s))")
+               stats={"found": 1 if url else 0, "enriched": 0, "blocked": 0, "match": status,
+                      "tested": len(trials), "trials": [{"host": h, "why": w} for h, w in trials]})
+    print(f"✓ job {job_id} [find_website] {status or 'aucun site retenu'} ({len(trials)} candidat(s))")
 
 
 def process_job(job):

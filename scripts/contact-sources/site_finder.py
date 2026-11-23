@@ -13,7 +13,7 @@ import re
 import urllib.parse
 import urllib.request
 
-from discover_free import searx_search, company_core
+from discover_free import searx_search, company_core, mentions_company
 
 UA = "Mozilla/5.0 (compatible; FoxProspect/1.0; recherche du site officiel)"
 
@@ -50,33 +50,74 @@ def has_siren(text, siren):
     return re.search(pat, text or "") is not None
 
 
-def verify_site(url, siren):
-    """True si l'accueil ou les mentions légales citent le SIREN."""
-    base = f"https://{host_of(url)}"
-    for path in ("/", "/mentions-legales", "/mentions-legales/", "/mentions_legales", "/legal", "/contact"):
+LEGAL_LINK = re.compile(r'href=["\']([^"\'#]+)["\'][^>]*>([^<]{0,80})', re.I)
+LEGAL_WORDS = re.compile(r"mention|l[ée]gal|legal|cgv|cgu|conditions|confidentialit|a-propos|qui-sommes|contact|imprint", re.I)
+
+
+def _title(html):
+    m = re.search(r"<title[^>]*>(.*?)</title>", html or "", re.I | re.S)
+    return re.sub(r"\s+", " ", m.group(1)).strip() if m else ""
+
+
+def verify_site(url, siren, company=""):
+    """Renvoie (statut, raison) : 'verifie' si une page cite le SIREN ; 'probable'
+    si le domaine EST le nom distinctif (≥ 5 caractères) et que le titre le cite ;
+    sinon (None, raison)."""
+    host = host_of(url)
+    base = f"https://{host}"
+    try:
+        home = _get(base + "/")
+    except Exception as e:  # noqa: BLE001
+        return None, f"inaccessible ({str(e)[:40]})"
+    if not home:
+        return None, "page vide"
+    if has_siren(home, siren):
+        return "verifie", "SIREN sur l'accueil"
+    # Liens légaux réellement présents sur l'accueil, puis chemins usuels.
+    links = []
+    for href, label in LEGAL_LINK.findall(home):
+        if LEGAL_WORDS.search(href + " " + label):
+            full = urllib.parse.urljoin(base + "/", href)
+            if host_of(full) == host and full not in links:
+                links.append(full)
+    for path in ("/mentions-legales", "/mentions-legales/", "/mentions-legales.html", "/informations-legales", "/legal", "/legal-notice", "/cgv"):
+        if base + path not in links:
+            links.append(base + path)
+    for u in links[:8]:
         try:
-            if has_siren(_get(base + path), siren):
-                return True
+            if has_siren(_get(u), siren):
+                return "verifie", "SIREN dans les pages légales"
         except Exception:  # noqa: BLE001
             continue
-    return False
+    core = "".join(company_core(company)).lower()
+    label = re.sub(r"[^a-z0-9]", "", host.rsplit(".", 1)[0])
+    if len(core) >= 5 and label == core and mentions_company(_title(home), company):
+        return "probable", "domaine = nom et titre concordant"
+    return None, "SIREN absent"
 
 
 def find_official_site(company, commune, siren, log=print):
-    """Renvoie (url, candidats_testés) — url None si rien de vérifié."""
+    """Renvoie (url, statut, essais) — url None si rien de retenu.
+    essais = [(hôte, raison)] (stocké en base pour diagnostic, jamais journalisé)."""
     core = " ".join(company_core(company))
     if not core:
-        return None, 0
+        return None, None, []
     queries = [f'"{core}" {commune or ""}'.strip(), f'"{core}" site officiel', f'"{core}" mentions légales {siren}']
-    seen, tested = [], 0
+    seen = []
     for q in queries:
         for res in searx_search(q, max_results=12):
             h = host_of(res.get("url", ""))
             if not h or DIRECTORIES.search(h) or h in seen:
                 continue
             seen.append(h)
+    trials, fallback = [], None
     for h in seen[:6]:
-        tested += 1
-        if verify_site(h, siren):
-            return f"https://{h}/", tested
-    return None, tested
+        status, why = verify_site(h, siren, company)
+        trials.append((h, why))
+        if status == "verifie":
+            return f"https://{h}/", "verifie", trials
+        if status == "probable" and not fallback:
+            fallback = h
+    if fallback:
+        return f"https://{fallback}/", "probable", trials
+    return None, None, trials
