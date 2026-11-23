@@ -26,6 +26,12 @@ export async function PATCH(request, { params }) {
   const update = {};
   for (const key of allowed) if (key in body) update[key] = body[key] === "" && key === "recall_at" ? null : body[key];
   if ("call_status" in update || "call_note" in update || "recall_at" in update) update.call_updated_at = new Date().toISOString();
+  // Standard trouvé à la main : il passe devant les numéros trouvés automatiquement.
+  if ("standard_phone" in body) {
+    const v = String(body.standard_phone || "").replace(/[^\d+ .]/g, "").trim().slice(0, 30);
+    update.standard_phone = v || null;
+    update.standard_source = v ? "manuel" : null;
+  }
 
   const { data, error } = await supabase.from("accounts").update(update).eq("id", id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

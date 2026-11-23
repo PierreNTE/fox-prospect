@@ -212,11 +212,12 @@ function PriorityBadge({ p }) {
   );
 }
 
-// Avancement de la recherche automatique (après import, puis toutes les 2 h).
+// Avancement de la recherche automatique (après import, puis toutes les 15 min).
 // Un seul bouton : tout mettre à jour maintenant (collecte + repreneurs + recherches).
 function ProgressCard({ progress, running, log, onRun }) {
   const p = progress || {};
-  const busy = running || p.sites_pending > 0 || p.people_pending > 0 || (p.active && p.collected < p.active);
+  const queue = (p.sites_pending || 0) + (p.people_pending || 0) + (p.phones_pending || 0);
+  const busy = running || queue > 0 || (p.active && p.collected < p.active);
   const pct = p.active ? Math.round((100 * (p.fiches || 0)) / p.active) : 0;
   return (
     <Card style={{ padding: "14px 18px" }}>
@@ -233,9 +234,11 @@ function ProgressCard({ progress, running, log, onRun }) {
       <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
         <Badge appearance="tint" color="success">{p.active ?? "…"} sociétés actives</Badge>
         <Badge appearance="tint" color="brand">{p.fiches ?? 0} fiches prêtes</Badge>
-        <Badge appearance="tint" color="informative">{p.with_contact ?? 0} avec un contact nommé</Badge>
-        {(p.sites_pending > 0 || p.people_pending > 0) && (
-          <Badge appearance="outline">Recherche en file : {p.sites_pending || 0} sites · {p.people_pending || 0} décideurs</Badge>
+        <Badge appearance="tint" color="informative">{p.with_phone ?? 0} avec un standard</Badge>
+        {queue > 0 && (
+          <Badge appearance="outline">
+            En recherche : {p.phones_pending || 0} standards · {p.sites_pending || 0} sites · {p.people_pending || 0} décideurs
+          </Badge>
         )}
       </div>
       {log && <Caption1 style={{ display: "block", marginTop: 6, color: "var(--colorNeutralForeground2)" }}>{log}</Caption1>}
@@ -284,6 +287,80 @@ function MergeButton({ l, onDone }) {
 
 const today = () => new Date().toISOString().slice(0, 10);
 const isOpen = (l) => ["active", "vigilance"].includes(l.health_status) && !/closed/i.test(l.sf_lead_status || "");
+const tel = (n) => `tel:${String(n || "").replace(/[^\d+]/g, "")}`;
+
+// Qui appeler : toujours une personne si on en a une, et toujours le standard
+// (son numéro, ou la recherche du numéro en un clic).
+function WhoToCall({ l, compact = false }) {
+  const c = l.contact;
+  const phone = c?.phone || "";
+  return (
+    <div style={{ display: "grid", gap: 3 }}>
+      {c ? (
+        <div>
+          <Caption1 style={{ display: "block", fontWeight: 600, fontSize: compact ? 13.5 : 12.5 }}>{c.name}</Caption1>
+          <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground2)" }}>
+            {c.role || "poste à confirmer"}
+            {c.kind === "dirigeant" && " · dirigeant"}
+            {c.kind === "groupe" && " · maison mère"}
+            {l.people_count > 1 && ` · +${l.people_count - 1}`}
+          </Caption1>
+        </div>
+      ) : (
+        <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground3)" }}>
+          {isOpen(l) ? "Demander le responsable informatique" : "—"}
+        </Caption1>
+      )}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {phone && (
+          <Button as="a" size="small" appearance="primary" icon={<Phone24Regular />} href={tel(phone)}>{phone}</Button>
+        )}
+        {l.standard ? (
+          <Button as="a" size="small" appearance={phone ? "outline" : "primary"} icon={<Phone24Regular />} href={tel(l.standard.number)}
+            title={`Standard — ${l.standard.source}`}>
+            Standard {l.standard.number}
+          </Button>
+        ) : isOpen(l) ? (
+          <Button as="a" size="small" appearance="outline" icon={<Search24Regular />} href={l.phone_search_url} target="_blank" rel="noreferrer"
+            title="Ouvre la recherche du numéro ; colle-le ensuite sur la fiche">
+            Trouver le standard
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function CallBadge({ l }) {
+  const st = CALL_STATUS_META[l.call_status];
+  return (
+    <>
+      {st ? <Badge appearance="tint" color={st.color}>{st.label}</Badge> : <Caption1>—</Caption1>}
+      {l.recall_at && !isFinalStatus(l.call_status) && (
+        <Caption1 style={{ display: "block", color: recallDue(l.recall_at, today()) ? "#C50F1F" : "var(--colorNeutralForeground2)" }}>
+          Rappel {new Date(l.recall_at).toLocaleDateString("fr-FR")}
+        </Caption1>
+      )}
+    </>
+  );
+}
+
+function CompanyCell({ l, onMerged }) {
+  const m = HEALTH_META[l.health_status] || { label: "—", color: "subtle" };
+  return (
+    <>
+      <Link href={`/accounts/${l.id}`} style={{ fontWeight: 600 }}>{l.name}</Link>
+      <div style={{ display: "flex", gap: 4, marginTop: 2, flexWrap: "wrap" }}>
+        <Badge appearance="tint" color={m.color} size="small" title={l.health_label}>{m.label}</Badge>
+        {l.is_new && <Badge appearance="filled" color="brand" size="small">Nouveau</Badge>}
+        {l.missing_from_last_import && <Badge appearance="outline" size="small" title="Absent du dernier export Salesforce">Absent</Badge>}
+        {l.commune && <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>{l.commune}</Caption1>}
+      </div>
+      <Flags l={l} />
+      <MergeButton l={l} onDone={onMerged} />
+    </>
+  );
+}
 
 export default function LeadsClient({ initialLeads = [] }) {
   const [leads, setLeads] = useState(initialLeads);
@@ -312,7 +389,7 @@ export default function LeadsClient({ initialLeads = [] }) {
     const t = setInterval(async () => {
       if (document.hidden) return; // onglet en arrière-plan : on ne sollicite pas le serveur
       const p = await loadProgress();
-      if (p && (p.sites_pending || p.people_pending || p.collected < p.active)) reload();
+      if (p && (p.sites_pending || p.people_pending || p.phones_pending || p.collected < p.active)) reload();
     }, 30000);
     return () => clearInterval(t);
   }, []);
@@ -326,7 +403,7 @@ export default function LeadsClient({ initialLeads = [] }) {
       const parts = [];
       if (k.data.merged?.length) parts.push(`${k.data.merged.length} doublon(s) fusionné(s)`);
       if (k.data.contacts_added) parts.push(`${k.data.contacts_added} contact(s) ajouté(s)`);
-      parts.push(k.data.dispatch?.dispatched ? "recherche des sites et décideurs lancée" : "recherche des sites et décideurs démarre dans le quart d'heure");
+      parts.push(k.data.dispatch?.dispatched ? "recherche des standards, sites et décideurs lancée" : "recherche des standards, sites et décideurs dans le quart d'heure");
       setLog(parts.join(" · "));
     }
     let failures = 0;
@@ -337,6 +414,8 @@ export default function LeadsClient({ initialLeads = [] }) {
       await loadProgress();
       if (!r.data.results?.length || !r.data.remaining) break;
     }
+    // Collecte finie : l'agent met en file la recherche des standards manquants.
+    await fetchJson("/api/leads/kickoff", { method: "POST" });
     // Sociétés fermées ou introuvables : recherche du repreneur.
     for (const l of leads.filter((x) => x.health_status === "fermee" || x.health_status === "introuvable").slice(0, 25)) {
       await fetchJson(`/api/accounts/${l.id}/health`, { method: "POST" });
@@ -352,10 +431,11 @@ export default function LeadsClient({ initialLeads = [] }) {
   }
 
   const counts = useMemo(() => {
-    const c = { all: leads.length, todo: 0, recall: 0, rdv: 0, successor: 0, dups: 0, close: 0, missing: 0 };
+    const c = { all: leads.length, todo: 0, recall: 0, nophone: 0, rdv: 0, successor: 0, dups: 0, close: 0, missing: 0 };
     for (const l of leads) {
       if (isOpen(l) && !isFinalStatus(l.call_status)) c.todo++;
       if (recallDue(l.recall_at, today()) && !isFinalStatus(l.call_status)) c.recall++;
+      if (isOpen(l) && !l.standard && !l.contact?.phone) c.nophone++;
       if (l.call_status === "rdv") c.rdv++;
       if (l.successor) c.successor++;
       if ((l.flags || []).length) c.dups++;
@@ -367,10 +447,11 @@ export default function LeadsClient({ initialLeads = [] }) {
 
   const shown = leads
     .filter((l) => {
-      if (q && !`${l.name} ${l.sirene_name || ""} ${l.contact?.name || ""}`.toLowerCase().includes(q.toLowerCase())) return false;
+      if (q && !`${l.name} ${l.sirene_name || ""} ${l.contact?.name || ""} ${l.commune || ""}`.toLowerCase().includes(q.toLowerCase())) return false;
       if (filter === "all") return true;
       if (filter === "todo") return isOpen(l) && !isFinalStatus(l.call_status);
       if (filter === "recall") return recallDue(l.recall_at, today()) && !isFinalStatus(l.call_status);
+      if (filter === "nophone") return isOpen(l) && !l.standard && !l.contact?.phone;
       if (filter === "rdv") return l.call_status === "rdv";
       if (filter === "successor") return !!l.successor;
       if (filter === "dups") return (l.flags || []).length > 0;
@@ -384,6 +465,7 @@ export default function LeadsClient({ initialLeads = [] }) {
   const FILTERS = [
     ["todo", "À appeler"],
     ["recall", "À rappeler aujourd'hui"],
+    ["nophone", "Sans numéro"],
     ["rdv", "RDV pris"],
     ["successor", "Repris / renommés"],
     ["dups", "Doublons et groupes"],
@@ -393,7 +475,7 @@ export default function LeadsClient({ initialLeads = [] }) {
   ];
 
   return (
-    <div style={{ display: "grid", gap: 16, maxWidth: 1100, margin: "0 auto", padding: "8px 0 40px" }}>
+    <div style={{ display: "grid", gap: 16, padding: "8px 0 40px" }}>
       <div>
         <Title2>Mes leads</Title2>
         <Caption1 style={{ display: "block" }}>
@@ -412,7 +494,7 @@ export default function LeadsClient({ initialLeads = [] }) {
               {label} ({counts[k] || 0})
             </Button>
           ))}
-          <Input size="small" contentBefore={<Search24Regular />} placeholder="Chercher une société ou un nom…" value={q}
+          <Input size="small" contentBefore={<Search24Regular />} placeholder="Société, nom, ville…" value={q}
             onChange={(_, d) => setQ(d.value)} style={{ marginLeft: "auto", minWidth: 200 }} />
           <Button size="small" icon={loading ? <Spinner size="tiny" /> : <ArrowClockwise24Regular />} onClick={reload}
             aria-label="Rafraîchir" />
@@ -423,71 +505,56 @@ export default function LeadsClient({ initialLeads = [] }) {
             {leads.length ? "Aucun lead dans ce filtre." : "Importe ta liste de leads pour commencer."}
           </Caption1>
         ) : (
-          <div style={{ overflowX: "auto", marginTop: 12 }}>
-            <Table size="small" aria-label="Leads">
-              <TableHeader>
-                <TableRow>
-                  <TableHeaderCell style={{ width: 56 }}>Prio.</TableHeaderCell>
-                  <TableHeaderCell>Société</TableHeaderCell>
-                  <TableHeaderCell>Qui appeler</TableHeaderCell>
-                  <TableHeaderCell>Accroche</TableHeaderCell>
-                  <TableHeaderCell style={{ width: 150 }}>Suivi</TableHeaderCell>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {shown.map((l) => {
-                  const m = HEALTH_META[l.health_status] || { label: "—", color: "subtle" };
-                  const st = CALL_STATUS_META[l.call_status];
-                  const phone = l.standard_phone || l.intel?.phone || "";
-                  return (
+          <>
+            {/* Grand écran : tableau pleine largeur */}
+            <div className="leads-table" style={{ overflowX: "auto", marginTop: 12 }}>
+              <Table size="small" aria-label="Leads">
+                <TableHeader>
+                  <TableRow>
+                    <TableHeaderCell style={{ width: 52 }}>Prio.</TableHeaderCell>
+                    <TableHeaderCell style={{ width: "24%" }}>Société</TableHeaderCell>
+                    <TableHeaderCell style={{ width: "28%" }}>Qui appeler</TableHeaderCell>
+                    <TableHeaderCell>Accroche</TableHeaderCell>
+                    <TableHeaderCell style={{ width: 140 }}>Suivi</TableHeaderCell>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {shown.map((l) => (
                     <TableRow key={l.id}>
                       <TableCell><PriorityBadge p={l.priority} /></TableCell>
+                      <TableCell><CompanyCell l={l} onMerged={reload} /></TableCell>
+                      <TableCell style={{ paddingTop: 6, paddingBottom: 6 }}><WhoToCall l={l} /></TableCell>
                       <TableCell>
-                        <Link href={`/accounts/${l.id}`} style={{ fontWeight: 600 }}>{l.name}</Link>
-                        <div style={{ display: "flex", gap: 4, marginTop: 2, flexWrap: "wrap" }}>
-                          <Badge appearance="tint" color={m.color} size="small" title={l.health_label}>{m.label}</Badge>
-                          {l.is_new && <Badge appearance="filled" color="brand" size="small">Nouveau</Badge>}
-                          {l.missing_from_last_import && <Badge appearance="outline" size="small" title="Absent du dernier export Salesforce">Absent</Badge>}
-                        </div>
-                        <Flags l={l} />
-                        <MergeButton l={l} onDone={reload} />
-                      </TableCell>
-                      <TableCell>
-                        {l.contact ? (
-                          <>
-                            <Caption1 style={{ display: "block", fontWeight: 600 }}>{l.contact.name}</Caption1>
-                            <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground2)" }}>{l.contact.role}</Caption1>
-                          </>
-                        ) : (
-                          <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground3)" }}>
-                            {l.call_prep_at ? "Demander au standard" : isOpen(l) ? "Recherche en cours…" : "—"}
-                          </Caption1>
-                        )}
-                        {phone && (
-                          <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12.5 }}>
-                            <Phone24Regular style={{ fontSize: 14 }} /> {phone}
-                          </a>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground2)", maxWidth: 360 }}>
+                        <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground2)" }}>
                           {l.hook || (isOpen(l) ? "En préparation…" : "—")}
                         </Caption1>
                       </TableCell>
-                      <TableCell>
-                        {st ? <Badge appearance="tint" color={st.color}>{st.label}</Badge> : <Caption1>—</Caption1>}
-                        {l.recall_at && !isFinalStatus(l.call_status) && (
-                          <Caption1 style={{ display: "block", color: recallDue(l.recall_at, today()) ? "#C50F1F" : "var(--colorNeutralForeground2)" }}>
-                            Rappel {new Date(l.recall_at).toLocaleDateString("fr-FR")}
-                          </Caption1>
-                        )}
-                      </TableCell>
+                      <TableCell><CallBadge l={l} /></TableCell>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Téléphone : une carte par lead, le bouton d'appel sous le pouce */}
+            <div className="leads-cards" style={{ marginTop: 12 }}>
+              {shown.map((l) => (
+                <div key={l.id} className="lead-card">
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                    <PriorityBadge p={l.priority} />
+                    <div style={{ flex: 1, minWidth: 0 }}><CompanyCell l={l} onMerged={reload} /></div>
+                    <div style={{ textAlign: "right" }}><CallBadge l={l} /></div>
+                  </div>
+                  <div style={{ marginTop: 8 }}><WhoToCall l={l} compact /></div>
+                  {l.hook && (
+                    <Caption1 className="lead-card-hook" style={{ display: "block", marginTop: 8, color: "var(--colorNeutralForeground2)" }}>
+                      {l.hook}
+                    </Caption1>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </Card>
     </div>

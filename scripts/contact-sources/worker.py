@@ -26,6 +26,7 @@ from datetime import datetime, timezone, timedelta
 from discover_free import discover_company
 from waterfall import enrich_email
 from site_finder import find_official_site
+from phone_finder import find_standard
 
 SB_URL = os.environ.get("SUPABASE_URL")
 SB_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
@@ -202,12 +203,40 @@ def process_find_website(job):
     print(f"✓ job {job_id} [find_website] {status or 'aucun site retenu'} ({len(trials)} candidat(s))")
 
 
+FIND_PHONE_BATCH = _int_env("FIND_PHONE_BATCH", 40)  # recherches de standard par run (1-2 requêtes chacune)
+
+
+def process_find_phone(job):
+    """Job find_phone : standard lu dans les extraits de recherche → écrit sur le compte s'il n'en a pas."""
+    job_id, params = job["id"], job.get("params") or {}
+    account_id = params.get("account_id")
+    update_job(job_id, status="running", started_at=now_iso(), progress=10)
+    rows = sb(f"accounts?id=eq.{account_id}&select=standard_phone,phones:web_intel->phones") if account_id else []
+    if not rows:
+        update_job(job_id, status="done", progress=100, finished_at=now_iso(), stats={"found": 0, "skip": "compte absent"})
+        print(f"✓ job {job_id} [find_phone] compte absent")
+        return
+    if rows[0].get("standard_phone") or rows[0].get("phones"):
+        update_job(job_id, status="done", progress=100, finished_at=now_iso(), stats={"found": 0, "skip": "déjà un numéro"})
+        print(f"✓ job {job_id} [find_phone] déjà un numéro")
+        return
+    number, sources = find_standard(params.get("company") or "", params.get("commune") or "")
+    if number:
+        # Jamais par-dessus un numéro saisi entre-temps.
+        sb(f"accounts?id=eq.{account_id}&standard_phone=is.null", method="PATCH",
+           body={"standard_phone": number, "standard_source": f"recherche web ({sources} source{'s' if sources > 1 else ''}), à vérifier"})
+    update_job(job_id, status="done", progress=100, finished_at=now_iso(), stats={"found": 1 if number else 0, "sources": sources})
+    print(f"✓ job {job_id} [find_phone] {'numéro trouvé' if number else 'aucun numéro sûr'}")
+
+
 def process_job(job):
     job_id = job["id"]
     kind = job["kind"]
     params = job.get("params") or {}
     if kind == "find_website":
         return process_find_website(job)
+    if kind == "find_phone":
+        return process_find_phone(job)
     limit = int(params.get("limit") or DEFAULT_LIMIT)
     do_enrich = kind in ("enrich", "discover_and_enrich")
     do_discover = kind in ("discover", "discover_and_enrich")
@@ -292,12 +321,15 @@ def main():
     # semaine ; la veille automatique (created_by=auto) complète le lot.
     # Recherches de site : rapides, lot à part (ne mangent pas le quota LinkedIn).
     sites = sb(f"scrape_jobs?status=eq.pending&kind=eq.find_website&order=created_at.asc&limit={FIND_SITE_BATCH}") or []
-    jobs = sb(f"scrape_jobs?status=eq.pending&kind=neq.find_website&created_by=eq.leads-agent&order=created_at.asc&limit={JOB_BATCH}") or []
+    phones = sb(f"scrape_jobs?status=eq.pending&kind=eq.find_phone&order=created_at.asc&limit={FIND_PHONE_BATCH}") or []
+    jobs = sb(f"scrape_jobs?status=eq.pending&kind=not.in.(find_website,find_phone)&created_by=eq.leads-agent&order=created_at.asc&limit={JOB_BATCH}") or []
     # Anciens comptes suivis (veille) : seulement si explicitement réactivé.
     include_auto = (os.environ.get("SCRAPE_INCLUDE_AUTO") or "").strip().lower() == "true"
     if include_auto and len(jobs) < JOB_BATCH:
-        jobs += sb(f"scrape_jobs?status=eq.pending&kind=neq.find_website&or=(created_by.is.null,created_by.neq.leads-agent)&order=created_at.asc&limit={JOB_BATCH - len(jobs)}") or []
-    jobs = sites + jobs
+        jobs += sb(f"scrape_jobs?status=eq.pending&kind=not.in.(find_website,find_phone)&or=(created_by.is.null,created_by.neq.leads-agent)&order=created_at.asc&limit={JOB_BATCH - len(jobs)}") or []
+    # Standards d'abord (une ou deux requêtes chacun : le plus utile pour appeler),
+    # puis sites, puis décideurs.
+    jobs = phones + sites + jobs
     print(f"=== worker : {len(jobs)} job(s) pending (cap {JOB_BATCH}) ===")
     if not jobs:
         return
