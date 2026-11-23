@@ -45,21 +45,38 @@ jobs:
         # - name: Dépendances système navigateur
         #   run: sudo apt-get update && sudo apt-get install -y libgtk-3-0 libx11-xcb1 libasound2t64
 
+      # Moteur de recherche local et gratuit (SearXNG) : remplace Brave Search
+      # (payant depuis 2026). Vit le temps du run, sur le runner, jamais exposé.
+      - name: Démarrer le moteur de recherche local (SearXNG)
+        continue-on-error: true
+        run: |
+          mkdir -p /tmp/searxng && cp scripts/searxng/settings.yml /tmp/searxng/settings.yml
+          docker run -d --name searxng -p 8888:8080 -v /tmp/searxng:/etc/searxng \
+            -e SEARXNG_BASE_URL=http://localhost:8888/ searxng/searxng:latest
+          for i in $(seq 1 40); do
+            if curl -fsS "http://localhost:8888/search?q=test&format=json" -o /dev/null; then echo "SearXNG prêt"; exit 0; fi
+            sleep 3
+          done
+          echo "::warning::SearXNG n'a pas démarré — repli sur les autres sources."
+          docker logs searxng 2>&1 | tail -20
+
       - name: Lancer le worker
         env:
+          SEARXNG_URL: http://localhost:8888
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          # Proxy résidentiel (franchit le blocage des IP datacenter) — sans lui,
-          # LinkedIn bloque le runner. Format http://user:pass@host:port
-          SCRAPE_PROXY: ${{ secrets.SCRAPE_PROXY }}
-          # Brave Search API (gratuit 2000/mois) : découverte fiable des URLs
-          # LinkedIn sans scraper DuckDuckGo. Sans clé → repli DDG (fragile).
-          BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
+          # Mode 100 % gratuit : les services potentiellement payants ne sont
+          # transmis que si tu les autorises explicitement (Settings → Variables) :
+          #  - PROXY_ALLOWED=true  → proxy résidentiel SCRAPE_PROXY (souvent payant)
+          #  - BRAVE_ALLOWED=true  → Brave Search API (payante au-delà des crédits offerts)
+          SCRAPE_PROXY: ${{ vars.PROXY_ALLOWED == 'true' && secrets.SCRAPE_PROXY || '' }}
+          BRAVE_API_KEY: ${{ vars.BRAVE_ALLOWED == 'true' && secrets.BRAVE_API_KEY || '' }}
           FRANCE_TRAVAIL_CLIENT_ID: ${{ secrets.FRANCE_TRAVAIL_CLIENT_ID }}
           FRANCE_TRAVAIL_CLIENT_SECRET: ${{ secrets.FRANCE_TRAVAIL_CLIENT_SECRET }}
           # Plafonds (optionnels) — sinon défauts du worker (5 jobs / 8 profils).
           SCRAPE_JOB_BATCH: ${{ vars.SCRAPE_JOB_BATCH }}
           SCRAPE_PROFILE_LIMIT: ${{ vars.SCRAPE_PROFILE_LIMIT }}
+          FIND_SITE_BATCH: ${{ vars.FIND_SITE_BATCH }}
         run: python scripts/contact-sources/worker.py
 
       - name: Alerte en cas d'échec

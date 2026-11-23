@@ -69,7 +69,9 @@ jobs:
           # Étage de jugement. Sans cette clé, le passage tourne à l'identique
           # sans jugement IA : les signaux fragiles sont écrits tels quels, avec
           # leur provenance affichée « à vérifier ».
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Mode 100 % gratuit : la clé IA n'est transmise que si AI_ENABLED=true
+          # (Settings → Variables). Sans clé, la veille tourne sans jugement IA.
+          ANTHROPIC_API_KEY: ${{ vars.AI_ENABLED == 'true' && secrets.ANTHROPIC_API_KEY || '' }}
           MONTHLY_BUDGET_EUR: ${{ vars.MONTHLY_BUDGET_EUR }}
           # Plafonds — seconde barrière derrière le kill-switch mensuel.
           VEILLE_MAX_LLM: ${{ vars.VEILLE_MAX_LLM }}

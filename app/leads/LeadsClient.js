@@ -195,7 +195,7 @@ function ImportCard({ onImported }) {
 const PREP_COST_EUR = 0.1;
 const PREP_LIMITS = [10, 25, 0]; // 0 = tous
 
-function BatchPrepCard({ leads, onDone }) {
+function BatchPrepCard({ leads, onDone, free }) {
   const [limit, setLimit] = useState(10);
   const [includeC, setIncludeC] = useState(false);
   const eligible = leads.filter((l) =>
@@ -242,12 +242,14 @@ function BatchPrepCard({ leads, onDone }) {
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <Body1><strong>Fiches d'approche</strong></Body1>
         <Caption1 style={{ flex: 1, minWidth: 220 }}>
-          Pour chaque compte à appeler : interlocuteurs IT, standard, email, actu, email + LinkedIn + relance prêts.
-          ≈ 1 min et ≈ 0,10 € par compte, sous ton plafond budgétaire. Les comptes les mieux classés passent en premier.
+          Pour chaque compte à appeler : interlocuteurs, standard, email, actu, email + LinkedIn + relance prêts.
+          {free
+            ? " Mode gratuit : fiches construites sans IA à partir des données publiques collectées, instantanées, 0 €."
+            : " ≈ 1 min et ≈ 0,10 € par compte (IA), sous ton plafond budgétaire."} Les comptes les mieux classés passent en premier.
         </Caption1>
         <Button appearance="primary" disabled={running || !todo.length} onClick={run}>
           {todo.length
-            ? `Préparer ${todo.length} compte(s) · ≈ ${(todo.length * PREP_COST_EUR).toFixed(2).replace(".", ",")} €`
+            ? `Préparer ${todo.length} compte(s) · ${free ? "gratuit" : `≈ ${(todo.length * PREP_COST_EUR).toFixed(2).replace(".", ",")} €`}`
             : "Tout est préparé"}
         </Button>
         {running && <Button onClick={() => { stopRef.current = true; }}>Arrêter</Button>}
@@ -285,11 +287,11 @@ function AgentCard({ status, lastRun, onRun, running }) {
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <Body1><strong>Agent automatique</strong></Body1>
         <Caption1 style={{ flex: 1, minWidth: 220 }}>
-          À chaque import, prépare seul les fiches d'approche des comptes A et B (web public : site, standard,
-          interlocuteurs IT, actu, messages). Jusqu'à {s.max ?? "…"} fiches par semaine, sous ton plafond budgétaire.
-          Prêtes dans les 2 h, page fermée.
+          {s.ai_enabled === false
+            ? "Mode 100 % gratuit : après chaque import, collecte les infos publiques, prépare les fiches d'approche sans IA et lance la recherche des décideurs IT. Tout tourne toutes les 2 h, page fermée, 0 €."
+            : `À chaque import, prépare seul les fiches d'approche des comptes A et B (IA + web). Jusqu'à ${s.max ?? "…"} fiches par semaine, sous ton plafond budgétaire. Prêtes dans les 2 h, page fermée.`}
         </Caption1>
-        <Button disabled={running || !leftThisWeek} onClick={onRun}>
+        <Button disabled={running || (s.ai_enabled !== false && !leftThisWeek)} onClick={onRun}>
           {running ? <Spinner size="tiny" /> : "Lancer maintenant"}
         </Button>
       </div>
@@ -297,7 +299,13 @@ function AgentCard({ status, lastRun, onRun, running }) {
         <Badge appearance="tint" color="informative">En file : {s.pending ?? 0}</Badge>
         <Badge appearance="tint" color="success">Prêtes (7 j) : {s.done ?? 0}</Badge>
         {s.error > 0 && <Badge appearance="tint" color="danger">Échecs : {s.error}</Badge>}
-        <Badge appearance="tint" color="subtle">Reste cette semaine : {leftThisWeek}</Badge>
+        {s.ai_enabled !== false && <Badge appearance="tint" color="subtle">Reste cette semaine : {leftThisWeek}</Badge>}
+        {s.ai_enabled === false && <Badge appearance="tint" color="success">Mode gratuit · 0 €</Badge>}
+        {(s.sites?.pending || s.sites?.done) ? (
+          <Badge appearance="tint" color="informative" title="Recherche du site officiel par le moteur local du worker (gratuit), retenu seulement si le SIREN y figure.">
+            Sites : {s.sites.done || 0} cherchés · {s.sites.pending || 0} en file
+          </Badge>
+        ) : null}
         {(s.scrape?.pending || s.scrape?.running || s.scrape?.done) ? (
           <Badge appearance="tint" color="brand" title="Découverte des décideurs IT (LinkedIn public) + email, par le worker de scraping toutes les 6 h. Résultats dans Scraping.">
             Décideurs IT : {s.scrape.done || 0} comptes faits · {(s.scrape.pending || 0) + (s.scrape.running || 0)} en file
@@ -544,7 +552,7 @@ export default function LeadsClient({ initialLeads = [] }) {
 
       {leads.length > 0 && <AgentCard status={agent} lastRun={agentRun} onRun={runAgent} running={agentBusy} />}
 
-      {leads.length > 0 && <BatchPrepCard leads={leads} onDone={reload} />}
+      {leads.length > 0 && <BatchPrepCard leads={leads} onDone={reload} free={agent?.ai_enabled === false} />}
 
       <SuccessorRecheckCard leads={leads} onDone={reload} />
 

@@ -164,6 +164,50 @@ def mentions_company(text, company):
     return len(joined) >= 5 and joined in compact
 
 
+# Moteur local SearXNG (lancé par le workflow) : gratuit, sans clé, agrège
+# plusieurs moteurs publics. Prioritaire sur Brave (payant depuis 2026).
+SEARX_URL = (os.environ.get("SEARXNG_URL") or "").rstrip("/") or None
+
+
+def searx_search(query, max_results=20):
+    """Résultats [{url, title, content}] du SearXNG local, [] si indisponible."""
+    if not SEARX_URL:
+        return []
+    url = f"{SEARX_URL}/search?" + urllib.parse.urlencode({"q": query, "format": "json", "language": "fr-FR"})
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"Accept": "application/json"}), timeout=25) as r:
+            data = json.loads(r.read().decode())
+    except Exception as e:  # noqa: BLE001
+        print(f"      ⚠  SearXNG indisponible : {str(e)[:100]}")
+        return []
+    return [{"url": x.get("url", ""), "title": x.get("title", ""), "content": x.get("content", "")}
+            for x in (data.get("results") or [])[:max_results]]
+
+
+def snippet_contacts(results, company, must_match=False, source="searxng:linkedin-snippet"):
+    """Contacts lus dans les titres/extraits de résultats LinkedIn (sans ouvrir LinkedIn)."""
+    out = []
+    for res in results:
+        link = res.get("url", "")
+        if "linkedin.com/in/" not in link:
+            continue
+        raw_title = res.get("title") or ""
+        desc = res.get("content") or res.get("description") or ""
+        title = re.sub(r"\s*[-–|]\s*LinkedIn\s*$", "", raw_title).strip()
+        parts = re.split(r"\s[-–|]\s", title)
+        name = parts[0].strip()
+        role = parts[1].strip() if len(parts) > 1 else desc[:120].strip()
+        if not name or re.search(r"linkedin|s.identifier|s.inscrire|sign\s?up|join now|milliard|million", name, re.I):
+            continue
+        if must_match and not mentions_company(f"{raw_title} {desc}", company):
+            continue
+        if must_match and not DECIDER_RE.search(f"{title} {desc}"):
+            continue
+        out.append({"company": company, "name": name, "headline": role,
+                    "linkedin_url": link.split("?")[0], "source": source})
+    return out
+
+
 def brave_contacts(query, company, must_match=False):
     """Recherche Brave → contacts {company, name, headline, linkedin_url, source}
     lus DIRECTEMENT dans les snippets (titre + description), SANS fetch LinkedIn.
@@ -275,6 +319,21 @@ def discover_company(company, roles=None, max_profiles=4, extract=True,
     Ne lève jamais : en cas de blocage, renvoie ce qui a été collecté.
     """
     roles = roles or ROLE_QUERIES
+
+    # ── Voie gratuite : moteur local SearXNG (aucune clé, aucun coût) ──────────
+    if SEARX_URL:
+        seen, contacts = set(), []
+        name_q = f'"{" ".join(company_core(company))}"' if must_match else company
+        for rq in roles:
+            rows = snippet_contacts(searx_search(f"{name_q} {rq} site:linkedin.com/in"), company, must_match)
+            for c in rows:
+                if c["linkedin_url"] not in seen:
+                    seen.add(c["linkedin_url"])
+                    contacts.append(c)
+            time.sleep(1.5)  # politesse envers les moteurs agrégés
+        if contacts or not BRAVE_KEY:
+            log(f"   {len(contacts[:max_profiles])} contact(s) via SearXNG")
+            return contacts[:max_profiles], 0
 
     # ── Voie fiable : données lues dans les snippets Brave, SANS fetch LinkedIn ──
     # Évite le mur d'auth LinkedIn (qui bloque même via proxy) et ne consomme quasi

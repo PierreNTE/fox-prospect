@@ -25,6 +25,7 @@ from datetime import datetime, timezone, timedelta
 # Réutilise les fonctions importables des scripts existants (même dossier).
 from discover_free import discover_company
 from waterfall import enrich_email
+from site_finder import find_official_site
 
 SB_URL = os.environ.get("SUPABASE_URL")
 SB_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
@@ -179,10 +180,31 @@ def insert_result(job_id, account_id, company, contact, email_info):
     sb("scrape_results", method="POST", body=row, prefer="return=minimal")
 
 
+FIND_SITE_BATCH = _int_env("FIND_SITE_BATCH", 15)   # recherches de site par run (rapides)
+
+
+def process_find_website(job):
+    """Job find_website : site officiel vérifié par SIREN → écrit sur le compte."""
+    job_id, params = job["id"], job.get("params") or {}
+    update_job(job_id, status="running", started_at=now_iso(), progress=10)
+    url, tested = find_official_site(params.get("company") or "", params.get("commune") or "", params.get("siren") or "")
+    account_id = params.get("account_id")
+    if url and account_id:
+        host = urllib.parse.urlparse(url).hostname.removeprefix("www.")
+        # web_intel_at remis à zéro : la collecte de l'appli repasse sur ce site.
+        sb(f"accounts?id=eq.{account_id}", method="PATCH",
+           body={"website": url, "domain": host, "web_intel_at": None})
+    update_job(job_id, status="done", progress=100, finished_at=now_iso(),
+               stats={"found": 1 if url else 0, "enriched": 0, "blocked": 0, "tested": tested})
+    print(f"✓ job {job_id} [find_website] {'site vérifié' if url else 'aucun site vérifié'} ({tested} candidat(s))")
+
+
 def process_job(job):
     job_id = job["id"]
     kind = job["kind"]
     params = job.get("params") or {}
+    if kind == "find_website":
+        return process_find_website(job)
     limit = int(params.get("limit") or DEFAULT_LIMIT)
     do_enrich = kind in ("enrich", "discover_and_enrich")
     do_discover = kind in ("discover", "discover_and_enrich")
@@ -265,9 +287,12 @@ def main():
 
     # Leads Salesforce (agent hebdo) d'abord : ce sont les comptes appelés cette
     # semaine ; la veille automatique (created_by=auto) complète le lot.
-    jobs = sb(f"scrape_jobs?status=eq.pending&created_by=eq.leads-agent&order=created_at.asc&limit={JOB_BATCH}") or []
+    # Recherches de site : rapides, lot à part (ne mangent pas le quota LinkedIn).
+    sites = sb(f"scrape_jobs?status=eq.pending&kind=eq.find_website&order=created_at.asc&limit={FIND_SITE_BATCH}") or []
+    jobs = sb(f"scrape_jobs?status=eq.pending&kind=neq.find_website&created_by=eq.leads-agent&order=created_at.asc&limit={JOB_BATCH}") or []
     if len(jobs) < JOB_BATCH:
-        jobs += sb(f"scrape_jobs?status=eq.pending&or=(created_by.is.null,created_by.neq.leads-agent)&order=created_at.asc&limit={JOB_BATCH - len(jobs)}") or []
+        jobs += sb(f"scrape_jobs?status=eq.pending&kind=neq.find_website&or=(created_by.is.null,created_by.neq.leads-agent)&order=created_at.asc&limit={JOB_BATCH - len(jobs)}") or []
+    jobs = sites + jobs
     print(f"=== worker : {len(jobs)} job(s) pending (cap {JOB_BATCH}) ===")
     if not jobs:
         return
