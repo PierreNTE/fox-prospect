@@ -6,6 +6,7 @@ import { runLeadsAgent } from "@/lib/leads-agent";
 import { aiEnabled } from "@/lib/constants";
 import { saveFreeCallPrep } from "@/lib/call-prep";
 import { drainFreeJobs } from "@/lib/process-jobs";
+import { runLeadsHousekeeping } from "@/lib/leads-pipeline";
 import { wikidataWebsite } from "@/lib/account-intel";
 import { fetchBodaccFull, searchBodaccText, lookupSiren } from "@/lib/company-health";
 import { recordText, linkReason, extractSirens, successorCandidates, successorNames } from "@/lib/company-successor";
@@ -95,6 +96,14 @@ export async function GET(request) {
     return NextResponse.json({ dry: true, intel_pending: pending.map((a) => a.name), successor_pending: (toRecheck || []).map((a) => a.name) });
   }
 
+  // Doublons sûrs fusionnés, décideurs trouvés → contacts (fiches mises à jour).
+  {
+    const { data: raw } = await supabase.from("accounts")
+      .select("id, name, sf_lead_status, sf_first_seen_at, created_at, health_detail").eq("source", "salesforce").limit(3000);
+    out.housekeeping = await runLeadsHousekeeping(supabase, raw || []).catch((e) => ({ error: e.message }));
+    out.housekeeping.merged = (out.housekeeping.merged || []).length;
+  }
+
   for (const a of pending) {
     if (Date.now() - started > budgetMs * 0.6) break;
     try {
@@ -106,6 +115,14 @@ export async function GET(request) {
     } catch (e) {
       out.intel.push({ name: a.name, error: e.message });
     }
+  }
+
+  const { data: noGroup } = await supabase.from("accounts").select("id, name")
+    .eq("source", "salesforce").in("health_status", ["active", "vigilance"])
+    .not("health_detail", "cs", '{"groupe":null}').filter("health_detail->groupe", "is", null).limit(10);
+  for (const a of noGroup || []) {
+    if (Date.now() - started > budgetMs * 0.75) break;
+    await recheckAccount(supabase, a).catch(() => {});
   }
 
   for (const a of toRecheck || []) {

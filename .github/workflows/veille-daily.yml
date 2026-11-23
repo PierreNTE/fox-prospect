@@ -18,8 +18,10 @@ name: veille-daily
 # l'étape de signal de vie en fin de passage.
 
 on:
-  schedule:
-    - cron: '30 4 * * *'      # 04:30 UTC — avant la journée de travail
+  # Veille quotidienne désactivée : l'appli est recentrée sur la prospection des
+  # leads (contact + accroche + existence). Lancement manuel toujours possible.
+  # schedule:
+  #   - cron: '30 4 * * *'
   workflow_dispatch:
     inputs:
       dry_run:

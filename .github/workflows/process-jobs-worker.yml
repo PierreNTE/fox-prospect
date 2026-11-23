@@ -14,6 +14,8 @@ on:
   schedule:
     - cron: '0 */2 * * *'
   workflow_dispatch:
+  repository_dispatch:
+    types: [leads]           # lancé dès l'import de la liste du lundi
 
 # Évite deux drains simultanés (le verrou optimiste côté serveur protège déjà des
 # doublons, mais inutile de lancer deux runs en parallèle).

@@ -1,14 +1,13 @@
 "use client";
 
-// Fiche d'approche : coordonnées publiques, interlocuteurs IT, actu, et
-// messages prêts à envoyer (email, LinkedIn, relance) + séquence de relances.
+// Accroche et messages : accroche + question d'ouverture, actu, et messages
+// prêts à envoyer (email, LinkedIn, relance), phrases pour le standard.
 // L'envoi reste manuel et en un clic : l'email s'ouvre dans la messagerie du
 // poste (Outlook), déjà rempli.
 import { useMemo, useState } from "react";
 import { Card, Body1, Caption1, Button, Spinner, Select, Badge } from "@fluentui/react-components";
 import {
-  Sparkle24Regular, Copy24Regular, Mail24Regular, Phone24Regular, Globe24Regular,
-  LinkSquare24Regular, CalendarAdd24Regular, Checkmark24Regular, PersonSearch24Regular, Search24Regular,
+  Sparkle24Regular, Copy24Regular, Mail24Regular, LinkSquare24Regular, Checkmark24Regular, PersonSearch24Regular, Search24Regular,
 } from "@fluentui/react-icons";
 import { fetchJson } from "@/lib/fetch-json";
 
@@ -77,7 +76,6 @@ const linkedinSearch = (name, company) =>
 export default function CallPrepCard({ accountId, accountName, contacts = [], prep, generatedAt, onDone, onError }) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
-  const [planning, setPlanning] = useState(false);
 
   // Destinataires possibles : contacts de l'organigramme avec un email, puis l'email générique.
   const recipients = useMemo(() => {
@@ -104,30 +102,6 @@ export default function CallPrepCard({ accountId, accountName, contacts = [], pr
     onDone?.();
   }
 
-  // Séquence multicanal → tâches datées dans l'Agenda (rien n'est envoyé automatiquement).
-  async function planSequence() {
-    if (!prep) return;
-    setPlanning(true); onError?.("");
-    const day = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
-    const m = prep.messages || {};
-    const steps = [
-      { d: 0, kind: "email", title: `Email d'accroche — ${accountName}`, notes: `${m.email?.objet || ""}\n\n${m.email?.corps || ""}` },
-      { d: 0, kind: "linkedin", title: `Invitation LinkedIn — ${accountName}`, notes: m.linkedin_invitation || "" },
-      { d: 3, kind: "appel", title: `Appel — ${accountName}`, notes: prep.coordonnees?.standard ? `Standard : ${prep.coordonnees.standard}` : "" },
-      { d: 7, kind: "relance", title: `Email de relance — ${accountName}`, notes: `${m.relance?.objet || ""}\n\n${m.relance?.corps || ""}` },
-    ];
-    for (const s of steps) {
-      const r = await fetchJson("/api/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: s.title, kind: s.kind, due_date: day(s.d), account_id: accountId, notes: s.notes }),
-      });
-      if (!r.ok) { onError?.(r.error); setPlanning(false); return; }
-    }
-    setPlanning(false);
-    setNote("Séquence planifiée dans l'Agenda : email + LinkedIn aujourd'hui, appel à J+3, relance à J+7.");
-  }
-
   const c = prep?.coordonnees || {};
   const m = prep?.messages || {};
 
@@ -136,17 +110,10 @@ export default function CallPrepCard({ accountId, accountName, contacts = [], pr
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <PersonSearch24Regular style={{ color: BRAND }} />
-          <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Fiche d'approche</Body1>
-          {prep?.mode === "gratuit" && <Badge appearance="tint" color="success">gratuit · sans IA</Badge>}
+          <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Accroche et messages</Body1>
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <ZoomInfoButton name={accountName} />
-          {prep && (
-            <Button size="small" appearance="outline" disabled={planning}
-              icon={planning ? <Spinner size="tiny" /> : <CalendarAdd24Regular />} onClick={planSequence}>
-              Planifier la séquence
-            </Button>
-          )}
           <Button appearance={prep ? "outline" : "primary"} size="small" disabled={busy}
             icon={busy ? <Spinner size="tiny" /> : <Sparkle24Regular />} onClick={() => run(!!prep)}>
             {busy ? "Préparation…" : prep ? "Régénérer" : "Préparer la fiche"}
@@ -156,63 +123,24 @@ export default function CallPrepCard({ accountId, accountName, contacts = [], pr
 
       {!prep && !busy && (
         <Caption1 style={{ display: "block", marginTop: 10, color: "var(--colorNeutralForeground2)", lineHeight: 1.6 }}>
-          Trouve le responsable informatique et les coordonnées publiques de la société (standard, email, LinkedIn),
-          son actualité, et rédige l'email, le message LinkedIn et la relance. Les interlocuteurs trouvés sont ajoutés
-          aux contacts du compte.
+          Prépare l'accroche, la question à poser, l'email, les messages LinkedIn, la relance et les phrases pour
+          passer le standard, à partir des informations publiques de la société.
         </Caption1>
       )}
       {note && <Caption1 style={{ display: "block", marginTop: 8, color: "#107C10" }}>{note}</Caption1>}
 
       {prep && (
         <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 16 }}>
-          {prep.identite && <Body1 style={{ lineHeight: 1.6, color: "var(--colorNeutralForeground2)" }}>{prep.identite}</Body1>}
-
-          <Section title="Coordonnées">
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {c.standard && (
-                <Button as="a" href={`tel:${c.standard.replace(/[^\d+]/g, "")}`} size="small" icon={<Phone24Regular />}>
-                  Standard {c.standard}
-                </Button>
-              )}
-              {c.site && (
-                <Button as="a" href={c.site} target="_blank" rel="noreferrer" size="small" icon={<Globe24Regular />}>
-                  Site web
-                </Button>
-              )}
-              {c.email_generique && (
-                <Button as="a" href={`mailto:${c.email_generique}`} size="small" icon={<Mail24Regular />}>
-                  {c.email_generique}
-                </Button>
+          {prep.angle && (
+            <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--colorBrandBackground2)" }}>
+              <Body1 style={{ lineHeight: 1.6 }}><strong>Accroche :</strong> {prep.angle.split(" Question d'ouverture")[0]}</Body1>
+              {/Question d'ouverture : « (.+?) »/.test(prep.angle) && (
+                <Body1 style={{ display: "block", marginTop: 6, lineHeight: 1.6 }}>
+                  <strong>Question à poser :</strong> « {/Question d'ouverture : « (.+?) »/.exec(prep.angle)[1]} »
+                </Body1>
               )}
             </div>
-            {c.format_email && (
-              <Line>Format des emails : <strong>{c.format_email}</strong>{c.format_source ? ` (observé : ${c.format_source})` : ""}</Line>
-            )}
-            {c.adresse && <Line>Siège : {c.adresse}</Line>}
-            {!c.standard && !c.email_generique && <Line>Aucune coordonnée publique trouvée — à compléter avec ZoomInfo.</Line>}
-          </Section>
-
-          <Section title="Interlocuteurs IT">
-            {prep.contacts?.length ? prep.contacts.map((p, i) => (
-              <Line key={i}>
-                <strong>{p.prenom} {p.nom}</strong> — {p.poste || "poste à confirmer"}{" "}
-                <Badge size="small" appearance="tint" color={p.confiance === "haute" ? "success" : p.confiance === "moyenne" ? "warning" : "informative"}>
-                  {p.confiance}
-                </Badge>
-                {p.pourquoi ? <><br />{p.pourquoi}</> : null}
-                <br />
-                <a href={p.linkedin_url || linkedinSearch(`${p.prenom} ${p.nom}`, accountName)} target="_blank" rel="noreferrer">
-                  {p.linkedin_url ? "Profil LinkedIn" : "Chercher sur LinkedIn"}
-                </a>
-                {p.source && /^https?:/.test(p.source) ? <> · <a href={p.source} target="_blank" rel="noreferrer">source</a></> : null}
-              </Line>
-            )) : <Line>Personne identifiée publiquement.</Line>}
-            {prep.postes_a_chercher?.length > 0 && (
-              <Line>À chercher dans ZoomInfo : {prep.postes_a_chercher.join(" · ")}</Line>
-            )}
-            {prep.it_externalisee && <Line>⚠️ IT probablement externalisée : {prep.it_externalisee}</Line>}
-            <Line>Ajoutés aux contacts du compte ci-dessous : bouton « Enrichir » pour chercher email et téléphone.</Line>
-          </Section>
+          )}
 
           {prep.actus?.length > 0 && (
             <Section title="Actualité">
@@ -224,7 +152,6 @@ export default function CallPrepCard({ accountId, accountName, contacts = [], pr
               ))}
             </Section>
           )}
-          {prep.angle && <Line><strong>Angle :</strong> {prep.angle}</Line>}
 
           {(m.email?.corps) && (
             <Section title="Email de premier contact" right={

@@ -11,7 +11,7 @@ on:
     - cron: '0 */6 * * *'
   workflow_dispatch:
   repository_dispatch:
-    types: [scrape]
+    types: [scrape, leads]   # leads : lancé dès l'import de la liste du lundi
 
 # Empêche deux runs de traiter la même file en parallèle.
 concurrency:
@@ -77,6 +77,9 @@ jobs:
           SCRAPE_JOB_BATCH: ${{ vars.SCRAPE_JOB_BATCH }}
           SCRAPE_PROFILE_LIMIT: ${{ vars.SCRAPE_PROFILE_LIMIT }}
           FIND_SITE_BATCH: ${{ vars.FIND_SITE_BATCH }}
+          # Prospection = leads Salesforce uniquement. La recherche sur les anciens
+          # comptes suivis (veille) ne reprend que si SCRAPE_INCLUDE_AUTO=true.
+          SCRAPE_INCLUDE_AUTO: ${{ vars.SCRAPE_INCLUDE_AUTO }}
         run: python scripts/contact-sources/worker.py
 
       - name: Alerte en cas d'échec

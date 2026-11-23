@@ -40,7 +40,6 @@ export default function IntelCard({ account, onDone, onError }) {
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <DatabaseSearch24Regular style={{ color: BRAND }} />
           <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Renseignements publics</Body1>
-          <Badge appearance="tint" color="success">gratuit · sans IA</Badge>
         </div>
         <Button size="small" appearance={w ? "subtle" : "primary"} disabled={busy}
           icon={busy ? <Spinner size="tiny" /> : <ArrowClockwise24Regular />} onClick={run}>

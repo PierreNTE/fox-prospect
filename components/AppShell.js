@@ -7,30 +7,18 @@ import { FoxMark, FoxLogo } from "@/components/FoxLogo";
 import SearchModal from "@/components/SearchModal";
 import OfflineBanner from "@/components/OfflineBanner";
 import {
-  Board24Regular,
-  BuildingMultiple24Regular,
-  ArrowImport24Regular,
   Settings24Regular,
   Search24Regular,
   Add24Regular,
-  Alert24Regular,
-  CalendarLtr24Regular,
-  DataTrending24Regular,
-  Pulse24Regular,
   Call24Regular,
 } from "@fluentui/react-icons";
 
-// Navigation resserrée sur le flux commercial : le Compte est le point de
-// départ, puis les prospects, puis l'import. L'analyse reste joignable via le
-// bouton « Activité » de la barre du haut (écran secondaire).
+// Navigation volontairement minimale : tout se passe sur la page Leads
+// (import, suivi des appels) et la fiche société. Les anciens écrans
+// (prospects, pipeline, veille…) restent joignables par URL mais ne sont
+// plus dans le menu.
 const NAV = [
   { href: "/leads", label: "Leads", Icon: Call24Regular },
-  { href: "/accounts", label: "Comptes", Icon: BuildingMultiple24Regular },
-  { href: "/", label: "Prospects", Icon: Board24Regular },
-  { href: "/agenda", label: "Agenda", Icon: CalendarLtr24Regular },
-  { href: "/veille", label: "Veille", Icon: Pulse24Regular },
-  { href: "/pipeline", label: "Pipeline", Icon: DataTrending24Regular },
-  { href: "/import", label: "Importer", Icon: ArrowImport24Regular },
 ];
 
 const isActive = (path, href) => (href === "/" ? path === "/" : path.startsWith(href));
@@ -125,18 +113,10 @@ export default function AppShell({ children }) {
               <Search24Regular />
             </button>
             <button
-              className="app-iconbtn"
-              aria-label="Activité"
-              title="Activité récente"
-              onClick={() => router.push("/analytics")}
-            >
-              <Alert24Regular />
-            </button>
-            <button
               className="app-iconbtn primary"
-              aria-label="Importer des prospects"
-              title="Importer des prospects"
-              onClick={() => router.push("/import")}
+              aria-label="Importer la liste de leads"
+              title="Importer la liste de leads"
+              onClick={() => router.push("/leads")}
             >
               <Add24Regular />
             </button>
