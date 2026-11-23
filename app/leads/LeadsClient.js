@@ -326,7 +326,7 @@ export default function LeadsClient({ initialLeads = [] }) {
       const parts = [];
       if (k.data.merged?.length) parts.push(`${k.data.merged.length} doublon(s) fusionné(s)`);
       if (k.data.contacts_added) parts.push(`${k.data.contacts_added} contact(s) ajouté(s)`);
-      parts.push(k.data.dispatch?.dispatched ? "recherche des sites et décideurs lancée" : "recherche des sites et décideurs au prochain passage (≤ 6 h)");
+      parts.push(k.data.dispatch?.dispatched ? "recherche des sites et décideurs lancée" : "recherche des sites et décideurs démarre dans le quart d'heure");
       setLog(parts.join(" · "));
     }
     let failures = 0;

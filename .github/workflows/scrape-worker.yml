@@ -1,31 +1,63 @@
 name: scrape-worker
 
 # Déclencheurs :
-#  - schedule : cron en UTC (jamais d'heure locale). '0 */6 * * *' = toutes les 6 h.
+#  - schedule : toutes les 15 min, un contrôle de quelques secondes regarde s'il
+#               reste des recherches de leads en file (site officiel, décideurs).
+#               Le worker ne démarre que s'il y a du travail : après l'import du
+#               lundi, la recherche commence dans le quart d'heure, sans jeton à
+#               configurer. Dépôt public = minutes GitHub Actions gratuites.
 #               ⚠️ GitHub DÉSACTIVE les crons après 60 jours sans activité sur le repo.
 #               Un push ou un "Run workflow" manuel les réactive.
 #  - workflow_dispatch : bouton "Run workflow" dans l'onglet Actions (test manuel).
-#  - repository_dispatch (type 'scrape') : déclenché par l'app via POST /api/scrape/enqueue.
+#  - repository_dispatch (types scrape / leads) : lancement immédiat par l'app si
+#               GITHUB_DISPATCH_TOKEN est configuré dans Vercel (facultatif).
 on:
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
   repository_dispatch:
-    types: [scrape, leads]   # leads : lancé dès l'import de la liste du lundi
-
-# Empêche deux runs de traiter la même file en parallèle.
-concurrency:
-  group: scrape-worker
-  cancel-in-progress: false
+    types: [scrape, leads]
 
 permissions:
   contents: read
   issues: write   # nécessaire à l'alerte d'échec (création d'une issue)
 
 jobs:
+  # Contrôle léger : n'affiche qu'un nombre, jamais de nom de société.
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      run: ${{ steps.q.outputs.run }}
+    steps:
+      - id: q
+        env:
+          EVENT: ${{ github.event_name }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          INCLUDE_AUTO: ${{ vars.SCRAPE_INCLUDE_AUTO }}
+        run: |
+          if [ "$EVENT" != "schedule" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; echo "Lancement manuel ou par l'app."; exit 0; fi
+          filter="status=eq.pending&or=(kind.eq.find_website,created_by.eq.leads-agent)"
+          if [ "$INCLUDE_AUTO" = "true" ]; then filter="status=eq.pending"; fi
+          range=$(curl -sS --max-time 20 -o /dev/null -D - \
+            -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY" \
+            -H "Prefer: count=exact" -H "Range: 0-0" \
+            "$SUPABASE_URL/rest/v1/scrape_jobs?select=id&$filter" | tr -d '\r' | grep -i '^content-range:' || true)
+          n="${range##*/}"
+          case "$n" in ''|*[!0-9]*) echo "::warning::File de recherche illisible — on réessaie dans 15 min."; n=0 ;; esac
+          echo "Recherches en file : $n"
+          if [ "$n" -gt 0 ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "run=false" >> "$GITHUB_OUTPUT"; fi
+
   scrape:
+    needs: check
+    if: needs.check.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Un seul worker à la fois sur la file ; un passage suivant attend son tour.
+    concurrency:
+      group: scrape-worker
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -81,6 +113,18 @@ jobs:
           # comptes suivis (veille) ne reprend que si SCRAPE_INCLUDE_AUTO=true.
           SCRAPE_INCLUDE_AUTO: ${{ vars.SCRAPE_INCLUDE_AUTO }}
         run: python scripts/contact-sources/worker.py
+
+      # Les décideurs trouvés passent tout de suite sur la fiche du lead (contact
+      # + accroche régénérée), sans attendre le passage des 2 h.
+      - name: Mettre à jour les fiches des leads
+        continue-on-error: true
+        env:
+          BASE_URL: ${{ vars.APP_BASE_URL || 'https://fox-prospect.vercel.app' }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then echo "::warning::CRON_SECRET absent — fiches mises à jour au prochain passage."; exit 0; fi
+          resp=$(curl -sS --max-time 320 -H "Authorization: Bearer $CRON_SECRET" "$BASE_URL/api/cron/leads-intel")
+          echo "$resp" | jq '{contacts_ajoutes: .housekeeping.contacts_added, doublons_fusionnes: .housekeeping.merged, error}' 2>/dev/null || echo "Réponse inattendue (non JSON)."
 
       - name: Alerte en cas d'échec
         if: failure()

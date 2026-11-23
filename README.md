@@ -496,7 +496,7 @@ Flux : **PDF Salesforce → contrôle des sociétés → préparation d'appel �
    informatiques. Lancée après chaque import (page ouverte) et par le cron Vercel du
    matin (`INTEL_PER_CRON`, défaut 15) — indépendante de GitHub Actions et du crédit IA.
 9. **Décideurs IT (worker de scraping)** — l'agent envoie aussi les comptes A/B actifs
-   au worker `scrape-worker` (GitHub Actions, toutes les 6 h, gratuit, sans IA) :
+   au worker `scrape-worker` (GitHub Actions, contrôle toutes les 15 min, gratuit, sans IA) :
    découverte des postes IT et emails, résultats dans **Scraping** (à promouvoir en
    contacts). Un compte n'est envoyé qu'une fois ; plafond `SCRAPE_WEEKLY_MAX`
    (défaut 25 / 7 jours). Les jobs des leads passent avant ceux de la veille.
