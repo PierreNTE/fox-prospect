@@ -1,0 +1,26 @@
+# Moteur de recherche LOCAL et éphémère (SearXNG), lancé dans GitHub Actions
+# le temps d'un passage du worker : agrège plusieurs moteurs publics, gratuit,
+# sans clé ni compte. Jamais exposé sur Internet (localhost du runner).
+use_default_settings: true
+
+general:
+  instance_name: "fox-prospect-worker"
+
+server:
+  secret_key: "instance-locale-ephemere-non-exposee"
+  limiter: false
+  image_proxy: false
+  public_instance: false
+  method: "GET"
+
+search:
+  safe_search: 0
+  default_lang: "fr-FR"
+  formats:
+    - html
+    - json
+
+outgoing:
+  request_timeout: 6.0
+  max_request_timeout: 12.0
+  useragent_suffix: ""

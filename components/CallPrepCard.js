@@ -137,6 +137,7 @@ export default function CallPrepCard({ accountId, accountName, contacts = [], pr
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <PersonSearch24Regular style={{ color: BRAND }} />
           <Body1 style={{ fontWeight: 700, fontSize: 15 }}>Fiche d'approche</Body1>
+          {prep?.mode === "gratuit" && <Badge appearance="tint" color="success">gratuit · sans IA</Badge>}
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <ZoomInfoButton name={accountName} />
@@ -148,7 +149,7 @@ export default function CallPrepCard({ accountId, accountName, contacts = [], pr
           )}
           <Button appearance={prep ? "outline" : "primary"} size="small" disabled={busy}
             icon={busy ? <Spinner size="tiny" /> : <Sparkle24Regular />} onClick={() => run(!!prep)}>
-            {busy ? "Recherche… (≈ 1 min)" : prep ? "Régénérer" : "Préparer (IA + web)"}
+            {busy ? "Préparation…" : prep ? "Régénérer" : "Préparer la fiche"}
           </Button>
         </div>
       </div>

@@ -58,6 +58,7 @@ double plafond mensuel et lissé (voir *Variables d'environnement*).
    | `supabase/migration-v19-scale-s5.sql` | vue `hot_accounts` (signal < 14 j sans contact < 30 j) |
    | `supabase/migration-v23-dell-cold-calling.sql` | module cold calling Dell : import leads Salesforce, santé société, qualif infra + BANT, préparation d'appel |
    | `supabase/migration-v24-leads-priorite.sql` | suivi hebdo des leads Salesforce : `sf_first_seen_at` / `sf_last_seen_at` (badges « Nouveau » / « Absent ») |
+   | `supabase/migration-v27-mode-gratuit.sql` | job `find_website` (recherche du site officiel par le moteur local du worker) |
    | `supabase/migration-v26-collecte-web.sql` | `accounts.web_intel` / `web_intel_at` : collecte web gratuite par compte |
    | `supabase/migration-v25-agent-leads.sql` | jobs `call_prep` (agent hebdo des leads) et `enrich_contact` ajoutés à la contrainte `jobs_kind_check` |
 
@@ -413,6 +414,26 @@ mapping **riche et fiable sur le nom/poste/LinkedIn/email**, complété à la de
 
 
 ---
+
+## Mode 100 % gratuit (par défaut depuis v27)
+
+Aucun service payant n'est appelé tant que tu ne l'autorises pas explicitement.
+
+| Brique | Gratuit (défaut) | Payant (sur autorisation) |
+|---|---|---|
+| Fiche d'approche | règles + données publiques (`lib/call-prep-free.js`), instantanée | IA Anthropic si `AI_ENABLED=true` (Vercel) |
+| Santé société | API Recherche d'entreprises, BODACC | — |
+| Site, standard, emails, outils | collecte web + DNS + Wikidata + OpenStreetMap (Nominatim) | Brave côté Vercel si `BRAVE_API_KEY` |
+| Recherche du site officiel | agent du worker : **SearXNG local** dans GitHub Actions, site retenu seulement si le SIREN y figure | — |
+| Décideurs IT (LinkedIn public) | SearXNG local, extraits de résultats (LinkedIn jamais ouvert) | Brave si variable GitHub `BRAVE_ALLOWED=true`, proxy si `PROXY_ALLOWED=true` |
+| Actus | Google Actualités (RSS) | — |
+| Marchés publics | BOAMP | — |
+| Veille | sans jugement IA | IA si variable GitHub `AI_ENABLED=true` |
+| Hébergement | Vercel Hobby, Supabase Free, GitHub Actions (dépôt public) | — |
+
+`AI_ENABLED` absent ⇒ `callClaude` refuse tout appel et le kill-switch budget
+est déclenché : aucun chemin ne peut dépenser. Les jobs IA restent en attente
+sans consommer de tentative ; les jobs `call_prep` sont faits sans IA.
 
 ## Module cold calling Dell (`/leads`)
 

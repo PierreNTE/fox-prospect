@@ -3,6 +3,9 @@ import { getSupabase } from "@/lib/supabase";
 import { collectAndSave, pendingIntelAccounts } from "@/lib/account-intel";
 import { recheckAccount } from "@/lib/leads-import";
 import { runLeadsAgent } from "@/lib/leads-agent";
+import { aiEnabled } from "@/lib/constants";
+import { saveFreeCallPrep } from "@/lib/call-prep";
+import { drainFreeJobs } from "@/lib/process-jobs";
 import { wikidataWebsite } from "@/lib/account-intel";
 import { fetchBodaccFull, searchBodaccText, lookupSiren } from "@/lib/company-health";
 import { recordText, linkReason, extractSirens, successorCandidates, successorNames } from "@/lib/company-successor";
@@ -114,6 +117,19 @@ export async function GET(request) {
     } catch (e) {
       out.successor.push({ name: a.name, error: e.message });
     }
+  }
+
+  // Mode gratuit : fiche d'approche (sans IA) pour chaque compte actif qui n'en a pas.
+  if (!aiEnabled()) {
+    out.free_preps = 0;
+    const { data: noPrep } = await supabase
+      .from("accounts").select("*").eq("source", "salesforce")
+      .in("health_status", ["active", "vigilance"]).is("call_prep", null).limit(40);
+    for (const a of noPrep || []) {
+      if (Date.now() - started > budgetMs) break;
+      await saveFreeCallPrep(supabase, a).then(() => { out.free_preps++; }).catch(() => {});
+    }
+    out.free_jobs = await drainFreeJobs(supabase).catch((e) => ({ error: e.message }));
   }
 
   try {

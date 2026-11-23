@@ -63,3 +63,31 @@ describe("recherche des décideurs IT (worker de scraping)", () => {
     expect(selectScrapeTargets(leads, { room: 1 }).map((l) => l.id)).toEqual(["a"]);
   });
 });
+
+import { selectSiteTargets } from "@/lib/leads-agent";
+
+describe("recherche du site officiel (worker)", () => {
+  it("comptes actifs collectés sans site, une seule fois", () => {
+    const leads = [
+      { id: "a", health_status: "active", siren: "1", intel: { site: null } },
+      { id: "b", health_status: "active", siren: "2", intel: { site: "https://x.fr" } },
+      { id: "c", health_status: "active", siren: "3", intel: null },
+      { id: "d", health_status: "fermee", siren: "4", intel: { site: null } },
+      { id: "e", health_status: "active", siren: null, intel: { site: null } },
+      { id: "f", health_status: "vigilance", siren: "6", intel: { site: null }, website: "https://y.fr" },
+    ];
+    expect(selectSiteTargets(leads, { room: 10 }).map((l) => l.id)).toEqual(["a"]);
+    expect(selectSiteTargets(leads, { room: 10, already: new Set(["a"]) })).toEqual([]);
+  });
+});
+
+import { unlikelyWebsite } from "@/lib/leads-agent";
+
+describe("structures sans site", () => {
+  it("SCI, sociétés civiles et holdings ne sont pas cherchées", () => {
+    expect(unlikelyWebsite({ name: "SCI DES TILLEULS" })).toBe(true);
+    expect(unlikelyWebsite({ name: "X", nature_juridique: "6540" })).toBe(true);
+    expect(unlikelyWebsite({ name: "X HOLDING", naf: "64.20Z" })).toBe(true);
+    expect(unlikelyWebsite({ name: "ATELIER DURAND", naf: "25.62B", nature_juridique: "5710" })).toBe(false);
+  });
+});
