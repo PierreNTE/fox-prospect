@@ -29,8 +29,12 @@ DIRECTORIES = re.compile(
 
 
 def host_of(url):
+    """Hôte sans « www. », que l'on reçoive une URL complète ou un simple domaine."""
+    u = (url or "").strip()
+    if u and "://" not in u:
+        u = "https://" + u
     try:
-        return urllib.parse.urlparse(url).hostname.lower().removeprefix("www.")
+        return (urllib.parse.urlparse(u).hostname or "").lower().removeprefix("www.")
     except Exception:  # noqa: BLE001
         return ""
 
