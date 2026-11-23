@@ -151,7 +151,12 @@ export async function GET(request) {
 
   try {
     const r = await runLeadsAgent(supabase);
-    out.agent = { call_prep_queued: r.queued, scrape_queued: r.scrape?.queued ?? 0, scrape_error: r.scrape?.error || null };
+    out.agent = {
+      call_prep_queued: r.queued,
+      scrape_queued: r.scrape?.queued ?? 0, scrape_error: r.scrape?.error || null,
+      sites_queued: r.sites?.queued ?? 0, sites_error: r.sites?.error || null,
+      phones_queued: r.phones?.queued ?? 0, phones_error: r.phones?.error || null,
+    };
   } catch (e) {
     out.agent = { error: e.message };
   }
