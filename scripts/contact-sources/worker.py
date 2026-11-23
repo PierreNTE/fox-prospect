@@ -293,7 +293,9 @@ def main():
     # Recherches de site : rapides, lot à part (ne mangent pas le quota LinkedIn).
     sites = sb(f"scrape_jobs?status=eq.pending&kind=eq.find_website&order=created_at.asc&limit={FIND_SITE_BATCH}") or []
     jobs = sb(f"scrape_jobs?status=eq.pending&kind=neq.find_website&created_by=eq.leads-agent&order=created_at.asc&limit={JOB_BATCH}") or []
-    if len(jobs) < JOB_BATCH:
+    # Anciens comptes suivis (veille) : seulement si explicitement réactivé.
+    include_auto = (os.environ.get("SCRAPE_INCLUDE_AUTO") or "").strip().lower() == "true"
+    if include_auto and len(jobs) < JOB_BATCH:
         jobs += sb(f"scrape_jobs?status=eq.pending&kind=neq.find_website&or=(created_by.is.null,created_by.neq.leads-agent)&order=created_at.asc&limit={JOB_BATCH - len(jobs)}") or []
     jobs = sites + jobs
     print(f"=== worker : {len(jobs)} job(s) pending (cap {JOB_BATCH}) ===")

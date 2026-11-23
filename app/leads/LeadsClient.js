@@ -21,17 +21,19 @@ import {
   TableBody,
   TableHeaderCell,
 } from "@fluentui/react-components";
-import { ArrowUpload24Regular, Search24Regular, ArrowClockwise24Regular } from "@fluentui/react-icons";
+import { ArrowUpload24Regular, Search24Regular, ArrowClockwise24Regular, Phone24Regular } from "@fluentui/react-icons";
 import { fetchJson } from "@/lib/fetch-json";
 import { dedupeByCompany, parsePastedCompanies } from "@/lib/salesforce-leads";
 import { readLeadsPdf } from "@/lib/salesforce-pdf";
 import { HEALTH_META } from "@/lib/health-meta";
+import { CALL_STATUS_META, isFinalStatus, recallDue } from "@/lib/call-status";
 
 const BRAND = "#5B53E6";
 
 const BATCH = 6;
 
-function ImportCard({ onImported }) {
+function ImportCard({ onImported, startOpen = true }) {
+  const [open, setOpen] = useState(startOpen);
   const inputRef = useRef(null);
   const [parsing, setParsing] = useState(false);
   const [ocrStep, setOcrStep] = useState(null); // { page, pages } pendant la lecture OCR
@@ -100,13 +102,23 @@ function ImportCard({ onImported }) {
     onImported();
   }
 
+  if (!open) {
+    return (
+      <div>
+        <Button appearance="primary" icon={<ArrowUpload24Regular />} onClick={() => setOpen(true)}>
+          Importer la liste de la semaine
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <Card style={{ padding: "20px 20px 22px", borderLeft: `3px solid ${BRAND}` }}>
       <Body1><strong>Importer un export Salesforce (PDF)</strong></Body1>
       <Caption1 style={{ display: "block", marginTop: 4 }}>
-        Liste de leads → Printable View → Imprimer en PDF. Chaque société est contrôlée dans SIRENE
-        (active ou fermée) et au BODACC (redressement, liquidation). Seuls le nom, le statut et la campagne
-        sont conservés.
+        Liste de leads → Printable View → Imprimer en PDF. Chaque société est contrôlée (active, fermée,
+        reprise sous un autre nom), puis la recherche du contact et de l'accroche démarre automatiquement.
+        Seuls le nom, le statut et la campagne sont conservés.
       </Caption1>
 
       <input ref={inputRef} type="file" accept="application/pdf" hidden onChange={onFile} />
@@ -156,7 +168,7 @@ function ImportCard({ onImported }) {
               Contrôler et importer {selected.length} sociétés
             </Button>
             {running && <Button onClick={() => { stopRef.current = true; }}>Arrêter</Button>}
-            <Caption1>≈ {Math.ceil(selected.length * 1.2 / 60)} min · gratuit (API publiques, aucun appel IA)</Caption1>
+            <Caption1>≈ {Math.ceil(selected.length * 1.2 / 60)} min, puis la recherche démarre toute seule</Caption1>
           </div>
           {(running || done > 0) && (
             <div style={{ marginTop: 12 }}>
@@ -187,240 +199,6 @@ function ImportCard({ onImported }) {
   );
 }
 
-// Préparation en lot des fiches d'approche (IA + web), un compte après l'autre.
-// S'arrête seul sur une erreur de budget ou d'API répétée.
-// Les leads arrivent déjà triés par priorité (A > B > C) : on prépare d'abord les
-// meilleurs, et seulement les N premiers, pour ne pas vider le budget du mois
-// sur des comptes qui ne seront jamais appelés.
-const PREP_COST_EUR = 0.1;
-const PREP_LIMITS = [10, 25, 0]; // 0 = tous
-
-function BatchPrepCard({ leads, onDone, free }) {
-  const [limit, setLimit] = useState(10);
-  const [includeC, setIncludeC] = useState(false);
-  const eligible = leads.filter((l) =>
-    l.health_status === "active" && !/closed/i.test(l.sf_lead_status || "") && !l.call_prep_at
-    && l.priority?.tier !== "X" && (includeC || l.priority?.tier !== "C"));
-  const todo = limit ? eligible.slice(0, limit) : eligible;
-  const [running, setRunning] = useState(false);
-  const [done, setDone] = useState(0);
-  const [total, setTotal] = useState(0);
-  const [log, setLog] = useState([]);
-  const stopRef = useRef(false);
-
-  async function run() {
-    const list = todo;
-    setRunning(true); setDone(0); setTotal(list.length); setLog([]); stopRef.current = false;
-    let failuresInRow = 0;
-    for (let i = 0; i < list.length; i++) {
-      if (stopRef.current) break;
-      const r = await fetchJson("/api/call-prep", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId: list[i].id }),
-      });
-      setDone(i + 1);
-      if (!r.ok) {
-        failuresInRow++;
-        setLog((l) => [`${list[i].name} : ${r.error}`, ...l].slice(0, 6));
-        if (r.status === 429 || failuresInRow >= 2) {
-          setLog((l) => ["Arrêt : erreur répétée ou plafond budgétaire atteint.", ...l]);
-          break;
-        }
-      } else {
-        failuresInRow = 0;
-        const n = r.data?.prep?.contacts?.length || 0;
-        setLog((l) => [`${list[i].name} : ${n} interlocuteur(s)`, ...l].slice(0, 6));
-      }
-    }
-    setRunning(false);
-    onDone();
-  }
-
-  return (
-    <Card style={{ padding: "16px 20px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <Body1><strong>Fiches d'approche</strong></Body1>
-        <Caption1 style={{ flex: 1, minWidth: 220 }}>
-          Pour chaque compte à appeler : interlocuteurs, standard, email, actu, email + LinkedIn + relance prêts.
-          {free
-            ? " Mode gratuit : fiches construites sans IA à partir des données publiques collectées, instantanées, 0 €."
-            : " ≈ 1 min et ≈ 0,10 € par compte (IA), sous ton plafond budgétaire."} Les comptes les mieux classés passent en premier.
-        </Caption1>
-        <Button appearance="primary" disabled={running || !todo.length} onClick={run}>
-          {todo.length
-            ? `Préparer ${todo.length} compte(s) · ${free ? "gratuit" : `≈ ${(todo.length * PREP_COST_EUR).toFixed(2).replace(".", ",")} €`}`
-            : "Tout est préparé"}
-        </Button>
-        {running && <Button onClick={() => { stopRef.current = true; }}>Arrêter</Button>}
-      </div>
-      <div style={{ display: "flex", gap: 6, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <Caption1>Combien :</Caption1>
-        {PREP_LIMITS.map((n) => (
-          <Button key={n} size="small" appearance={limit === n ? "primary" : "secondary"} disabled={running}
-            onClick={() => setLimit(n)}>
-            {n ? `Top ${n}` : `Tous (${eligible.length})`}
-          </Button>
-        ))}
-        <Checkbox label="Inclure la priorité C" checked={includeC} disabled={running}
-          onChange={(_, d) => setIncludeC(!!d.checked)} />
-      </div>
-      {(running || done > 0) && (
-        <div style={{ marginTop: 10 }}>
-          <ProgressBar value={total ? done / total : 0} />
-          <Caption1>{done} / {total}{running ? " — garde cette page ouverte" : ""}</Caption1>
-          {log.map((x, i) => <Caption1 key={i} style={{ display: "block", color: "var(--colorNeutralForeground2)" }}>{x}</Caption1>)}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-// Agent hebdomadaire (lib/leads-agent.js) : lancé automatiquement à la fin d'un
-// import, il met en file les fiches d'approche des meilleurs comptes A/B. Le
-// worker (toutes les 2 h) les prépare sans que la page reste ouverte.
-function AgentCard({ status, lastRun, onRun, running }) {
-  const s = status || {};
-  const leftThisWeek = Math.max(0, (s.max ?? 0) - (s.week ?? 0));
-  return (
-    <Card style={{ padding: "16px 20px", borderLeft: "3px solid var(--colorPaletteGreenBorderActive)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <Body1><strong>Agent automatique</strong></Body1>
-        <Caption1 style={{ flex: 1, minWidth: 220 }}>
-          {s.ai_enabled === false
-            ? "Mode 100 % gratuit : après chaque import, collecte les infos publiques, prépare les fiches d'approche sans IA et lance la recherche des décideurs IT. Tout tourne toutes les 2 h, page fermée, 0 €."
-            : `À chaque import, prépare seul les fiches d'approche des comptes A et B (IA + web). Jusqu'à ${s.max ?? "…"} fiches par semaine, sous ton plafond budgétaire. Prêtes dans les 2 h, page fermée.`}
-        </Caption1>
-        <Button disabled={running || (s.ai_enabled !== false && !leftThisWeek)} onClick={onRun}>
-          {running ? <Spinner size="tiny" /> : "Lancer maintenant"}
-        </Button>
-      </div>
-      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-        <Badge appearance="tint" color="informative">En file : {s.pending ?? 0}</Badge>
-        <Badge appearance="tint" color="success">Prêtes (7 j) : {s.done ?? 0}</Badge>
-        {s.error > 0 && <Badge appearance="tint" color="danger">Échecs : {s.error}</Badge>}
-        {s.ai_enabled !== false && <Badge appearance="tint" color="subtle">Reste cette semaine : {leftThisWeek}</Badge>}
-        {s.ai_enabled === false && <Badge appearance="tint" color="success">Mode gratuit · 0 €</Badge>}
-        {(s.sites?.pending || s.sites?.done) ? (
-          <Badge appearance="tint" color="informative" title="Recherche du site officiel par le moteur local du worker (gratuit), retenu seulement si le SIREN y figure.">
-            Sites : {s.sites.done || 0} cherchés · {s.sites.pending || 0} en file
-          </Badge>
-        ) : null}
-        {(s.scrape?.pending || s.scrape?.running || s.scrape?.done) ? (
-          <Badge appearance="tint" color="brand" title="Découverte des décideurs IT (LinkedIn public) + email, par le worker de scraping toutes les 6 h. Résultats dans Scraping.">
-            Décideurs IT : {s.scrape.done || 0} comptes faits · {(s.scrape.pending || 0) + (s.scrape.running || 0)} en file
-          </Badge>
-        ) : null}
-      </div>
-      {lastRun && (
-        <Caption1 style={{ display: "block", marginTop: 8 }}>
-          {lastRun.error
-            ? lastRun.error
-            : lastRun.queued
-              ? `${lastRun.queued} fiche(s) mise(s) en file : ${lastRun.names.slice(0, 5).join(", ")}${lastRun.names.length > 5 ? "…" : ""}`
-              : "Aucun nouveau compte A/B à préparer (ou plafond de la semaine atteint)."}
-          {lastRun.scrape?.queued ? ` · ${lastRun.scrape.queued} compte(s) envoyé(s) à la recherche des décideurs IT.` : ""}
-        </Caption1>
-      )}
-      {s.pending > 0 && s.last_error && (
-        <Caption1 style={{ display: "block", marginTop: 4, color: "var(--colorPaletteDarkOrangeForeground1)" }}>
-          Dernier blocage : {s.last_error.slice(0, 160)}
-        </Caption1>
-      )}
-    </Card>
-  );
-}
-
-// Fermées / introuvables : relance le contrôle, qui cherche désormais si la
-// société continue sous un autre nom (absorption, changement de nom, rachat).
-function SuccessorRecheckCard({ leads, onDone }) {
-  const todo = leads.filter((l) => l.health_status === "fermee" || l.health_status === "introuvable");
-  const [running, setRunning] = useState(false);
-  const [done, setDone] = useState(0);
-  const [found, setFound] = useState(0);
-  if (!todo.length) return null;
-
-  async function run() {
-    setRunning(true); setDone(0); setFound(0);
-    let n = 0;
-    for (let i = 0; i < todo.length; i++) {
-      const r = await fetchJson(`/api/accounts/${todo[i].id}/health`, { method: "POST" });
-      if (r.ok && r.data?.health?.health_detail?.successor) n++;
-      setDone(i + 1); setFound(n);
-      await new Promise((res) => setTimeout(res, 300));
-    }
-    setRunning(false);
-    onDone();
-  }
-
-  return (
-    <Card style={{ padding: "14px 20px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <Body1><strong>Radiées ou introuvables</strong></Body1>
-        <Caption1 style={{ flex: 1, minWidth: 220 }}>
-          Une société radiée vit souvent sous un autre nom : absorption, changement de dénomination, rachat.
-          Le BODACC est fouillé pour retrouver le successeur (gratuit).
-        </Caption1>
-        <Button disabled={running} onClick={run}>
-          {running ? `${done} / ${todo.length}…` : `Rechercher les repreneurs (${todo.length})`}
-        </Button>
-      </div>
-      {(running || done > 0) && (
-        <Caption1 style={{ display: "block", marginTop: 8 }}>
-          {found} société(s) retrouvée(s) sous un autre nom{running ? "" : " — voir le filtre « Repris / renommés »"}.
-        </Caption1>
-      )}
-    </Card>
-  );
-}
-
-// Collecte web gratuite (sans IA) : site, standard, emails, LinkedIn, outils,
-// marchés publics. Lancée seule après chaque import ; aussi faite chaque matin
-// par le cron Vercel (15 comptes) si la page n'est pas restée ouverte.
-function IntelBatchCard({ state, onRun, onStop }) {
-  const { remaining, running, done, log } = state;
-  return (
-    <Card style={{ padding: "14px 20px", borderLeft: "3px solid #0F7B6C" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <Body1><strong>Collecte d'infos publiques</strong></Body1>
-        <Caption1 style={{ flex: 1, minWidth: 220 }}>
-          Site officiel vérifié par SIREN, standard, emails, LinkedIn société, outils repérés (Microsoft 365, VMware,
-          Veeam…), emails probables des dirigeants, marchés publics IT. Gratuit, sans IA, ≈ 15 s par compte.
-        </Caption1>
-        {running
-          ? <Button onClick={onStop}>Arrêter</Button>
-          : <Button appearance="primary" disabled={!remaining} onClick={onRun}>
-              {remaining ? `Collecter (${remaining} compte${remaining > 1 ? "s" : ""})` : "Tout est collecté"}
-            </Button>}
-      </div>
-      {(running || done > 0) && (
-        <div style={{ marginTop: 8 }}>
-          {running && <ProgressBar />}
-          <Caption1 style={{ display: "block" }}>
-            {done} compte(s) collecté(s){running ? ` — reste ${remaining}, garde la page ouverte (sinon le cron du matin prend le relais)` : ""}
-          </Caption1>
-          {log.map((x, i) => <Caption1 key={i} style={{ display: "block", color: "var(--colorNeutralForeground2)" }}>{x}</Caption1>)}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function IntelCell({ i }) {
-  if (!i) return <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>—</Caption1>;
-  if (i.error) return <Caption1 title={i.error}>échec</Caption1>;
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-      {i.phone && <Caption1><a href={`tel:${i.phone.replace(/\s/g, "")}`}>{i.phone}</a></Caption1>}
-      <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>
-        {[i.site ? "site" : null, i.emails ? `${i.emails} email(s)` : null, i.linkedin ? "LinkedIn" : null, i.mail, i.contracts ? `${i.contracts} marché(s)` : null]
-          .filter(Boolean).join(" · ") || "rien trouvé"}
-      </Caption1>
-      {i.tech?.length > 0 && <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>{i.tech.join(", ")}</Caption1>}
-    </div>
-  );
-}
-
 const TIER_COLOR = { A: "success", B: "warning", C: "informative", X: "subtle" };
 
 // Priorité d'appel déterministe (lib/lead-priority.js) ; le détail des points au survol.
@@ -429,72 +207,92 @@ function PriorityBadge({ p }) {
   const title = [...(p.reasons || []), ...(p.flags || []).map((f) => `⚠ ${f}`)].join("\n");
   return (
     <Badge appearance="tint" color={TIER_COLOR[p.tier] || "subtle"} title={title}>
-      {p.tier === "X" ? "—" : `${p.tier} · ${p.score}`}
+      {p.tier === "X" ? "—" : p.tier}
     </Badge>
   );
 }
+
+// Avancement de la recherche automatique (après import, puis toutes les 2 h).
+// Un seul bouton : tout mettre à jour maintenant (collecte + repreneurs + recherches).
+function ProgressCard({ progress, running, log, onRun }) {
+  const p = progress || {};
+  const busy = running || p.sites_pending > 0 || p.people_pending > 0 || (p.active && p.collected < p.active);
+  const pct = p.active ? Math.round((100 * (p.fiches || 0)) / p.active) : 0;
+  return (
+    <Card style={{ padding: "14px 18px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <Body1 style={{ flex: 1, minWidth: 220 }}>
+          <strong>Recherche automatique</strong>
+          {busy ? " — en cours, tu peux fermer la page" : " — à jour"}
+        </Body1>
+        <Button icon={running ? <Spinner size="tiny" /> : <ArrowClockwise24Regular />} disabled={running} onClick={onRun}>
+          {running ? "Mise à jour…" : "Tout mettre à jour"}
+        </Button>
+      </div>
+      {p.active > 0 && <ProgressBar value={pct / 100} style={{ marginTop: 10 }} />}
+      <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+        <Badge appearance="tint" color="success">{p.active ?? "…"} sociétés actives</Badge>
+        <Badge appearance="tint" color="brand">{p.fiches ?? 0} fiches prêtes</Badge>
+        <Badge appearance="tint" color="informative">{p.with_contact ?? 0} avec un contact nommé</Badge>
+        {(p.sites_pending > 0 || p.people_pending > 0) && (
+          <Badge appearance="outline">Recherche en file : {p.sites_pending || 0} sites · {p.people_pending || 0} décideurs</Badge>
+        )}
+      </div>
+      {log && <Caption1 style={{ display: "block", marginTop: 6, color: "var(--colorNeutralForeground2)" }}>{log}</Caption1>}
+    </Card>
+  );
+}
+
+function Flags({ l }) {
+  return (
+    <>
+      {l.successor && (
+        <Caption1 style={{ display: "block", color: l.successor.confidence === "forte" ? "#107C10" : "var(--colorPaletteDarkOrangeForeground1)" }}>
+          {l.successor.confidence === "forte" ? "→ Continue sous" : "→ Piste :"} {l.successor.name}
+        </Caption1>
+      )}
+      {(l.flags || []).map((f, i) => (
+        <Caption1 key={i} style={{ display: "block", color: "var(--colorPaletteDarkOrangeForeground1)" }}>
+          {f.kind === "doublon" && <>⚠ Doublon possible : <Link href={`/accounts/${f.other_id}`}>{f.other_name}</Link></>}
+          {f.kind === "groupe" && <>Même groupe ({f.group_name}) : {f.others.join(", ")}</>}
+          {f.kind === "filiale" && <>Filiale de <Link href={`/accounts/${f.other_id}`}>{f.other_name}</Link></>}
+        </Caption1>
+      ))}
+    </>
+  );
+}
+
+function MergeButton({ l, onDone }) {
+  const f = (l.flags || []).find((x) => x.kind === "doublon");
+  const [busy, setBusy] = useState(false);
+  if (!f) return null;
+  return (
+    <Button size="small" appearance="subtle" disabled={busy} onClick={async () => {
+      if (!confirm(`Fusionner « ${f.other_name} » dans « ${l.name} » ?\nLes contacts et notes passent sur « ${l.name} », l'autre compte est supprimé.`)) return;
+      setBusy(true);
+      const r = await fetchJson("/api/accounts/merge", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keepId: l.id, dropId: f.other_id }),
+      });
+      setBusy(false);
+      if (!r.ok) { alert(r.error); return; }
+      onDone();
+    }}>
+      {busy ? "Fusion…" : "Fusionner"}
+    </Button>
+  );
+}
+
+const today = () => new Date().toISOString().slice(0, 10);
+const isOpen = (l) => ["active", "vigilance"].includes(l.health_status) && !/closed/i.test(l.sf_lead_status || "");
 
 export default function LeadsClient({ initialLeads = [] }) {
   const [leads, setLeads] = useState(initialLeads);
   const [filter, setFilter] = useState("todo");
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
-
-  const [agent, setAgent] = useState(null);
-  const [agentRun, setAgentRun] = useState(null);
-  const [agentBusy, setAgentBusy] = useState(false);
-
-  useEffect(() => {
-    fetchJson("/api/leads/agent").then((r) => { if (r.ok) setAgent(r.data); });
-  }, []);
-
-  async function runAgent() {
-    setAgentBusy(true);
-    const r = await fetchJson("/api/leads/agent", { method: "POST" });
-    if (r.ok) { setAgentRun(r.data); setAgent(r.data.status); }
-    else setAgentRun({ error: r.error });
-    setAgentBusy(false);
-  }
-
-  const [intel, setIntel] = useState({ remaining: 0, running: false, done: 0, log: [] });
-  const intelStop = useRef(false);
-
-  useEffect(() => {
-    fetchJson("/api/leads/intel").then((r) => { if (r.ok) setIntel((x) => ({ ...x, remaining: r.data.remaining })); });
-  }, []);
-
-  async function runIntel() {
-    intelStop.current = false;
-    setIntel((x) => ({ ...x, running: true, done: 0, log: [] }));
-    let done = 0;
-    let failures = 0;
-    for (;;) {
-      if (intelStop.current) break;
-      const r = await fetchJson("/api/leads/intel", { method: "POST" });
-      if (!r.ok) {
-        failures++;
-        setIntel((x) => ({ ...x, log: [`Erreur : ${r.error}`, ...x.log].slice(0, 5) }));
-        if (failures >= 2) break;
-        continue;
-      }
-      failures = 0;
-      const res = r.data.results || [];
-      done += res.length;
-      const lines = res.map((x) => (x.error ? `${x.name} : échec` : `${x.name} : ${x.site ? "site" : "pas de site"}, ${x.phones} tél., ${x.emails} email(s), ${x.tech} outil(s)`));
-      setIntel((x) => ({ ...x, done, remaining: r.data.remaining, log: [...lines, ...x.log].slice(0, 5) }));
-      if (!res.length || !r.data.remaining) break;
-    }
-    setIntel((x) => ({ ...x, running: false }));
-    reload();
-  }
-
-  async function afterImport() {
-    await reload();
-    await runAgent();
-    // Collecte gratuite des nouveaux comptes, sans attendre (la page reste utilisable).
-    const r = await fetchJson("/api/leads/intel");
-    if (r.ok && r.data.remaining) { setIntel((x) => ({ ...x, remaining: r.data.remaining })); runIntel(); }
-  }
+  const [progress, setProgress] = useState(null);
+  const [running, setRunning] = useState(false);
+  const [log, setLog] = useState("");
 
   async function reload() {
     setLoading(true);
@@ -502,37 +300,94 @@ export default function LeadsClient({ initialLeads = [] }) {
     if (r.ok) setLeads(r.data.leads || []);
     setLoading(false);
   }
+  async function loadProgress() {
+    const r = await fetchJson("/api/leads/progress");
+    if (r.ok) setProgress(r.data);
+    return r.ok ? r.data : null;
+  }
+
+  // Suivi en direct tant que la recherche tourne (toutes les 30 s).
+  useEffect(() => {
+    loadProgress();
+    const t = setInterval(async () => {
+      if (document.hidden) return; // onglet en arrière-plan : on ne sollicite pas le serveur
+      const p = await loadProgress();
+      if (p && (p.sites_pending || p.people_pending || p.collected < p.active)) reload();
+    }, 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Tout mettre à jour : doublons + recherches lancées (workers), puis collecte
+  // web gratuite compte par compte (fiches régénérées au passage).
+  async function runAll() {
+    setRunning(true); setLog("Lancement des recherches…");
+    const k = await fetchJson("/api/leads/kickoff", { method: "POST" });
+    if (k.ok) {
+      const parts = [];
+      if (k.data.merged?.length) parts.push(`${k.data.merged.length} doublon(s) fusionné(s)`);
+      if (k.data.contacts_added) parts.push(`${k.data.contacts_added} contact(s) ajouté(s)`);
+      parts.push(k.data.dispatch?.dispatched ? "recherche des sites et décideurs lancée" : "recherche des sites et décideurs au prochain passage (≤ 6 h)");
+      setLog(parts.join(" · "));
+    }
+    let failures = 0;
+    for (let i = 0; i < 40; i++) {
+      const r = await fetchJson("/api/leads/intel", { method: "POST" });
+      if (!r.ok) { if (++failures >= 2) break; continue; }
+      failures = 0;
+      await loadProgress();
+      if (!r.data.results?.length || !r.data.remaining) break;
+    }
+    // Sociétés fermées ou introuvables : recherche du repreneur.
+    for (const l of leads.filter((x) => x.health_status === "fermee" || x.health_status === "introuvable").slice(0, 25)) {
+      await fetchJson(`/api/accounts/${l.id}/health`, { method: "POST" });
+    }
+    setRunning(false);
+    await loadProgress();
+    reload();
+  }
+
+  async function afterImport() {
+    await reload();
+    runAll();
+  }
 
   const counts = useMemo(() => {
-    const c = { all: leads.length, todo: 0, new: 0, missing: 0 };
+    const c = { all: leads.length, todo: 0, recall: 0, rdv: 0, successor: 0, dups: 0, close: 0, missing: 0 };
     for (const l of leads) {
-      c[l.health_status] = (c[l.health_status] || 0) + 1;
-      if (l.health_status === "active" && !/closed/i.test(l.sf_lead_status || "")) c.todo++;
-      if (l.is_new) c.new++;
+      if (isOpen(l) && !isFinalStatus(l.call_status)) c.todo++;
+      if (recallDue(l.recall_at, today()) && !isFinalStatus(l.call_status)) c.recall++;
+      if (l.call_status === "rdv") c.rdv++;
+      if (l.successor) c.successor++;
+      if ((l.flags || []).length) c.dups++;
+      if (l.health_status === "fermee") c.close++;
       if (l.missing_from_last_import) c.missing++;
-      if (l.successor) c.successor = (c.successor || 0) + 1;
-      if (l.health_status === "fermee" || l.health_status === "introuvable") c.recheck = (c.recheck || 0) + 1;
     }
     return c;
   }, [leads]);
 
-  const shown = leads.filter((l) => {
-    if (q && !l.name.toLowerCase().includes(q.toLowerCase())) return false;
-    if (filter === "all") return true;
-    if (filter === "todo") return l.health_status === "active" && !/closed/i.test(l.sf_lead_status || "");
-    if (filter === "new") return l.is_new;
-    if (filter === "missing") return l.missing_from_last_import;
-    if (filter === "successor") return !!l.successor;
-    return l.health_status === filter;
-  });
+  const shown = leads
+    .filter((l) => {
+      if (q && !`${l.name} ${l.sirene_name || ""} ${l.contact?.name || ""}`.toLowerCase().includes(q.toLowerCase())) return false;
+      if (filter === "all") return true;
+      if (filter === "todo") return isOpen(l) && !isFinalStatus(l.call_status);
+      if (filter === "recall") return recallDue(l.recall_at, today()) && !isFinalStatus(l.call_status);
+      if (filter === "rdv") return l.call_status === "rdv";
+      if (filter === "successor") return !!l.successor;
+      if (filter === "dups") return (l.flags || []).length > 0;
+      if (filter === "close") return l.health_status === "fermee";
+      if (filter === "missing") return l.missing_from_last_import;
+      return true;
+    })
+    // À rappeler aujourd'hui en tête, puis l'ordre de priorité.
+    .sort((a, b) => Number(recallDue(b.recall_at, today())) - Number(recallDue(a.recall_at, today())));
 
   const FILTERS = [
     ["todo", "À appeler"],
-    ["new", "Nouveaux (7 j)"],
-    ["vigilance", HEALTH_META.vigilance.label],
-    ["fermee", "À clôturer dans Salesforce"],
-    ["introuvable", HEALTH_META.introuvable.label],
+    ["recall", "À rappeler aujourd'hui"],
+    ["rdv", "RDV pris"],
     ["successor", "Repris / renommés"],
+    ["dups", "Doublons et groupes"],
+    ["close", "À clôturer dans Salesforce"],
     ["missing", "Absents du dernier import"],
     ["all", "Tous"],
   ];
@@ -540,99 +395,92 @@ export default function LeadsClient({ initialLeads = [] }) {
   return (
     <div style={{ display: "grid", gap: 16, maxWidth: 1100, margin: "0 auto", padding: "8px 0 40px" }}>
       <div>
-        <Title2>Leads Salesforce</Title2>
+        <Title2>Mes leads</Title2>
         <Caption1 style={{ display: "block" }}>
-          Contrôle des sociétés, puis fiche d'approche par compte : interlocuteurs, coordonnées et messages prêts.
+          Pour chaque société : existe-t-elle encore, qui appeler, avec quelle accroche.
         </Caption1>
       </div>
 
-      <ImportCard onImported={afterImport} />
+      <ImportCard onImported={afterImport} startOpen={leads.length === 0} />
 
-      {leads.length > 0 && <IntelBatchCard state={intel} onRun={runIntel} onStop={() => { intelStop.current = true; }} />}
-
-      {leads.length > 0 && <AgentCard status={agent} lastRun={agentRun} onRun={runAgent} running={agentBusy} />}
-
-      {leads.length > 0 && <BatchPrepCard leads={leads} onDone={reload} free={agent?.ai_enabled === false} />}
-
-      <SuccessorRecheckCard leads={leads} onDone={reload} />
+      {leads.length > 0 && <ProgressCard progress={progress} running={running} log={log} onRun={runAll} />}
 
       <Card style={{ padding: "16px 16px 20px" }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          {FILTERS.map(([k, label]) => (
+          {FILTERS.filter(([k]) => k === "todo" || k === "all" || counts[k] > 0).map(([k, label]) => (
             <Button key={k} size="small" appearance={filter === k ? "primary" : "secondary"} onClick={() => setFilter(k)}>
               {label} ({counts[k] || 0})
             </Button>
           ))}
-          <Input size="small" contentBefore={<Search24Regular />} placeholder="Filtrer…" value={q}
-            onChange={(_, d) => setQ(d.value)} style={{ marginLeft: "auto", minWidth: 180 }} />
+          <Input size="small" contentBefore={<Search24Regular />} placeholder="Chercher une société ou un nom…" value={q}
+            onChange={(_, d) => setQ(d.value)} style={{ marginLeft: "auto", minWidth: 200 }} />
           <Button size="small" icon={loading ? <Spinner size="tiny" /> : <ArrowClockwise24Regular />} onClick={reload}
             aria-label="Rafraîchir" />
         </div>
 
         {shown.length === 0 ? (
           <Caption1 style={{ display: "block", marginTop: 16 }}>
-            {leads.length ? "Aucun lead dans ce filtre." : "Aucun lead importé pour l'instant."}
+            {leads.length ? "Aucun lead dans ce filtre." : "Importe ta liste de leads pour commencer."}
           </Caption1>
         ) : (
           <div style={{ overflowX: "auto", marginTop: 12 }}>
-            <Table size="small" aria-label="Leads Salesforce">
+            <Table size="small" aria-label="Leads">
               <TableHeader>
                 <TableRow>
-                  <TableHeaderCell style={{ width: 84 }}>Priorité</TableHeaderCell>
-                  <TableHeaderCell>Société (Salesforce)</TableHeaderCell>
-                  <TableHeaderCell>Santé</TableHeaderCell>
-                  <TableHeaderCell>SIRENE</TableHeaderCell>
-                  <TableHeaderCell>Infos publiques</TableHeaderCell>
-                  <TableHeaderCell>Lead</TableHeaderCell>
-                  <TableHeaderCell>Fiche d'approche</TableHeaderCell>
+                  <TableHeaderCell style={{ width: 56 }}>Prio.</TableHeaderCell>
+                  <TableHeaderCell>Société</TableHeaderCell>
+                  <TableHeaderCell>Qui appeler</TableHeaderCell>
+                  <TableHeaderCell>Accroche</TableHeaderCell>
+                  <TableHeaderCell style={{ width: 150 }}>Suivi</TableHeaderCell>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {shown.map((l) => {
                   const m = HEALTH_META[l.health_status] || { label: "—", color: "subtle" };
+                  const st = CALL_STATUS_META[l.call_status];
+                  const phone = l.standard_phone || l.intel?.phone || "";
                   return (
                     <TableRow key={l.id}>
+                      <TableCell><PriorityBadge p={l.priority} /></TableCell>
                       <TableCell>
-                        <PriorityBadge p={l.priority} />
+                        <Link href={`/accounts/${l.id}`} style={{ fontWeight: 600 }}>{l.name}</Link>
+                        <div style={{ display: "flex", gap: 4, marginTop: 2, flexWrap: "wrap" }}>
+                          <Badge appearance="tint" color={m.color} size="small" title={l.health_label}>{m.label}</Badge>
+                          {l.is_new && <Badge appearance="filled" color="brand" size="small">Nouveau</Badge>}
+                          {l.missing_from_last_import && <Badge appearance="outline" size="small" title="Absent du dernier export Salesforce">Absent</Badge>}
+                        </div>
+                        <Flags l={l} />
+                        <MergeButton l={l} onDone={reload} />
                       </TableCell>
                       <TableCell>
-                        <Link href={`/accounts/${l.id}`}>{l.name}</Link>
-                        {l.is_new && <Badge appearance="filled" color="brand" size="small" style={{ marginLeft: 6 }}>Nouveau</Badge>}
-                        {l.missing_from_last_import && (
-                          <Badge appearance="outline" color="subtle" size="small" style={{ marginLeft: 6 }}
-                            title="Absent du dernier export : lead réattribué ou clos dans Salesforce">Absent</Badge>
-                        )}
-                        {l.successor && (
-                          <Caption1 style={{ display: "block", color: l.successor.confidence === "forte" ? "#107C10" : "var(--colorPaletteDarkOrangeForeground1)" }}>
-                            {l.successor.confidence === "forte" ? "→ Continue sous" : "→ Piste :"} {l.successor.name} ({l.successor.reason_label})
+                        {l.contact ? (
+                          <>
+                            <Caption1 style={{ display: "block", fontWeight: 600 }}>{l.contact.name}</Caption1>
+                            <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground2)" }}>{l.contact.role}</Caption1>
+                          </>
+                        ) : (
+                          <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground3)" }}>
+                            {l.call_prep_at ? "Demander au standard" : isOpen(l) ? "Recherche en cours…" : "—"}
                           </Caption1>
                         )}
-                        {l.priority?.angle && (
-                          <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground2)" }}>{l.priority.angle}</Caption1>
+                        {phone && (
+                          <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12.5 }}>
+                            <Phone24Regular style={{ fontSize: 14 }} /> {phone}
+                          </a>
                         )}
-                        {l.priority?.flags?.length > 0 && (
-                          <Caption1 style={{ display: "block", color: "var(--colorPaletteDarkOrangeForeground1)" }}>
-                            ⚠ {l.priority.flags.join(" · ")}
+                      </TableCell>
+                      <TableCell>
+                        <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground2)", maxWidth: 360 }}>
+                          {l.hook || (isOpen(l) ? "En préparation…" : "—")}
+                        </Caption1>
+                      </TableCell>
+                      <TableCell>
+                        {st ? <Badge appearance="tint" color={st.color}>{st.label}</Badge> : <Caption1>—</Caption1>}
+                        {l.recall_at && !isFinalStatus(l.call_status) && (
+                          <Caption1 style={{ display: "block", color: recallDue(l.recall_at, today()) ? "#C50F1F" : "var(--colorNeutralForeground2)" }}>
+                            Rappel {new Date(l.recall_at).toLocaleDateString("fr-FR")}
                           </Caption1>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge appearance="tint" color={m.color} title={l.health_label}>{m.label}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Caption1>
-                          {l.sirene_name ? `${l.sirene_name}${l.commune ? ` · ${l.commune}` : ""}` : "—"}
-                          {l.match_confidence === "probable" ? " (?)" : ""}
-                        </Caption1>
-                      </TableCell>
-                      <TableCell><IntelCell i={l.intel} /></TableCell>
-                      <TableCell><Caption1>{l.sf_lead_status}{l.sf_campaign ? ` · ${l.sf_campaign}` : ""}</Caption1></TableCell>
-                      <TableCell>
-                        <Caption1>
-                          {l.call_prep_at
-                            ? `${l.contacts_found} interlocuteur(s)${l.standard_phone ? ` · ${l.standard_phone}` : ""}`
-                            : "—"}
-                        </Caption1>
                       </TableCell>
                     </TableRow>
                   );

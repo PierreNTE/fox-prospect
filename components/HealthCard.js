@@ -49,6 +49,13 @@ export default function HealthCard({ account, onDone, onError }) {
           {" "}({d.predecessor.label})
         </Caption1>
       )}
+      {d.groupe?.siren && (
+        <Caption1 style={{ display: "block", marginTop: 6 }}>
+          Groupe : dirigée par <strong>{d.groupe.name || "une société"}</strong> · SIREN{" "}
+          <a href={`https://annuaire-entreprises.data.gouv.fr/entreprise/${d.groupe.siren}`} target="_blank" rel="noreferrer">{d.groupe.siren}</a>
+          {" "}(filiale ou société d'un groupe : le décideur IT peut être à la maison mère)
+        </Caption1>
+      )}
       {d.successor && (
         <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 8, background: "var(--colorNeutralBackground3)" }}>
           <Caption1 style={{ display: "block" }}>

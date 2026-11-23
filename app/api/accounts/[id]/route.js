@@ -22,9 +22,10 @@ export async function PATCH(request, { params }) {
   const { id } = params;
   const body = await request.json();
 
-  const allowed = ["name", "website", "domain", "sector", "hq", "summary", "auto_watch"];
+  const allowed = ["name", "website", "domain", "sector", "hq", "summary", "auto_watch", "call_status", "call_note", "recall_at"];
   const update = {};
-  for (const key of allowed) if (key in body) update[key] = body[key];
+  for (const key of allowed) if (key in body) update[key] = body[key] === "" && key === "recall_at" ? null : body[key];
+  if ("call_status" in update || "call_note" in update || "recall_at" in update) update.call_updated_at = new Date().toISOString();
 
   const { data, error } = await supabase.from("accounts").update(update).eq("id", id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
