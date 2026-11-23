@@ -12,20 +12,20 @@ import {
 } from "@fluentui/react-components";
 import {
   ArrowLeft24Regular, Phone24Regular, Mail24Regular, Globe24Regular, LinkSquare24Regular,
-  PersonAdd24Regular, Delete24Regular, People24Regular, ChevronDown24Regular, ChevronUp24Regular,
+  PersonAdd24Regular, Delete24Regular, People24Regular, ChevronDown24Regular, ChevronUp24Regular, Search24Regular,
 } from "@fluentui/react-icons";
 import { fetchJson } from "@/lib/fetch-json";
 import { HEALTH_META } from "@/lib/health-meta";
-import { CALL_STATUS, CALL_STATUS_META } from "@/lib/call-status";
+import { CALL_STATUS, CALL_STATUS_META, sfStatusLabel } from "@/lib/call-status";
 import HealthCard from "@/components/HealthCard";
 import IntelCard from "@/components/IntelCard";
 import CallPrepCard from "@/components/CallPrepCard";
+import { whoToCall } from "@/lib/who-to-call";
 
 const BRAND = "#5B53E6";
 const RED = "#C50F1F";
 const GREEN = "#107C10";
 
-const IT_RE = /informati|dsi|\bit\b|syst[eè]me|r[ée]seau|infra|cto|cio|rssi|num[ée]rique/i;
 const linkedinSearch = (name, company) =>
   `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(`${name} ${company}`.trim())}`;
 
@@ -90,40 +90,127 @@ function CallTracker({ account, onSaved, onError }) {
 }
 
 /* ── Qui appeler ───────────────────────────────────────────────────────── */
-function ContactRow({ c, accountName, primary, onDeleted, onError }) {
-  const name = `${c.first_name || ""} ${c.last_name || ""}`.trim();
-  const phone = (c.phone || "").trim();
-  const email = (c.email || "").trim();
+const tel = (n) => `tel:${String(n || "").replace(/[^\d+]/g, "")}`;
+
+function PersonRow({ p, accountName, primary, onDeleted, onError }) {
   return (
     <div style={{
       padding: "10px 12px", borderRadius: 8,
       background: primary ? "var(--colorBrandBackground2)" : "var(--colorNeutralBackground3)",
     }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-        <Body1 style={{ fontWeight: 700 }}>{name}</Body1>
+        <Body1 style={{ fontWeight: 700 }}>{p.name}</Body1>
         {primary && <Badge appearance="filled" color="brand" size="small">à appeler en premier</Badge>}
-        <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>{c.role || "poste à confirmer"}</Caption1>
+        <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>{p.role || "poste à confirmer"}</Caption1>
       </div>
       <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
-        {phone && <Button as="a" size="small" appearance="primary" icon={<Phone24Regular />} href={`tel:${phone.replace(/[^\d+]/g, "")}`}>{phone}</Button>}
-        {email && <Button as="a" size="small" icon={<Mail24Regular />} href={`mailto:${email}`}>{email}</Button>}
+        {p.phone && <Button as="a" size="small" appearance="primary" icon={<Phone24Regular />} href={tel(p.phone)}>{p.phone}</Button>}
+        {p.email && <Button as="a" size="small" icon={<Mail24Regular />} href={`mailto:${p.email}`}>{p.email}</Button>}
         <Button as="a" size="small" appearance="subtle" icon={<LinkSquare24Regular />} target="_blank" rel="noreferrer"
-          href={c.linkedin_url || linkedinSearch(name, accountName)}>
-          {c.linkedin_url ? "LinkedIn" : "Chercher sur LinkedIn"}
+          href={p.linkedin || linkedinSearch(p.name, accountName)}>
+          {p.linkedin ? "LinkedIn" : "Chercher sur LinkedIn"}
         </Button>
-        {email && c.email_confidence && c.email_confidence !== "haute" && (
-          <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>email {c.email_source === "motif" ? "deviné" : c.email_confidence}</Caption1>
+        <Caption1 style={{ color: "var(--colorNeutralForeground3)", marginLeft: "auto" }}>{p.source}</Caption1>
+        {p.id && (
+          <Button size="small" appearance="subtle" icon={<Delete24Regular />} aria-label={`Retirer ${p.name}`} title="Retirer ce contact"
+            onClick={async () => {
+              if (!confirm(`Retirer ${p.name} des contacts du compte ?`)) return;
+              const r = await fetchJson(`/api/account-contacts/${p.id}`, { method: "DELETE" });
+              if (!r.ok) { onError(r.error); return; }
+              onDeleted();
+            }} />
         )}
-        <Caption1 style={{ color: "var(--colorNeutralForeground3)", marginLeft: "auto" }}>{c.source || "ajouté à la main"}</Caption1>
-        <Button size="small" appearance="subtle" icon={<Delete24Regular />} aria-label={`Retirer ${name}`} title="Retirer ce contact"
-          onClick={async () => {
-            if (!confirm(`Retirer ${name} des contacts du compte ?`)) return;
-            const r = await fetchJson(`/api/account-contacts/${c.id}`, { method: "DELETE" });
-            if (!r.ok) { onError(r.error); return; }
-            onDeleted();
-          }} />
       </div>
     </div>
+  );
+}
+
+// Standard : toujours présent. Numéro connu → un bouton d'appel ; sinon la
+// recherche du numéro en un clic et un champ pour le coller (il passe alors
+// devant tous les numéros trouvés automatiquement).
+function StandardRow({ account, standard, searchUrl, onSaved, onError }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const save = async (v) => {
+    setSaving(true);
+    const r = await fetchJson(`/api/accounts/${account.id}`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ standard_phone: v }),
+    });
+    setSaving(false);
+    if (!r.ok) { onError(r.error); return; }
+    setEditing(false); setValue(""); onSaved();
+  };
+  return (
+    <div style={{ padding: "10px 12px", borderRadius: 8, border: "1px dashed var(--colorNeutralStroke1)", display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Body1 style={{ fontWeight: 700 }}>Standard</Body1>
+        {standard ? (
+          <>
+            <Button as="a" size="small" appearance="primary" icon={<Phone24Regular />} href={tel(standard.number)}>{standard.number}</Button>
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>{standard.source}</Caption1>
+          </>
+        ) : (
+          <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>numéro pas encore trouvé</Caption1>
+        )}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          {!standard && (
+            <Button as="a" size="small" appearance="outline" icon={<Search24Regular />} href={searchUrl} target="_blank" rel="noreferrer">
+              Trouver le numéro
+            </Button>
+          )}
+          <Button size="small" appearance="subtle" onClick={() => setEditing((v) => !v)}>
+            {standard ? "Corriger" : "Saisir"}
+          </Button>
+        </div>
+      </div>
+      {editing && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <Input type="tel" inputMode="tel" placeholder="02 41 00 00 00" value={value} onChange={(_, d) => setValue(d.value)} style={{ minWidth: 180 }} />
+          <Button size="small" appearance="primary" disabled={saving || !value.trim()} onClick={() => save(value)}>Enregistrer</Button>
+          {account.standard_source === "manuel" && (
+            <Button size="small" appearance="subtle" disabled={saving} onClick={() => save("")}>Effacer mon numéro</Button>
+          )}
+        </div>
+      )}
+      <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
+        Au standard : « Qui s'occupe de l'informatique chez vous, en interne ou un prestataire ? »
+      </Caption1>
+    </div>
+  );
+}
+
+function PeopleCard({ account, contacts, onChange, onError }) {
+  const prep = account.call_prep;
+  const who = whoToCall({ account, contacts });
+  return (
+    <Card style={{ padding: "18px 20px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+        <People24Regular style={{ color: BRAND }} />
+        <Body1 style={{ fontWeight: 700, fontSize: 15, flex: 1 }}>Qui appeler</Body1>
+        <AddContactForm accountId={account.id} onAdded={onChange} onError={onError} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {who.people.slice(0, 5).map((p, i) => (
+          <PersonRow key={p.id || p.name} p={p} accountName={account.name} primary={i === 0} onDeleted={onChange} onError={onError} />
+        ))}
+        {who.people.length === 0 && (
+          <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground2)", lineHeight: 1.6 }}>
+            Personne de nommé pour l'instant (la recherche tourne en arrière-plan) : appelle le standard et demande
+            le responsable informatique.
+          </Caption1>
+        )}
+        <StandardRow account={account} standard={who.standard} searchUrl={who.phone_search_url} onSaved={onChange} onError={onError} />
+      </div>
+      {prep?.postes_a_chercher?.length > 0 && (
+        <Caption1 style={{ display: "block", marginTop: 10, color: "var(--colorNeutralForeground2)" }}>
+          Postes à viser : {prep.postes_a_chercher.join(" · ")}
+        </Caption1>
+      )}
+      {prep?.it_externalisee && (
+        <Caption1 style={{ display: "block", marginTop: 4, color: "var(--colorNeutralForeground2)" }}>{prep.it_externalisee}</Caption1>
+      )}
+    </Card>
   );
 }
 
@@ -165,43 +252,6 @@ function AddContactForm({ accountId, onAdded, onError }) {
   );
 }
 
-function PeopleCard({ account, contacts, onChange, onError }) {
-  const prep = account.call_prep;
-  // Informatique d'abord, puis ceux qui ont un téléphone, puis le reste.
-  const sorted = [...contacts].sort((a, b) =>
-    (Number(IT_RE.test(b.role || "")) - Number(IT_RE.test(a.role || "")))
-    || (Number(!!(b.phone || "").trim()) - Number(!!(a.phone || "").trim())));
-  return (
-    <Card style={{ padding: "18px 20px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-        <People24Regular style={{ color: BRAND }} />
-        <Body1 style={{ fontWeight: 700, fontSize: 15, flex: 1 }}>Qui appeler</Body1>
-        <AddContactForm accountId={account.id} onAdded={onChange} onError={onError} />
-      </div>
-      {sorted.length === 0 ? (
-        <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground2)", lineHeight: 1.6 }}>
-          Personne d'identifié pour l'instant. La recherche des décideurs IT tourne en arrière-plan ;
-          en attendant, passe par le standard et demande qui s'occupe de l'informatique.
-        </Caption1>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {sorted.map((c, i) => (
-            <ContactRow key={c.id} c={c} accountName={account.name} primary={i === 0} onDeleted={onChange} onError={onError} />
-          ))}
-        </div>
-      )}
-      {prep?.postes_a_chercher?.length > 0 && (
-        <Caption1 style={{ display: "block", marginTop: 10, color: "var(--colorNeutralForeground2)" }}>
-          Postes à viser : {prep.postes_a_chercher.join(" · ")}
-        </Caption1>
-      )}
-      {prep?.it_externalisee && (
-        <Caption1 style={{ display: "block", marginTop: 4, color: "var(--colorNeutralForeground2)" }}>{prep.it_externalisee}</Caption1>
-      )}
-    </Card>
-  );
-}
-
 /* ── Page ─────────────────────────────────────────────────────────────── */
 export default function AccountClient({ id, initialData = null }) {
   const router = useRouter();
@@ -228,13 +278,14 @@ export default function AccountClient({ id, initialData = null }) {
   const d = account.health_detail || {};
   const meta = HEALTH_META[account.health_status] || null;
   const coord = account.call_prep?.coordonnees || {};
-  const standard = coord.standard || account.web_intel?.phones?.[0]?.number || "";
+  const who = whoToCall({ account, contacts: contacts || [] });
+  const standard = who.standard?.number || "";
   const site = coord.site || account.web_intel?.site?.url || account.website || "";
   const status = CALL_STATUS_META[account.call_status];
   const successorName = d.successor?.confidence === "forte" ? d.successor.name : null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 920 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* ── En-tête : l'essentiel en un coup d'œil ── */}
       <div>
         <button
@@ -249,13 +300,22 @@ export default function AccountClient({ id, initialData = null }) {
           {meta && <Badge appearance="filled" color={meta.color}>{meta.label}</Badge>}
           {status && <Badge appearance="tint" color={status.color}>{status.label}</Badge>}
           {account.recall_at && <Badge appearance="tint" color="important">Rappel : {new Date(account.recall_at).toLocaleDateString("fr-FR")}</Badge>}
-          {account.sf_lead_status && <Badge appearance="outline">Salesforce : {account.sf_lead_status}</Badge>}
+          {account.sf_lead_status && <Badge appearance="outline">Salesforce : {sfStatusLabel(account.sf_lead_status)}</Badge>}
           {d.commune && <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>{d.commune}</Caption1>}
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-          {standard && (
-            <Button as="a" appearance="primary" icon={<Phone24Regular />} href={`tel:${standard.replace(/[^\d+]/g, "")}`}>
+          {who.people[0]?.phone && (
+            <Button as="a" appearance="primary" icon={<Phone24Regular />} href={tel(who.people[0].phone)}>
+              {who.people[0].name} · {who.people[0].phone}
+            </Button>
+          )}
+          {standard ? (
+            <Button as="a" appearance={who.people[0]?.phone ? "outline" : "primary"} icon={<Phone24Regular />} href={tel(standard)}>
               Standard {standard}
+            </Button>
+          ) : (
+            <Button as="a" appearance="outline" icon={<Search24Regular />} href={who.phone_search_url} target="_blank" rel="noreferrer">
+              Trouver le standard
             </Button>
           )}
           {site && <Button as="a" icon={<Globe24Regular />} href={site} target="_blank" rel="noreferrer">Site web</Button>}
@@ -269,18 +329,23 @@ export default function AccountClient({ id, initialData = null }) {
         </Card>
       )}
 
-      {/* ── 1. Existe-t-elle ? ── */}
-      <HealthCard account={account} onDone={load} onError={setError} />
-
-      {/* ── 2. Qui appeler ── */}
-      <PeopleCard account={account} contacts={contacts || []} onChange={load} onError={setError} />
-
-      {/* ── 3. Accroche et messages ── */}
-      <CallPrepCard accountId={id} accountName={account.name} contacts={contacts || []} prep={account.call_prep}
-        generatedAt={account.call_prep_at} onDone={load} onError={setError} />
-
-      {/* ── Suivi d'appel ── */}
-      <CallTracker account={account} onSaved={load} onError={setError} />
+      <div className="lead-cols">
+        <div className="lead-col">
+          {/* ── Qui appeler ── */}
+          <div className="o1"><PeopleCard account={account} contacts={contacts || []} onChange={load} onError={setError} /></div>
+          {/* ── Suivi d'appel ── */}
+          <div className="o3"><CallTracker account={account} onSaved={load} onError={setError} /></div>
+        </div>
+        <div className="lead-col">
+          {/* ── Accroche et messages ── */}
+          <div className="o2">
+            <CallPrepCard accountId={id} accountName={account.name} contacts={contacts || []} prep={account.call_prep}
+              generatedAt={account.call_prep_at} onDone={load} onError={setError} />
+          </div>
+          {/* ── Existe-t-elle encore ? ── */}
+          <div className="o4"><HealthCard account={account} onDone={load} onError={setError} /></div>
+        </div>
+      </div>
 
       {/* ── Détails (infos publiques collectées) ── */}
       <div>

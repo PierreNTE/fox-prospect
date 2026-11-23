@@ -80,7 +80,32 @@
 .app-iconbtn.primary { background: var(--colorBrandBackground); color: var(--colorNeutralForegroundOnBrand); }
 .app-iconbtn.primary:hover { background: var(--colorBrandBackgroundHover); }
 
-.app-main { flex: 1; width: 100%; max-width: 1120px; margin: 0 auto; padding: 24px; }
+/* Pleine largeur : la liste de leads et la fiche prennent toute la place. */
+.app-main { flex: 1; width: 100%; min-width: 0; max-width: none; margin: 0; padding: 24px 28px; }
+
+/* ---------- Leads : tableau sur grand écran, cartes sur téléphone ---------- */
+.leads-cards { display: none; }
+.lead-card {
+  padding: 12px; border: 1px solid var(--colorNeutralStroke2); border-radius: 10px;
+  background: var(--colorNeutralBackground1); margin-bottom: 10px;
+}
+.lead-card-hook { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+@media (max-width: 860px) {
+  .leads-table { display: none; }
+  .leads-cards { display: block; }
+}
+
+/* ---------- Fiche lead : deux colonnes dès que l'écran le permet ----------
+   Téléphone : une seule colonne dans l'ordre d'un appel (qui → accroche →
+   suivi → santé). Grand écran : à gauche qui appeler et le suivi, à droite
+   l'accroche et la santé. */
+.lead-cols { display: flex; flex-direction: column; gap: 16px; }
+.lead-col { display: contents; }
+.lead-cols .o1 { order: 1; } .lead-cols .o2 { order: 2; } .lead-cols .o3 { order: 3; } .lead-cols .o4 { order: 4; }
+@media (min-width: 1180px) {
+  .lead-cols { flex-direction: row; align-items: flex-start; }
+  .lead-col { display: flex; flex-direction: column; gap: 16px; flex: 1 1 0; min-width: 0; }
+}
 
 .app-mobile-brand { display: none; }
 .app-bottombar { display: none; }
