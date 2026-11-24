@@ -14,9 +14,10 @@ Pour chaque prospect (DSI, RSSI, responsable infra…), l'app :
 ## Routine du lundi
 
 1. **Importer** l'export Salesforce (PDF) sur la page Leads. La recherche démarre seule : santé de chaque société (active, fermée, reprise), standard, site, décideurs, email. Le worker vérifie toutes les 15 min s'il a du travail.
-2. **Appeler** depuis « Qui appeler » : un nom quand il existe, toujours le standard (ou « Trouver le standard » en un clic). Noter le statut et le rappel après chaque appel.
-3. **Emails** : télécharger le « Fichier de la semaine » et le donner à l'agent Sales Chat. Les instructions de l'agent sont à coller une seule fois ; l'agent démarre en mode VALIDATION.
-4. **Corriger** sur la fiche les numéros et emails obtenus au téléphone ou par l'agent : ils passent devant tout le reste et partent dans l'export suivant.
+2. **Lire le brief** en tête de chaque fiche (calculé pour tous les leads, sans IA) : verdict (à appeler, à vérifier, faible potentiel, à clôturer), anomalies, question d'ouverture. Filtre « Anomalies à corriger dans Salesforce » sur la liste ; « Copier la note Salesforce » pour reporter le constat. Pour un contrôle complet (adresse, domaine d'email, notes périmées), « Coller la fiche Salesforce » sur la fiche.
+3. **Appeler** depuis « Qui appeler » : un nom quand il existe, toujours le standard (ou « Trouver le standard » en un clic). Noter le statut et le rappel après chaque appel (« Numéro non attribué » écarte le numéro).
+4. **Emails** : télécharger le « Fichier de la semaine » et le donner à l'agent Sales Chat, puis coller son récapitulatif dans « Retour de l'agent ».
+5. **Corriger** sur la fiche les numéros et emails obtenus au téléphone ou par l'agent : ils passent devant tout le reste et partent dans l'export suivant.
 
 Les PR sont fusionnées automatiquement quand les tests et le build passent (`.github/workflows/auto-merge.yml`). Celles qui modifient `.github/` restent manuelles, et le label `manuel` bloque une PR.
 
@@ -445,6 +446,26 @@ est déclenché : aucun chemin ne peut dépenser. Les jobs IA restent en attente
 sans consommer de tentative ; les jobs `call_prep` sont faits sans IA.
 
 ## Module cold calling Dell (`/leads`)
+
+**Brief d'appel** (`lib/call-brief.js`, calculé à la lecture pour chaque lead, sans IA ni coût, donc sans plafond) :
+verdict et raison, anomalies, 3 faits d'actualité datés (BODACC, BOAMP, presse), qui appeler, question d'ouverture
+(siège ou établissement, holding, acheteur public) et note Salesforce de 5 lignes à copier.
+
+| Code | Règle |
+| --- | --- |
+| `ADDR_MISMATCH` | Code postal Salesforce sans établissement du SIREN, ou rue absente de la commune (API Adresse) |
+| `EMAIL_DOMAIN_TYPO` | Domaine à une distance ≤ 2 du domaine officiel, ou sans serveur mail (MX) |
+| `NOTE_STALE` | Dernière note ou activité Salesforce de plus de 24 mois |
+| `SHARED_DOMAIN` | Domaine email utilisé par plusieurs sociétés (réseau, fédération) |
+| `PHONE_AREA_MISMATCH` | Fixe 01 à 05 d'une autre zone que le département du siège ou de l'adresse |
+| `HQ_DECIDES` | Établissement secondaire d'une association, d'une fédération ou d'un groupe |
+| `LOW_POTENTIAL` | Holding ou siège social (64.20Z, 70.10Z) avec 0 à 2 salariés |
+| `NO_VALID_PHONE` | Aucun numéro, ou le dernier marqué « Numéro non attribué » |
+
+Les trois premiers viennent de la fiche Salesforce collée sur la fiche du lead. Elle est analysée **dans le navigateur**
+(`lib/sf-paste.js`) : seuls l'adresse de la société, ses emails génériques, les domaines d'email et les codes d'anomalie
+partent au serveur (`accounts.sf_paste_flags`). Aucun nom de collaborateur Dell, aucun email ou téléphone nominatif
+n'est stocké.
 
 Flux : **PDF Salesforce → contrôle des sociétés → préparation d'appel → qualif → résumé Salesforce.**
 
