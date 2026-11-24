@@ -11,6 +11,15 @@ Pour chaque prospect (DSI, RSSI, responsable infra…), l'app :
 
 **L'envoi reste 100 % manuel** : tu relis, tu ajustes, tu envoies. C'est le design voulu (protection de ton compte LinkedIn, délivrabilité, qualité).
 
+## Routine du lundi
+
+1. **Importer** l'export Salesforce (PDF) sur la page Leads. La recherche démarre seule : santé de chaque société (active, fermée, reprise), standard, site, décideurs, email. Le worker vérifie toutes les 15 min s'il a du travail.
+2. **Appeler** depuis « Qui appeler » : un nom quand il existe, toujours le standard (ou « Trouver le standard » en un clic). Noter le statut et le rappel après chaque appel.
+3. **Emails** : télécharger le « Fichier de la semaine » et le donner à l'agent Sales Chat. Les instructions de l'agent sont à coller une seule fois ; l'agent démarre en mode VALIDATION.
+4. **Corriger** sur la fiche les numéros et emails obtenus au téléphone ou par l'agent : ils passent devant tout le reste et partent dans l'export suivant.
+
+Les PR sont fusionnées automatiquement quand les tests et le build passent (`.github/workflows/auto-merge.yml`). Celles qui modifient `.github/` restent manuelles, et le label `manuel` bloque une PR.
+
 ## Stack
 
 Next.js 14 (App Router, JavaScript) · Supabase (Postgres, RLS) · API Anthropic
