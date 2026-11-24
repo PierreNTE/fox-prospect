@@ -21,7 +21,7 @@ import {
   TableBody,
   TableHeaderCell,
 } from "@fluentui/react-components";
-import { ArrowUpload24Regular, Search24Regular, ArrowClockwise24Regular, Phone24Regular } from "@fluentui/react-icons";
+import { ArrowUpload24Regular, ArrowDownload24Regular, Search24Regular, ArrowClockwise24Regular, Phone24Regular } from "@fluentui/react-icons";
 import { fetchJson } from "@/lib/fetch-json";
 import { dedupeByCompany, parsePastedCompanies } from "@/lib/salesforce-leads";
 import { readLeadsPdf } from "@/lib/salesforce-pdf";
@@ -580,11 +580,18 @@ export default function LeadsClient({ initialLeads = [] }) {
 
   return (
     <div style={{ display: "grid", gap: 16, padding: "8px 0 40px" }}>
-      <div>
-        <Title2>Mes leads</Title2>
-        <Caption1 style={{ display: "block" }}>
-          Pour chaque société : existe-t-elle encore, qui appeler, avec quelle accroche.
-        </Caption1>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <Title2>Mes leads</Title2>
+          <Caption1 style={{ display: "block" }}>
+            Pour chaque société : existe-t-elle encore, qui appeler, avec quelle accroche.
+          </Caption1>
+        </div>
+        {leads.length > 0 && (
+          <Button as="a" appearance="primary" href="/api/leads/export" icon={<ArrowDownload24Regular />}>
+            Fichier Sales Chat
+          </Button>
+        )}
       </div>
 
       <ImportCard onImported={afterImport} startOpen={leads.length === 0} />
