@@ -237,11 +237,71 @@ function ProgressCard({ progress, running, log, onRun }) {
         <Badge appearance="tint" color="informative">{p.with_phone ?? 0} avec un standard</Badge>
         {queue > 0 && (
           <Badge appearance="outline">
-            En recherche : {p.phones_pending || 0} standards · {p.sites_pending || 0} sites · {p.people_pending || 0} décideurs
+            En recherche : {p.phones_pending || 0} standards et emails · {p.sites_pending || 0} sites · {p.people_pending || 0} décideurs
           </Badge>
         )}
       </div>
       {log && <Caption1 style={{ display: "block", marginTop: 6, color: "var(--colorNeutralForeground2)" }}>{log}</Caption1>}
+    </Card>
+  );
+}
+
+const CONF_COLOR = { "sûr": "#107C10", probable: "#8A6A00", "supposé": "var(--colorNeutralForeground3)" };
+
+// Passage de relais vers l'agent Sales Chat : le fichier de la semaine (un email
+// par lead, message prêt) et les instructions à coller une fois dans l'agent.
+function SalesChatCard({ leadsCount }) {
+  const [stats, setStats] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [copied, setCopied] = useState(false);
+  const load = async () => {
+    const r = await fetchJson("/api/leads/export?format=json");
+    if (r.ok) setStats(r.data);
+  };
+  useEffect(() => { if (leadsCount) load(); }, [leadsCount]);
+  const showInstructions = async () => {
+    setOpen((v) => !v);
+    if (text) return;
+    const r = await fetchJson("/api/leads/agent-instructions");
+    if (r.ok) setText(r.data.instructions);
+  };
+  const s = stats || {};
+  return (
+    <Card style={{ padding: "14px 18px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <Body1 style={{ flex: 1, minWidth: 220 }}>
+          <strong>Emails via Sales Chat</strong> — un email par lead, message prêt, envoyé par ton agent Sales Chat
+        </Body1>
+        <Button as="a" appearance="primary" href={s.rows ? "/api/leads/export?mark=1" : undefined} disabled={!s.rows}
+          onClick={() => setTimeout(load, 1500)}>
+          Fichier de la semaine ({s.rows ?? "…"})
+        </Button>
+        <Button appearance="outline" onClick={showInstructions}>{open ? "Masquer les instructions" : "Instructions de l'agent"}</Button>
+      </div>
+      <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+        <Badge appearance="tint" color="success">{s.sur ?? 0} sûrs</Badge>
+        <Badge appearance="tint" color="warning">{s.probable ?? 0} probables</Badge>
+        <Badge appearance="tint" color="subtle">{s.suppose ?? 0} supposés (validation)</Badge>
+        {s.sans_email > 0 && <Badge appearance="outline">{s.sans_email} sans email (recherche en cours)</Badge>}
+        {s.deja_exportes > 0 && (
+          <Button as="a" size="small" appearance="subtle" href="/api/leads/export?all=1">Re-télécharger tout ({s.deja_exportes} déjà envoyés à l'agent)</Button>
+        )}
+      </div>
+      {open && (
+        <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+          <Caption1>
+            À coller une seule fois dans ton agent Sales Chat. Chaque lundi, donne-lui le fichier de la semaine.
+            Il démarre en mode VALIDATION : il prépare les brouillons et attend ton « envoie ».
+          </Caption1>
+          <Textarea readOnly value={text || "Chargement…"} resize="vertical" style={{ minHeight: 220, fontSize: 12.5 }} />
+          <div>
+            <Button size="small" disabled={!text} onClick={async () => {
+              try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
+            }}>{copied ? "Copié" : "Copier les instructions"}</Button>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }
@@ -309,6 +369,12 @@ function WhoToCall({ l, compact = false }) {
       ) : (
         <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground3)" }}>
           {isOpen(l) ? "Demander le responsable informatique" : "—"}
+        </Caption1>
+      )}
+      {l.email && (
+        <Caption1 style={{ display: "block", color: CONF_COLOR[l.email.confidence], wordBreak: "break-all" }}
+          title={`${l.email.confidence} — ${l.email.source}`}>
+          ✉ {l.email.email} · {l.email.confidence}
         </Caption1>
       )}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -431,11 +497,12 @@ export default function LeadsClient({ initialLeads = [] }) {
   }
 
   const counts = useMemo(() => {
-    const c = { all: leads.length, todo: 0, recall: 0, nophone: 0, rdv: 0, successor: 0, dups: 0, close: 0, missing: 0 };
+    const c = { all: leads.length, todo: 0, recall: 0, nophone: 0, noemail: 0, rdv: 0, successor: 0, dups: 0, close: 0, missing: 0 };
     for (const l of leads) {
       if (isOpen(l) && !isFinalStatus(l.call_status)) c.todo++;
       if (recallDue(l.recall_at, today()) && !isFinalStatus(l.call_status)) c.recall++;
       if (isOpen(l) && !l.standard && !l.contact?.phone) c.nophone++;
+      if (isOpen(l) && !l.email) c.noemail++;
       if (l.call_status === "rdv") c.rdv++;
       if (l.successor) c.successor++;
       if ((l.flags || []).length) c.dups++;
@@ -452,6 +519,7 @@ export default function LeadsClient({ initialLeads = [] }) {
       if (filter === "todo") return isOpen(l) && !isFinalStatus(l.call_status);
       if (filter === "recall") return recallDue(l.recall_at, today()) && !isFinalStatus(l.call_status);
       if (filter === "nophone") return isOpen(l) && !l.standard && !l.contact?.phone;
+      if (filter === "noemail") return isOpen(l) && !l.email;
       if (filter === "rdv") return l.call_status === "rdv";
       if (filter === "successor") return !!l.successor;
       if (filter === "dups") return (l.flags || []).length > 0;
@@ -466,6 +534,7 @@ export default function LeadsClient({ initialLeads = [] }) {
     ["todo", "À appeler"],
     ["recall", "À rappeler aujourd'hui"],
     ["nophone", "Sans numéro"],
+    ["noemail", "Sans email"],
     ["rdv", "RDV pris"],
     ["successor", "Repris / renommés"],
     ["dups", "Doublons et groupes"],
@@ -486,6 +555,8 @@ export default function LeadsClient({ initialLeads = [] }) {
       <ImportCard onImported={afterImport} startOpen={leads.length === 0} />
 
       {leads.length > 0 && <ProgressCard progress={progress} running={running} log={log} onRun={runAll} />}
+
+      {leads.length > 0 && <SalesChatCard leadsCount={leads.length} />}
 
       <Card style={{ padding: "16px 16px 20px" }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>

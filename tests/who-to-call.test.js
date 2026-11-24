@@ -61,3 +61,70 @@ describe("recherche des standards", () => {
     expect(selectPhoneTargets(leads, { room: 10, already: new Set(["6"]) }).map((l) => l.id)).toEqual(["1", "5"]);
   });
 });
+
+import { pickEmail } from "@/lib/who-to-call";
+import { buildExportRows, toCsv, buildAgentInstructions } from "@/lib/sales-chat";
+import { selectEmailTargets } from "@/lib/leads-agent";
+
+describe("email à utiliser", () => {
+  it("saisi > vu sur le site > motif observé > recherche web > supposé", () => {
+    const w = {
+      emails: { generic: ["contact@alpha.fr"], named: [] },
+      leaders_emails: [{ name: "Jean Martin", role: "Président", email: "jean.martin@alpha.fr", confidence: "motif observé" }],
+      dns: { has_mx: true },
+    };
+    expect(pickEmail({ account: { web_intel: w } })).toMatchObject({ email: "contact@alpha.fr", confidence: "sûr", generic: true });
+    expect(pickEmail({ account: { web_intel: w, found_email: "it@alpha.fr", found_email_source: "manuel" } }))
+      .toMatchObject({ email: "it@alpha.fr", source: "saisi par toi" });
+    expect(pickEmail({ account: { web_intel: { leaders_emails: w.leaders_emails } } })).toMatchObject({ confidence: "probable", name: "Jean Martin" });
+    expect(pickEmail({ account: { found_email: "alpha@orange.fr", found_email_source: "recherche web (1 source)" } }).confidence).toBe("supposé");
+    expect(pickEmail({ account: { found_email: "alpha@orange.fr", found_email_source: "recherche web (3 sources)" } }).confidence).toBe("probable");
+    expect(pickEmail({ account: { domain: "alpha.fr", web_intel: { dns: { has_mx: true } } } })).toMatchObject({ email: "contact@alpha.fr", confidence: "supposé" });
+    expect(pickEmail({ account: {} })).toBeNull();
+  });
+  it("contact informatique du compte en premier", () => {
+    const contacts = [
+      { first_name: "Léa", last_name: "Roux", role: "Comptable", email: "lea@alpha.fr" },
+      { first_name: "Sam", last_name: "Petit", role: "Responsable informatique", email: "sam@alpha.fr" },
+    ];
+    expect(pickEmail({ account: {}, contacts }).email).toBe("sam@alpha.fr");
+  });
+});
+
+describe("export Sales Chat", () => {
+  const lead = (o) => ({ id: "x", name: "ALPHA SAS", health_status: "active", email: { email: "contact@alpha.fr", confidence: "sûr", generic: true, source: "site" }, ...o });
+  it("garde les leads actifs avec email, hors RDV / pas intéressé / déjà exportés", () => {
+    const now = Date.parse("2026-11-24T08:00:00Z");
+    const rows = buildExportRows([
+      lead({ id: "1" }),
+      lead({ id: "2", call_status: "rdv" }),
+      lead({ id: "3", email: null }),
+      lead({ id: "4", email_exported_at: "2026-11-20T08:00:00Z" }),
+      lead({ id: "5", email_exported_at: "2026-10-01T08:00:00Z" }),
+      lead({ id: "6", health_status: "fermee" }),
+    ], { now, baseUrl: "https://app.test" });
+    expect(rows.map((r) => r.id)).toEqual(["1", "5"]);
+    expect(rows[0]).toMatchObject({ email_generique: "oui", destinataire: "", fiche: "https://app.test/accounts/1" });
+  });
+  it("CSV lisible par Excel (BOM, ;, guillemets échappés)", () => {
+    const csv = toCsv([{ societe: 'ALPHA "SAS"', email: "a@b.fr" }], [["societe", "Société"], ["email", "Email"]]);
+    expect(csv.startsWith("﻿")).toBe(true);
+    expect(csv).toContain('"Société";"Email"');
+    expect(csv).toContain('"ALPHA ""SAS""";"a@b.fr"');
+  });
+  it("instructions signées, mode validation par défaut, désinscription", () => {
+    const t = buildAgentInstructions({ senderName: "Alex Martin", senderRole: "Account Executive" });
+    expect(t).toContain("Alex Martin, Account Executive chez Dell Technologies");
+    expect(t).toContain("MODE = VALIDATION");
+    expect(t).toContain("STOP");
+  });
+  it("recherche d'email pour les leads sans email sûr ou probable", () => {
+    const leads = [
+      { id: "1", health_status: "active", email: null },
+      { id: "2", health_status: "active", email: { confidence: "supposé" } },
+      { id: "3", health_status: "active", email: { confidence: "sûr" } },
+      { id: "4", health_status: "fermee", email: null },
+    ];
+    expect(selectEmailTargets(leads, { room: 10, already: new Set(["2"]) }).map((l) => l.id)).toEqual(["1"]);
+  });
+});

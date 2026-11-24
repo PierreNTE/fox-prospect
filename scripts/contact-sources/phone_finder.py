@@ -58,6 +58,62 @@ def pick_phone(results, company, commune=""):
     return None, 0
 
 
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+FREE_MAIL = {"orange.fr", "wanadoo.fr", "free.fr", "sfr.fr", "laposte.net", "gmail.com", "hotmail.fr", "hotmail.com",
+             "outlook.fr", "outlook.com", "yahoo.fr", "yahoo.com", "neuf.fr", "bbox.fr", "aliceadsl.fr", "icloud.com", "live.fr"}
+# Domaines d'annuaires et de plateformes : leurs adresses ne sont jamais celles de la société.
+NOT_COMPANY = ("pagesjaunes", "societe.com", "pappers", "infogreffe", "verif.com", "manageo", "kompass", "linkedin",
+               "facebook", "google", "example", "sentry", "wixpress", "annuaire", "118", "mappy", "yelp", "indeed")
+
+
+def _tokens(company):
+    return [t for t in (_norm(x) for x in company_core(company)) if len(t) >= 3]
+
+
+def email_fits(email, company):
+    """L'adresse appartient-elle plausiblement à la société ? (pur, testé)"""
+    e = (email or "").lower().strip(".")
+    local, _, domain = e.partition("@")
+    if not local or not domain or any(x in domain for x in NOT_COMPANY):
+        return False
+    toks = _tokens(company)
+    if domain in FREE_MAIL:
+        # TPE : garage.dupont@orange.fr — le nom doit être dans la partie locale.
+        return any(t in _norm(local) for t in toks)
+    return any(t in _norm(domain) for t in toks)
+
+
+def pick_email(results, company):
+    """Email le plus cité pour la société dans les extraits (pur, testé). (email, nb) ou (None, 0)."""
+    votes = {}
+    for res in results:
+        text = f"{res.get('title') or ''} {res.get('content') or ''}"
+        if not mentions_company(text, company):
+            continue
+        for m in {x.lower().strip(".") for x in EMAIL_RE.findall(text)}:
+            if email_fits(m, company):
+                votes[m] = votes.get(m, 0) + 1
+    if not votes:
+        return None, 0
+    best = sorted(votes, key=lambda e: (-votes[e], e.split("@")[1] in FREE_MAIL))[0]
+    return best, votes[best]
+
+
+def find_email(company, commune):
+    """Renvoie (email, nb_sources, téléphone_vu) — None si rien de sûr."""
+    core = " ".join(company_core(company))
+    if not core:
+        return None, 0, None
+    results = []
+    for q in (f'"{core}" {commune or ""} email contact'.strip(), f'"{core}" {commune or ""} "@"'.strip()):
+        results += searx_search(q, max_results=15)
+        email, n = pick_email(results, company)
+        if email:
+            phone, _ = pick_phone(results, company, commune)
+            return email, n, phone
+    return None, 0, None
+
+
 def find_standard(company, commune):
     """Renvoie (numéro, nb_sources) — (None, 0) si rien de sûr."""
     core = " ".join(company_core(company))
@@ -90,4 +146,13 @@ if __name__ == "__main__":  # auto-test : python phone_finder.py
     assert pick_phone(lone, "ALPHA MOTORS SAS", "Angers") == (None, 0)
     fixed = [{"title": "Alpha Motors", "content": "Alpha Motors, tél. 02 41 00 00 02"}]
     assert pick_phone(fixed, "ALPHA MOTORS SAS", "Angers") == ("02 41 00 00 02", 1)
+    assert email_fits("contact@alpha-motors.fr", "ALPHA MOTORS SAS")
+    assert email_fits("garage.alpha@orange.fr", "ALPHA MOTORS SAS")
+    assert not email_fits("contact@pagesjaunes.fr", "ALPHA MOTORS SAS")
+    assert not email_fits("jean@gmail.com", "ALPHA MOTORS SAS")
+    mails = [
+        {"title": "Alpha Motors Angers", "content": "Écrivez à contact@alpha-motors.fr ou info@pagesjaunes.fr"},
+        {"title": "Alpha Motors", "content": "Alpha Motors — contact@alpha-motors.fr — 02 41 00 00 01"},
+    ]
+    assert pick_email(mails, "ALPHA MOTORS SAS") == ("contact@alpha-motors.fr", 2)
     print("phone_finder : ok")
