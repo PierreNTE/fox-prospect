@@ -17,10 +17,11 @@ export async function GET(request) {
 
   if (url.searchParams.get("format") === "json") {
     const by = (c) => rows.filter((r) => r.confiance_email === c).length;
+    const missing = by("à trouver");
     const open = leads.filter((l) => ["active", "vigilance"].includes(l.health_status) && !/closed/i.test(l.sf_lead_status || ""));
     return NextResponse.json({
       rows: rows.length, sur: by("sûr"), probable: by("probable"), suppose: by("supposé"),
-      sans_email: open.filter((l) => !l.email).length,
+      sans_email: missing,
       deja_exportes: open.filter((l) => l.email_exported_at).length,
     });
   }

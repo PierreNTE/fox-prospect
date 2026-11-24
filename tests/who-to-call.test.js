@@ -93,7 +93,7 @@ describe("email à utiliser", () => {
 
 describe("export Sales Chat", () => {
   const lead = (o) => ({ id: "x", name: "ALPHA SAS", health_status: "active", email: { email: "contact@alpha.fr", confidence: "sûr", generic: true, source: "site" }, ...o });
-  it("garde les leads actifs avec email, hors RDV / pas intéressé / déjà exportés", () => {
+  it("garde les leads actifs, hors RDV / pas intéressé / déjà exportés ; sans email = à trouver", () => {
     const now = Date.parse("2026-11-24T08:00:00Z");
     const rows = buildExportRows([
       lead({ id: "1" }),
@@ -103,8 +103,9 @@ describe("export Sales Chat", () => {
       lead({ id: "5", email_exported_at: "2026-10-01T08:00:00Z" }),
       lead({ id: "6", health_status: "fermee" }),
     ], { now, baseUrl: "https://app.test" });
-    expect(rows.map((r) => r.id)).toEqual(["1", "5"]);
+    expect(rows.map((r) => r.id)).toEqual(["1", "3", "5"]);
     expect(rows[0]).toMatchObject({ email_generique: "oui", destinataire: "", fiche: "https://app.test/accounts/1" });
+    expect(rows[1]).toMatchObject({ email: "", confiance_email: "à trouver" });
   });
   it("CSV lisible par Excel (BOM, ;, guillemets échappés)", () => {
     const csv = toCsv([{ societe: 'ALPHA "SAS"', email: "a@b.fr" }], [["societe", "Société"], ["email", "Email"]]);
