@@ -21,19 +21,28 @@ import {
   TableBody,
   TableHeaderCell,
 } from "@fluentui/react-components";
-import { ArrowUpload24Regular, ArrowDownload24Regular, Search24Regular, ArrowClockwise24Regular, Phone24Regular } from "@fluentui/react-icons";
+import { ArrowUpload24Regular, ArrowDownload24Regular, Delete24Regular, Search24Regular, ArrowClockwise24Regular, Phone24Regular } from "@fluentui/react-icons";
 import { fetchJson } from "@/lib/fetch-json";
 import { dedupeByCompany, parsePastedCompanies } from "@/lib/salesforce-leads";
 import { readLeadsPdf } from "@/lib/salesforce-pdf";
 import { HEALTH_META } from "@/lib/health-meta";
-import { CALL_STATUS_META, isFinalStatus, recallDue } from "@/lib/call-status";
+import { CALL_STATUS_META, isFinalStatus, recallDue, sfStatusLabel, sfStatusRank, sortLeadsByStatus } from "@/lib/call-status";
 
 const BRAND = "#5B53E6";
 
 const BATCH = 6;
 
-function ImportCard({ onImported, startOpen = true }) {
+// Suppression de tous les leads (confirmation explicite : action irréversible).
+async function deleteAllLeads(count) {
+  if (!confirm(`Supprimer les ${count} leads actuels ?\n\nLeur suivi d'appel, notes, contacts et emails trouvés seront effacés. Les autres comptes ne sont pas touchés.`)) return null;
+  return fetchJson("/api/leads", {
+    method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: "SUPPRIMER" }),
+  });
+}
+
+function ImportCard({ onImported, onDeleted, startOpen = true, existing = 0 }) {
   const [open, setOpen] = useState(startOpen);
+  const [mode, setMode] = useState("keep"); // keep : conserver et mettre à jour · replace : supprimer puis importer
   const inputRef = useRef(null);
   const [parsing, setParsing] = useState(false);
   const [ocrStep, setOcrStep] = useState(null); // { page, pages } pendant la lecture OCR
@@ -80,6 +89,12 @@ function ImportCard({ onImported, startOpen = true }) {
   const selected = (parsed?.companies || []).filter((r) => statuses[r.status] ?? true);
 
   async function run() {
+    if (mode === "replace" && existing > 0) {
+      const d = await deleteAllLeads(existing);
+      if (!d) return;
+      if (!d.ok) { setError(d.error); return; }
+      onDeleted?.();
+    }
     setRunning(true); setDone(0); setError(null); stopRef.current = false;
     const tally = { active: 0, vigilance: 0, fermee: 0, introuvable: 0, erreurs: 0 };
     for (let i = 0; i < selected.length; i += BATCH) {
@@ -104,10 +119,21 @@ function ImportCard({ onImported, startOpen = true }) {
 
   if (!open) {
     return (
-      <div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <Button appearance="primary" icon={<ArrowUpload24Regular />} onClick={() => setOpen(true)}>
           Importer la liste de la semaine
         </Button>
+        {existing > 0 && (
+          <Button appearance="subtle" icon={<Delete24Regular />} style={{ color: "#C50F1F" }} onClick={async () => {
+            const d = await deleteAllLeads(existing);
+            if (!d) return;
+            if (!d.ok) { setError(d.error); return; }
+            onDeleted?.();
+          }}>
+            Supprimer tous les leads
+          </Button>
+        )}
+        {error && <Caption1 style={{ color: "#C50F1F", alignSelf: "center" }}>{error}</Caption1>}
       </div>
     );
   }
@@ -163,6 +189,14 @@ function ImportCard({ onImported, startOpen = true }) {
                 onChange={(_, d) => setStatuses((s) => ({ ...s, [st]: !!d.checked }))} disabled={running} />
             ))}
           </div>
+          {existing > 0 && (
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 10 }}>
+              <Checkbox label={`Conserver les ${existing} leads actuels (mise à jour, suivi d'appel gardé)`} checked={mode === "keep"}
+                onChange={() => setMode("keep")} disabled={running} />
+              <Checkbox label="Remplacer : supprimer les leads actuels avant l'import" checked={mode === "replace"}
+                onChange={() => setMode("replace")} disabled={running} />
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
             <Button appearance="primary" disabled={running || !selected.length} onClick={run}>
               Contrôler et importer {selected.length} sociétés
@@ -381,6 +415,7 @@ function MergeButton({ l, onDone }) {
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
+const sfRank = (l) => sfStatusRank(l.sf_lead_status);
 const isOpen = (l) => ["active", "vigilance"].includes(l.health_status) && !/closed/i.test(l.sf_lead_status || "");
 const tel = (n) => `tel:${String(n || "").replace(/[^\d+]/g, "")}`;
 
@@ -455,6 +490,10 @@ function CompanyCell({ l, onMerged }) {
       <Link href={`/accounts/${l.id}`} style={{ fontWeight: 600 }}>{l.name}</Link>
       <div style={{ display: "flex", gap: 4, marginTop: 2, flexWrap: "wrap" }}>
         <Badge appearance="tint" color={m.color} size="small" title={l.health_label}>{m.label}</Badge>
+        {l.sf_lead_status && (
+          <Badge appearance="outline" size="small" color={sfRank(l) === 0 ? "brand" : sfRank(l) === 3 ? "subtle" : "informative"}
+            title="Statut du lead dans Salesforce">{sfStatusLabel(l.sf_lead_status)}</Badge>
+        )}
         {l.is_new && <Badge appearance="filled" color="brand" size="small">Nouveau</Badge>}
         {l.missing_from_last_import && <Badge appearance="outline" size="small" title="Absent du dernier export Salesforce">Absent</Badge>}
         {l.brief && l.brief.verdict !== "appeler" && (
@@ -559,8 +598,7 @@ export default function LeadsClient({ initialLeads = [] }) {
     return c;
   }, [leads]);
 
-  const shown = leads
-    .filter((l) => {
+  const shown = sortLeadsByStatus(leads.filter((l) => {
       if (q && !`${l.name} ${l.sirene_name || ""} ${l.contact?.name || ""} ${l.commune || ""}`.toLowerCase().includes(q.toLowerCase())) return false;
       if (filter === "all") return true;
       if (filter === "todo") return isOpen(l) && !isFinalStatus(l.call_status);
@@ -574,9 +612,7 @@ export default function LeadsClient({ initialLeads = [] }) {
       if (filter === "close") return l.health_status === "fermee";
       if (filter === "missing") return l.missing_from_last_import;
       return true;
-    })
-    // À rappeler aujourd'hui en tête, puis l'ordre de priorité.
-    .sort((a, b) => Number(recallDue(b.recall_at, today())) - Number(recallDue(a.recall_at, today())));
+    }), today());
 
   const FILTERS = [
     ["todo", "À appeler"],
@@ -608,7 +644,8 @@ export default function LeadsClient({ initialLeads = [] }) {
         )}
       </div>
 
-      <ImportCard onImported={afterImport} startOpen={leads.length === 0} />
+      <ImportCard onImported={afterImport} onDeleted={() => { setLeads([]); reload(); loadProgress(); }}
+        startOpen={leads.length === 0} existing={leads.length} />
 
       {leads.length > 0 && (
         <ProgressCard progress={progress} running={running} log={log} onRun={runAll}
