@@ -1,0 +1,75 @@
+name: auto-merge
+
+# Fusion automatique des PR quand les tests et le build passent : plus besoin
+# de cliquer sur « Merge », Vercel met en production dans la foulée.
+#
+# Garde-fous :
+#  - seulement les branches de ce dépôt ouvertes par son propriétaire
+#    (jamais une PR venant d'un fork : le dépôt est public) ;
+#  - jamais une PR qui modifie .github/ (workflows, accès aux secrets) :
+#    celle-là reste à fusionner à la main ;
+#  - le label « manuel » sur une PR bloque la fusion (pour relire avant) ;
+#  - les PR en brouillon sont ignorées ;
+#  - la fusion porte sur le commit testé (--match-head-commit).
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  merge:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == github.repository_owner &&
+      !github.event.pull_request.draft &&
+      !contains(github.event.pull_request.labels.*.name, 'manuel')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Fichiers sensibles touchés ?
+        id: guard
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if git diff --name-only "$BASE...$HEAD" | grep -q '^\.github/'; then
+            echo "sensitive=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Cette PR modifie .github/ (workflows) : fusion manuelle."
+          else
+            echo "sensitive=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.sensitive == 'false'
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Tests
+        if: steps.guard.outputs.sensitive == 'false'
+        run: npm ci && npm test
+
+      - name: Build
+        if: steps.guard.outputs.sensitive == 'false'
+        run: npm run build
+
+      - name: Fusion
+        if: steps.guard.outputs.sensitive == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        # Squash : un commit par PR, signé du propriétaire du dépôt (Vercel le déploie).
+        run: gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --delete-branch --match-head-commit "$HEAD"
