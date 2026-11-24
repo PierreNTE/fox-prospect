@@ -283,7 +283,7 @@ function SalesChatCard({ leadsCount }) {
         <Badge appearance="tint" color="success">{s.sur ?? 0} sûrs</Badge>
         <Badge appearance="tint" color="warning">{s.probable ?? 0} probables</Badge>
         <Badge appearance="tint" color="subtle">{s.suppose ?? 0} supposés (validation)</Badge>
-        {s.sans_email > 0 && <Badge appearance="outline">{s.sans_email} sans email (recherche en cours)</Badge>}
+        {s.sans_email > 0 && <Badge appearance="outline" title="L'agent les cherche dans les outils Dell (Salesforce, ZoomInfo) ; sinon, à appeler">{s.sans_email} à trouver par l'agent</Badge>}
         {s.deja_exportes > 0 && (
           <Button as="a" size="small" appearance="subtle" href="/api/leads/export?all=1">Re-télécharger tout ({s.deja_exportes} déjà envoyés à l'agent)</Button>
         )}
