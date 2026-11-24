@@ -1,4 +1,9 @@
-// Service worker v2 — trois stratégies au lieu du network-first uniforme :
+// Service worker v4 — la fraîcheur d'abord (outil de travail quotidien) :
+//  - pages et API : réseau d'abord, le cache ne sert qu'hors ligne (plus de
+//    page de la veille servie parce que le serveur a mis plus de 3 s) ;
+//  - téléchargements (/api/leads/export) : jamais interceptés ;
+//  - /_next/static/* : cache d'abord (fichiers immuables).
+// Historique (v2) — trois stratégies au lieu du network-first uniforme :
 //
 // 1. /_next/static/*  → CACHE D'ABORD : ces assets portent un hash dans l'URL,
 //    ils sont immutables par construction. En réseau lent, plus d'attente.
@@ -17,7 +22,7 @@
 // Supabase : documents volumineux + URLs signées à durée courte), réponses
 // > 2 Mo, réponses redirigées (une fiche redirigée vers /login ne doit pas
 // écraser la fiche en cache).
-const CACHE = "fox-prospect-v3";
+const CACHE = "fox-prospect-v4";
 const MAX_CACHEABLE_BYTES = 2 * 1024 * 1024;
 
 self.addEventListener("install", () => self.skipWaiting());
@@ -121,13 +126,16 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Fichiers à télécharger (CSV Sales Chat…) : toujours le serveur, jamais le cache.
+  if (url.pathname.startsWith("/api/leads/export")) return;
+
   if (url.pathname.startsWith("/api/")) {
-    event.respondWith(request.cache === "no-store" ? networkFirst(request) : staleWhileRevalidate(request));
+    event.respondWith(networkFirst(request));
     return;
   }
 
   if (request.mode === "navigate") {
-    event.respondWith(networkFirstWithTimeout(request));
+    event.respondWith(networkFirst(request));
     return;
   }
 
