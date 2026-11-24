@@ -220,11 +220,15 @@ def process_find_phone(job):
         update_job(job_id, status="done", progress=100, finished_at=now_iso(), stats={"found": 0, "skip": "déjà un numéro"})
         print(f"✓ job {job_id} [find_phone] déjà un numéro")
         return
-    number, sources = find_standard(params.get("company") or "", params.get("commune") or "")
+    number, sources, origin = find_standard(params.get("company") or "", params.get("commune") or "",
+                                            siren=params.get("siren"), alt=params.get("alt"),
+                                            public=bool(params.get("public")), etab_commune=params.get("etab_commune"))
     if number:
+        label = ("annuaire service-public (officiel)" if origin == "annuaire service-public"
+                 else f"recherche web ({sources} source{'s' if sources > 1 else ''}), à vérifier")
         # Jamais par-dessus un numéro saisi entre-temps.
         sb(f"accounts?id=eq.{account_id}&standard_phone=is.null", method="PATCH",
-           body={"standard_phone": number, "standard_source": f"recherche web ({sources} source{'s' if sources > 1 else ''}), à vérifier"})
+           body={"standard_phone": number, "standard_source": label})
     update_job(job_id, status="done", progress=100, finished_at=now_iso(), stats={"found": 1 if number else 0, "sources": sources})
     print(f"✓ job {job_id} [find_phone] {'numéro trouvé' if number else 'aucun numéro sûr'}")
 
@@ -239,10 +243,14 @@ def process_find_email(job):
         update_job(job_id, status="done", progress=100, finished_at=now_iso(), stats={"found": 0, "skip": "absent ou déjà un email"})
         print(f"✓ job {job_id} [find_email] rien à faire")
         return
-    email, sources, phone = find_email(params.get("company") or "", params.get("commune") or "")
+    email, sources, phone, origin = find_email(params.get("company") or "", params.get("commune") or "",
+                                               siren=params.get("siren"), alt=params.get("alt"),
+                                               public=bool(params.get("public")), domain=params.get("domain"))
     if email:
+        label = ("annuaire service-public (3 sources)" if origin == "annuaire service-public"
+                 else f"recherche web ({sources} source{'s' if sources > 1 else ''})")
         sb(f"accounts?id=eq.{account_id}&found_email=is.null", method="PATCH",
-           body={"found_email": email, "found_email_source": f"recherche web ({sources} source{'s' if sources > 1 else ''})"})
+           body={"found_email": email, "found_email_source": label})
     if phone and not rows[0].get("standard_phone") and not rows[0].get("phones"):
         sb(f"accounts?id=eq.{account_id}&standard_phone=is.null", method="PATCH",
            body={"standard_phone": phone, "standard_source": "recherche web (avec l'email), à vérifier"})

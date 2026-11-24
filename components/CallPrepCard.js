@@ -10,6 +10,7 @@ import {
   Sparkle24Regular, Copy24Regular, Mail24Regular, LinkSquare24Regular, Checkmark24Regular, PersonSearch24Regular, Search24Regular,
 } from "@fluentui/react-icons";
 import { fetchJson } from "@/lib/fetch-json";
+import ZoomInfoButton from "@/components/ZoomInfoButton";
 
 const BRAND = "#5B53E6";
 
@@ -39,23 +40,6 @@ function CopyButton({ text, label = "Copier" }) {
         try { await navigator.clipboard.writeText(text); setOk(true); setTimeout(() => setOk(false), 1800); } catch {}
       }}>
       {ok ? "Copié" : label}
-    </Button>
-  );
-}
-
-// ZoomInfo (licence Dell) : jamais interrogé automatiquement — ses conditions
-// interdisent l'accès robotisé. Le bouton copie le nom et ouvre ZoomInfo dans un
-// onglet : la recherche reste manuelle (coller + Entrée).
-function ZoomInfoButton({ name }) {
-  const [ok, setOk] = useState(false);
-  return (
-    <Button size="small" appearance="outline" icon={ok ? <Checkmark24Regular /> : <Search24Regular />}
-      title="Copie le nom de la société et ouvre ZoomInfo : colle-le dans la recherche"
-      onClick={async () => {
-        try { await navigator.clipboard.writeText(name || ""); setOk(true); setTimeout(() => setOk(false), 2500); } catch {}
-        window.open("https://app.zoominfo.com/", "_blank", "noopener,noreferrer");
-      }}>
-      {ok ? "Nom copié · colle-le" : "ZoomInfo"}
     </Button>
   );
 }

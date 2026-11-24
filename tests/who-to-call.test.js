@@ -147,3 +147,16 @@ describe("email au style de Pierre", () => {
     expect(p.messages.relance.corps).toContain("un simple nom me suffit");
   });
 });
+
+import { contactJobParams, CONTACT_SEARCH_VERSION } from "@/lib/leads-agent";
+
+describe("recherche élargie des coordonnées", () => {
+  it("paramètres : nom Salesforce, SIREN, acheteur public, établissement, domaine, version", () => {
+    const p = contactJobParams({ id: "1", name: "MAIRIE DE GAMMA", sirene_name: "COMMUNE DE GAMMA", commune: "GAMMA",
+      siren: "210000000", nature_juridique: "7210", etab_commune: "BETA", website: "https://www.gamma.fr/accueil" });
+    expect(p).toMatchObject({ company: "COMMUNE DE GAMMA", alt: "MAIRIE DE GAMMA", siren: "210000000", public: true,
+      etab_commune: "BETA", domain: "gamma.fr", v: CONTACT_SEARCH_VERSION });
+    expect(contactJobParams({ id: "2", name: "ALPHA SAS", sirene_name: "ALPHA SAS", nature_juridique: "5710" }))
+      .toMatchObject({ alt: null, public: false, domain: null });
+  });
+});
