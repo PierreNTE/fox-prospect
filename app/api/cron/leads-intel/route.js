@@ -156,6 +156,7 @@ export async function GET(request) {
       scrape_queued: r.scrape?.queued ?? 0, scrape_error: r.scrape?.error || null,
       sites_queued: r.sites?.queued ?? 0, sites_error: r.sites?.error || null,
       phones_queued: r.phones?.queued ?? 0, phones_error: r.phones?.error || null,
+      emails_queued: r.emails?.queued ?? 0, emails_error: r.emails?.error || null,
     };
   } catch (e) {
     out.agent = { error: e.message };

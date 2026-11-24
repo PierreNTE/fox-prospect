@@ -26,7 +26,7 @@ from datetime import datetime, timezone, timedelta
 from discover_free import discover_company
 from waterfall import enrich_email
 from site_finder import find_official_site
-from phone_finder import find_standard
+from phone_finder import find_standard, find_email
 
 SB_URL = os.environ.get("SUPABASE_URL")
 SB_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
@@ -229,6 +229,27 @@ def process_find_phone(job):
     print(f"✓ job {job_id} [find_phone] {'numéro trouvé' if number else 'aucun numéro sûr'}")
 
 
+def process_find_email(job):
+    """Job find_email : email de la société lu dans les extraits de recherche → écrit s'il n'y en a pas."""
+    job_id, params = job["id"], job.get("params") or {}
+    account_id = params.get("account_id")
+    update_job(job_id, status="running", started_at=now_iso(), progress=10)
+    rows = sb(f"accounts?id=eq.{account_id}&select=found_email,standard_phone,phones:web_intel->phones") if account_id else []
+    if not rows or rows[0].get("found_email"):
+        update_job(job_id, status="done", progress=100, finished_at=now_iso(), stats={"found": 0, "skip": "absent ou déjà un email"})
+        print(f"✓ job {job_id} [find_email] rien à faire")
+        return
+    email, sources, phone = find_email(params.get("company") or "", params.get("commune") or "")
+    if email:
+        sb(f"accounts?id=eq.{account_id}&found_email=is.null", method="PATCH",
+           body={"found_email": email, "found_email_source": f"recherche web ({sources} source{'s' if sources > 1 else ''})"})
+    if phone and not rows[0].get("standard_phone") and not rows[0].get("phones"):
+        sb(f"accounts?id=eq.{account_id}&standard_phone=is.null", method="PATCH",
+           body={"standard_phone": phone, "standard_source": "recherche web (avec l'email), à vérifier"})
+    update_job(job_id, status="done", progress=100, finished_at=now_iso(), stats={"found": 1 if email else 0, "sources": sources})
+    print(f"✓ job {job_id} [find_email] {'email trouvé' if email else 'aucun email sûr'}")
+
+
 def process_job(job):
     job_id = job["id"]
     kind = job["kind"]
@@ -237,6 +258,8 @@ def process_job(job):
         return process_find_website(job)
     if kind == "find_phone":
         return process_find_phone(job)
+    if kind == "find_email":
+        return process_find_email(job)
     limit = int(params.get("limit") or DEFAULT_LIMIT)
     do_enrich = kind in ("enrich", "discover_and_enrich")
     do_discover = kind in ("discover", "discover_and_enrich")
@@ -321,12 +344,12 @@ def main():
     # semaine ; la veille automatique (created_by=auto) complète le lot.
     # Recherches de site : rapides, lot à part (ne mangent pas le quota LinkedIn).
     sites = sb(f"scrape_jobs?status=eq.pending&kind=eq.find_website&order=created_at.asc&limit={FIND_SITE_BATCH}") or []
-    phones = sb(f"scrape_jobs?status=eq.pending&kind=eq.find_phone&order=created_at.asc&limit={FIND_PHONE_BATCH}") or []
-    jobs = sb(f"scrape_jobs?status=eq.pending&kind=not.in.(find_website,find_phone)&created_by=eq.leads-agent&order=created_at.asc&limit={JOB_BATCH}") or []
+    phones = sb(f"scrape_jobs?status=eq.pending&kind=in.(find_phone,find_email)&order=created_at.asc&limit={FIND_PHONE_BATCH}") or []
+    jobs = sb(f"scrape_jobs?status=eq.pending&kind=not.in.(find_website,find_phone,find_email)&created_by=eq.leads-agent&order=created_at.asc&limit={JOB_BATCH}") or []
     # Anciens comptes suivis (veille) : seulement si explicitement réactivé.
     include_auto = (os.environ.get("SCRAPE_INCLUDE_AUTO") or "").strip().lower() == "true"
     if include_auto and len(jobs) < JOB_BATCH:
-        jobs += sb(f"scrape_jobs?status=eq.pending&kind=not.in.(find_website,find_phone)&or=(created_by.is.null,created_by.neq.leads-agent)&order=created_at.asc&limit={JOB_BATCH - len(jobs)}") or []
+        jobs += sb(f"scrape_jobs?status=eq.pending&kind=not.in.(find_website,find_phone,find_email)&or=(created_by.is.null,created_by.neq.leads-agent)&order=created_at.asc&limit={JOB_BATCH - len(jobs)}") or []
     # Standards d'abord (une ou deux requêtes chacun : le plus utile pour appeler),
     # puis sites, puis décideurs.
     jobs = phones + sites + jobs

@@ -20,7 +20,7 @@ import { CALL_STATUS, CALL_STATUS_META, sfStatusLabel } from "@/lib/call-status"
 import HealthCard from "@/components/HealthCard";
 import IntelCard from "@/components/IntelCard";
 import CallPrepCard from "@/components/CallPrepCard";
-import { whoToCall } from "@/lib/who-to-call";
+import { whoToCall, pickEmail } from "@/lib/who-to-call";
 
 const BRAND = "#5B53E6";
 const RED = "#C50F1F";
@@ -180,9 +180,57 @@ function StandardRow({ account, standard, searchUrl, onSaved, onError }) {
   );
 }
 
+// Email à utiliser pour ce lead (celui que reçoit l'agent Sales Chat), avec sa
+// confiance ; corrigeable à la main (la saisie passe devant le reste).
+const CONF_COLOR = { "sûr": GREEN, probable: "#8A6A00", "supposé": "var(--colorNeutralForeground3)" };
+
+function EmailRow({ account, email, onSaved, onError }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const save = async (v) => {
+    setSaving(true);
+    const r = await fetchJson(`/api/accounts/${account.id}`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ found_email: v }),
+    });
+    setSaving(false);
+    if (!r.ok) { onError(r.error); return; }
+    setEditing(false); setValue(""); onSaved();
+  };
+  return (
+    <div style={{ padding: "10px 12px", borderRadius: 8, border: "1px dashed var(--colorNeutralStroke1)", display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Body1 style={{ fontWeight: 700 }}>Email</Body1>
+        {email ? (
+          <>
+            <Button as="a" size="small" icon={<Mail24Regular />} href={`mailto:${email.email}`} style={{ wordBreak: "break-all" }}>{email.email}</Button>
+            <Caption1 style={{ color: CONF_COLOR[email.confidence] }}>{email.confidence}</Caption1>
+            <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>{email.source}</Caption1>
+          </>
+        ) : (
+          <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>pas encore trouvé (recherche en cours)</Caption1>
+        )}
+        <Button size="small" appearance="subtle" style={{ marginLeft: "auto" }} onClick={() => setEditing((v) => !v)}>
+          {email ? "Corriger" : "Saisir"}
+        </Button>
+      </div>
+      {editing && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <Input type="email" placeholder="prenom.nom@societe.fr" value={value} onChange={(_, d) => setValue(d.value)} style={{ minWidth: 220 }} />
+          <Button size="small" appearance="primary" disabled={saving || !value.trim()} onClick={() => save(value)}>Enregistrer</Button>
+          {account.found_email_source === "manuel" && (
+            <Button size="small" appearance="subtle" disabled={saving} onClick={() => save("")}>Effacer mon email</Button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PeopleCard({ account, contacts, onChange, onError }) {
   const prep = account.call_prep;
   const who = whoToCall({ account, contacts });
+  const email = pickEmail({ account, contacts });
   return (
     <Card style={{ padding: "18px 20px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
@@ -201,6 +249,7 @@ function PeopleCard({ account, contacts, onChange, onError }) {
           </Caption1>
         )}
         <StandardRow account={account} standard={who.standard} searchUrl={who.phone_search_url} onSaved={onChange} onError={onError} />
+        <EmailRow account={account} email={email} onSaved={onChange} onError={onError} />
       </div>
       {prep?.postes_a_chercher?.length > 0 && (
         <Caption1 style={{ display: "block", marginTop: 10, color: "var(--colorNeutralForeground2)" }}>
