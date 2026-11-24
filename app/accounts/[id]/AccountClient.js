@@ -201,7 +201,20 @@ function EmailRow({ account, email, onSaved, onError }) {
     <div style={{ padding: "10px 12px", borderRadius: 8, border: "1px dashed var(--colorNeutralStroke1)", display: "grid", gap: 8 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <Body1 style={{ fontWeight: 700 }}>Email</Body1>
-        {email ? (
+        {account.email_opt_out ? (
+          <>
+            <Badge appearance="tint" color="danger">ne plus écrire (STOP)</Badge>
+            <Button size="small" appearance="subtle" disabled={saving} onClick={async () => {
+              setSaving(true);
+              const r = await fetchJson(`/api/accounts/${account.id}`, {
+                method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ email_opt_out: false }),
+              });
+              setSaving(false);
+              if (!r.ok) { onError(r.error); return; }
+              onSaved();
+            }}>Annuler le STOP</Button>
+          </>
+        ) : email ? (
           <>
             <Button as="a" size="small" icon={<Mail24Regular />} href={`mailto:${email.email}`} style={{ wordBreak: "break-all" }}>{email.email}</Button>
             <Caption1 style={{ color: CONF_COLOR[email.confidence] }}>{email.confidence}</Caption1>

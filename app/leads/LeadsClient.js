@@ -250,11 +250,15 @@ const CONF_COLOR = { "sûr": "#107C10", probable: "#8A6A00", "supposé": "var(--
 
 // Passage de relais vers l'agent Sales Chat : le fichier de la semaine (un email
 // par lead, message prêt) et les instructions à coller une fois dans l'agent.
-function SalesChatCard({ leadsCount }) {
+function SalesChatCard({ leadsCount, onUpdated }) {
   const [stats, setStats] = useState(null);
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [copied, setCopied] = useState(false);
+  const [recapOpen, setRecapOpen] = useState(false);
+  const [recap, setRecap] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState(null);
   const load = async () => {
     const r = await fetchJson("/api/leads/export?format=json");
     if (r.ok) setStats(r.data);
@@ -266,34 +270,63 @@ function SalesChatCard({ leadsCount }) {
     const r = await fetchJson("/api/leads/agent-instructions");
     if (r.ok) setText(r.data.instructions);
   };
+  const saveRecap = async () => {
+    setSaving(true); setResult(null);
+    const r = await fetchJson("/api/leads/agent-recap", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: recap }),
+    });
+    setSaving(false);
+    setResult(r.ok ? r.data : { error: r.error });
+    if (r.ok) { setRecap(""); load(); onUpdated?.(); }
+  };
   const s = stats || {};
   return (
     <Card style={{ padding: "14px 18px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <Body1 style={{ flex: 1, minWidth: 220 }}>
-          <strong>Emails via Sales Chat</strong> — un email par lead, message prêt, envoyé par ton agent Sales Chat
+          <strong>Emails via Sales Chat</strong> — le fichier pour ton agent, puis son récapitulatif en retour
         </Body1>
-        <Button as="a" appearance="primary" href={s.rows ? "/api/leads/export?mark=1" : undefined} disabled={!s.rows}
-          onClick={() => setTimeout(load, 1500)}>
+        <Button as="a" appearance="primary" href={s.rows ? "/api/leads/export" : undefined} disabled={!s.rows}>
           Fichier de la semaine ({s.rows ?? "…"})
         </Button>
-        <Button appearance="outline" onClick={showInstructions}>{open ? "Masquer les instructions" : "Instructions de l'agent"}</Button>
+        <Button appearance="outline" onClick={() => setRecapOpen((v) => !v)}>Retour de l'agent</Button>
+        <Button appearance="subtle" onClick={showInstructions}>{open ? "Masquer les instructions" : "Instructions"}</Button>
       </div>
       <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
         <Badge appearance="tint" color="success">{s.sur ?? 0} sûrs</Badge>
         <Badge appearance="tint" color="warning">{s.probable ?? 0} probables</Badge>
         <Badge appearance="tint" color="subtle">{s.suppose ?? 0} supposés (validation)</Badge>
-        {s.sans_email > 0 && <Badge appearance="outline" title="L'agent les cherche dans les outils Dell (Salesforce, ZoomInfo) ; sinon, à appeler">{s.sans_email} à trouver par l'agent</Badge>}
+        {s.sans_email > 0 && <Badge appearance="outline" title="L'agent les cherche sur le web et dans les contenus Dell ; sinon, à appeler">{s.sans_email} à trouver par l'agent</Badge>}
         {s.deja_exportes > 0 && (
-          <Button as="a" size="small" appearance="subtle" href="/api/leads/export?all=1">Re-télécharger tout ({s.deja_exportes} déjà envoyés à l'agent)</Button>
+          <Button as="a" size="small" appearance="subtle" href="/api/leads/export?all=1">Tout re-télécharger ({s.deja_exportes} déjà traités par l'agent)</Button>
         )}
       </div>
-      {open && (
+      {recapOpen && (
         <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
           <Caption1>
-            À coller une seule fois dans ton agent Sales Chat. Chaque lundi, donne-lui le fichier de la semaine.
-            Il démarre en mode VALIDATION : il prépare les brouillons et attend ton « envoie ».
+            Colle ici tout le récapitulatif de l'agent (tableau, « Emails trouvés », « Rebonds », « Nouveaux STOP »).
+            Les leads traités ne repartent pas avant 25 jours, les emails trouvés sont enregistrés, les rebonds écartés
+            et les STOP ne reçoivent plus d'email.
           </Caption1>
+          <Textarea value={recap} onChange={(_, d) => setRecap(d.value)} resize="vertical" style={{ minHeight: 160, fontSize: 12.5 }}
+            placeholder="| N° | Société | Email | Confiance | Statut | Raison | …" />
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <Button size="small" appearance="primary" disabled={saving || !recap.trim()} onClick={saveRecap}>
+              {saving ? "Enregistrement…" : "Enregistrer le retour"}
+            </Button>
+            {result && !result.error && (
+              <Caption1>
+                {result.traites} traités · {result.emails_enregistres} emails enregistrés · {result.rebonds} rebonds · {result.stop} STOP
+                {result.non_trouves?.length > 0 && ` · non reconnus : ${result.non_trouves.slice(0, 5).join(", ")}${result.non_trouves.length > 5 ? "…" : ""}`}
+              </Caption1>
+            )}
+            {result?.error && <Caption1 style={{ color: "#C50F1F" }}>{result.error}</Caption1>}
+          </div>
+        </div>
+      )}
+      {open && (
+        <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+          <Caption1>Instructions de départ de l'agent (ton agent Sales Chat a déjà les siennes).</Caption1>
           <Textarea readOnly value={text || "Chargement…"} resize="vertical" style={{ minHeight: 220, fontSize: 12.5 }} />
           <div>
             <Button size="small" disabled={!text} onClick={async () => {
@@ -371,7 +404,9 @@ function WhoToCall({ l, compact = false }) {
           {isOpen(l) ? "Demander le responsable informatique" : "—"}
         </Caption1>
       )}
-      {l.email && (
+      {l.email_opt_out ? (
+        <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground3)" }}>✉ ne plus écrire (STOP)</Caption1>
+      ) : l.email && (
         <Caption1 style={{ display: "block", color: CONF_COLOR[l.email.confidence], wordBreak: "break-all" }}
           title={`${l.email.confidence} — ${l.email.source}`}>
           ✉ {l.email.email} · {l.email.confidence}
@@ -556,7 +591,7 @@ export default function LeadsClient({ initialLeads = [] }) {
 
       {leads.length > 0 && <ProgressCard progress={progress} running={running} log={log} onRun={runAll} />}
 
-      {leads.length > 0 && <SalesChatCard leadsCount={leads.length} />}
+      {leads.length > 0 && <SalesChatCard leadsCount={leads.length} onUpdated={reload} />}
 
       <Card style={{ padding: "16px 16px 20px" }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
