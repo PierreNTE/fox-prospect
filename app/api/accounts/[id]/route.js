@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { getAccountDetail, getAccountSignals } from "@/lib/data";
+import { pickStandard } from "@/lib/who-to-call";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,17 @@ export async function PATCH(request, { params }) {
     const v = String(body.standard_phone || "").replace(/[^\d+ .]/g, "").trim().slice(0, 30);
     update.standard_phone = v || null;
     update.standard_source = v ? "manuel" : null;
+  }
+
+  // « Numéro non attribué » : le numéro proposé est écarté pour de bon (le suivant prend sa place).
+  if (update.call_status === "faux_numero") {
+    const { data: cur } = await supabase.from("accounts")
+      .select("standard_phone, standard_source, web_intel, call_prep, bad_phones").eq("id", id).maybeSingle();
+    const std = cur ? pickStandard(cur)?.number : null;
+    if (std) {
+      update.bad_phones = [...new Set([...(cur.bad_phones || []), std])];
+      if (cur.standard_phone === std) { update.standard_phone = null; update.standard_source = null; }
+    }
   }
 
   const { data, error } = await supabase.from("accounts").update(update).eq("id", id).select().single();

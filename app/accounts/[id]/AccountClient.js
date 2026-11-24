@@ -20,6 +20,7 @@ import { CALL_STATUS, CALL_STATUS_META, sfStatusLabel } from "@/lib/call-status"
 import HealthCard from "@/components/HealthCard";
 import IntelCard from "@/components/IntelCard";
 import CallPrepCard from "@/components/CallPrepCard";
+import BriefCard from "@/components/BriefCard";
 import { whoToCall, pickEmail } from "@/lib/who-to-call";
 
 const BRAND = "#5B53E6";
@@ -390,6 +391,9 @@ export default function AccountClient({ id, initialData = null }) {
           <Body1 role="alert" style={{ color: RED }}>{error}</Body1>
         </Card>
       )}
+
+      {/* ── Brief : verdict, anomalies, question, note Salesforce ── */}
+      <BriefCard account={account} brief={data.brief} onDone={load} onError={setError} />
 
       <div className="lead-cols">
         <div className="lead-col">

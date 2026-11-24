@@ -214,7 +214,7 @@ function PriorityBadge({ p }) {
 
 // Avancement de la recherche automatique (après import, puis toutes les 15 min).
 // Un seul bouton : tout mettre à jour maintenant (collecte + repreneurs + recherches).
-function ProgressCard({ progress, running, log, onRun }) {
+function ProgressCard({ progress, running, log, onRun, briefs }) {
   const p = progress || {};
   const queue = (p.sites_pending || 0) + (p.people_pending || 0) + (p.phones_pending || 0);
   const busy = running || queue > 0 || (p.active && p.collected < p.active);
@@ -235,6 +235,8 @@ function ProgressCard({ progress, running, log, onRun }) {
         <Badge appearance="tint" color="success">{p.active ?? "…"} sociétés actives</Badge>
         <Badge appearance="tint" color="brand">{p.fiches ?? 0} fiches prêtes</Badge>
         <Badge appearance="tint" color="informative">{p.with_phone ?? 0} avec un standard</Badge>
+        {briefs && <Badge appearance="tint" color="success">{briefs.ready} briefs prêts</Badge>}
+        {briefs?.anomalies > 0 && <Badge appearance="tint" color="danger">{briefs.anomalies} avec anomalies</Badge>}
         {queue > 0 && (
           <Badge appearance="outline">
             En recherche : {p.phones_pending || 0} standards et emails · {p.sites_pending || 0} sites · {p.people_pending || 0} décideurs
@@ -455,6 +457,15 @@ function CompanyCell({ l, onMerged }) {
         <Badge appearance="tint" color={m.color} size="small" title={l.health_label}>{m.label}</Badge>
         {l.is_new && <Badge appearance="filled" color="brand" size="small">Nouveau</Badge>}
         {l.missing_from_last_import && <Badge appearance="outline" size="small" title="Absent du dernier export Salesforce">Absent</Badge>}
+        {l.brief && l.brief.verdict !== "appeler" && (
+          <Badge appearance="tint" size="small" color={l.brief.verdict_color} title={l.brief.reason}>{l.brief.verdict_label}</Badge>
+        )}
+        {l.brief?.anomalies?.length > 0 && (
+          <Badge appearance="outline" size="small" color={l.brief.sf_fix ? "danger" : "informative"}
+            title={l.brief.anomalies.map((a) => `${a.label}${a.detail ? ` — ${a.detail}` : ""}`).join("\n")}>
+            {l.brief.anomalies.length} anomalie{l.brief.anomalies.length > 1 ? "s" : ""}
+          </Badge>
+        )}
         {l.commune && <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>{l.commune}</Caption1>}
       </div>
       <Flags l={l} />
@@ -532,12 +543,13 @@ export default function LeadsClient({ initialLeads = [] }) {
   }
 
   const counts = useMemo(() => {
-    const c = { all: leads.length, todo: 0, recall: 0, nophone: 0, noemail: 0, rdv: 0, successor: 0, dups: 0, close: 0, missing: 0 };
+    const c = { all: leads.length, todo: 0, recall: 0, nophone: 0, noemail: 0, sffix: 0, rdv: 0, successor: 0, dups: 0, close: 0, missing: 0 };
     for (const l of leads) {
       if (isOpen(l) && !isFinalStatus(l.call_status)) c.todo++;
       if (recallDue(l.recall_at, today()) && !isFinalStatus(l.call_status)) c.recall++;
       if (isOpen(l) && !l.standard && !l.contact?.phone) c.nophone++;
       if (isOpen(l) && !l.email) c.noemail++;
+      if (l.brief?.sf_fix) c.sffix++;
       if (l.call_status === "rdv") c.rdv++;
       if (l.successor) c.successor++;
       if ((l.flags || []).length) c.dups++;
@@ -555,6 +567,7 @@ export default function LeadsClient({ initialLeads = [] }) {
       if (filter === "recall") return recallDue(l.recall_at, today()) && !isFinalStatus(l.call_status);
       if (filter === "nophone") return isOpen(l) && !l.standard && !l.contact?.phone;
       if (filter === "noemail") return isOpen(l) && !l.email;
+      if (filter === "sffix") return !!l.brief?.sf_fix;
       if (filter === "rdv") return l.call_status === "rdv";
       if (filter === "successor") return !!l.successor;
       if (filter === "dups") return (l.flags || []).length > 0;
@@ -570,6 +583,7 @@ export default function LeadsClient({ initialLeads = [] }) {
     ["recall", "À rappeler aujourd'hui"],
     ["nophone", "Sans numéro"],
     ["noemail", "Sans email"],
+    ["sffix", "Anomalies à corriger dans Salesforce"],
     ["rdv", "RDV pris"],
     ["successor", "Repris / renommés"],
     ["dups", "Doublons et groupes"],
@@ -596,7 +610,10 @@ export default function LeadsClient({ initialLeads = [] }) {
 
       <ImportCard onImported={afterImport} startOpen={leads.length === 0} />
 
-      {leads.length > 0 && <ProgressCard progress={progress} running={running} log={log} onRun={runAll} />}
+      {leads.length > 0 && (
+        <ProgressCard progress={progress} running={running} log={log} onRun={runAll}
+          briefs={{ ready: leads.filter((l) => l.brief).length, anomalies: leads.filter((l) => l.brief?.anomalies?.length).length }} />
+      )}
 
       {leads.length > 0 && <SalesChatCard leadsCount={leads.length} onUpdated={reload} />}
 
