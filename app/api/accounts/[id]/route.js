@@ -26,6 +26,7 @@ export async function PATCH(request, { params }) {
   const update = {};
   for (const key of allowed) if (key in body) update[key] = body[key] === "" && key === "recall_at" ? null : body[key];
   if ("call_status" in update || "call_note" in update || "recall_at" in update) update.call_updated_at = new Date().toISOString();
+  if ("email_opt_out" in body) update.email_opt_out = !!body.email_opt_out;
   // Email saisi à la main : il passe devant les emails trouvés automatiquement.
   if ("found_email" in body) {
     const v = String(body.found_email || "").trim().toLowerCase().slice(0, 200);
