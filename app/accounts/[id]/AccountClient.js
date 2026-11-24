@@ -21,6 +21,7 @@ import HealthCard from "@/components/HealthCard";
 import IntelCard from "@/components/IntelCard";
 import CallPrepCard from "@/components/CallPrepCard";
 import BriefCard from "@/components/BriefCard";
+import ZoomInfoButton from "@/components/ZoomInfoButton";
 import { whoToCall, pickEmail } from "@/lib/who-to-call";
 
 const BRAND = "#5B53E6";
@@ -160,6 +161,7 @@ function StandardRow({ account, standard, searchUrl, onSaved, onError }) {
               Trouver le numéro
             </Button>
           )}
+          {!standard && <ZoomInfoButton name={account.health_detail?.sirene_name || account.name} />}
           <Button size="small" appearance="subtle" onClick={() => setEditing((v) => !v)}>
             {standard ? "Corriger" : "Saisir"}
           </Button>
