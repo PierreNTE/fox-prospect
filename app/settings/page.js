@@ -37,7 +37,7 @@ export default function SettingsPage() {
       <div>
         <Title2>Réglages</Title2>
         <Body1 style={{ color: "var(--colorNeutralForeground3)", display: "block", marginTop: 2 }}>
-          Ton nom et ton poste servent à signer les emails et à te présenter dans le script d'appel.
+          Ton nom, ton poste et ton téléphone servent à signer les emails et à te présenter dans le script d'appel.
         </Body1>
       </div>
 
@@ -67,7 +67,11 @@ export default function SettingsPage() {
               </div>
               <div>
                 <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Poste</Caption1>
-                <Input placeholder="Account Executive" value={s.sender_role || ""} onChange={(_, d) => setS({ ...s, sender_role: d.value })} />
+                <Input placeholder="Inside Sales – Data Center Solutions" value={s.sender_role || ""} onChange={(_, d) => setS({ ...s, sender_role: d.value })} />
+              </div>
+              <div>
+                <Caption1 style={{ display: "block", marginBottom: 4, fontWeight: 600 }}>Téléphone (dans les emails)</Caption1>
+                <Input type="tel" placeholder="06 00 00 00 00" value={s.sender_phone || ""} onChange={(_, d) => setS({ ...s, sender_phone: d.value })} />
               </div>
             </div>
             <Caption1 style={{ display: "block", marginTop: 10, color: "var(--colorNeutralForeground3)" }}>

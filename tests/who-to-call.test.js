@@ -118,6 +118,8 @@ describe("export Sales Chat", () => {
     expect(t).toContain("Alex Martin, Account Executive chez Dell Technologies");
     expect(t).toContain("MODE = VALIDATION");
     expect(t).toContain("STOP");
+    expect(t).toContain("DELL : Données et Sauvegardes");
+    expect(t).toContain("[ton téléphone]");
   });
   it("recherche d'email pour les leads sans email sûr ou probable", () => {
     const leads = [
@@ -127,5 +129,21 @@ describe("export Sales Chat", () => {
       { id: "4", health_status: "fermee", email: null },
     ];
     expect(selectEmailTargets(leads, { room: 10, already: new Set(["2"]) }).map((l) => l.id)).toEqual(["1"]);
+  });
+});
+
+import { buildFreeCallPrep } from "@/lib/call-prep-free";
+
+describe("email au style de Pierre", () => {
+  it("objet DELL :, question des sujets en cours, numéro direct", () => {
+    const p = buildFreeCallPrep({
+      account: { id: "z", name: "GAMMA SAS", health_detail: { commune: "ANGERS" } },
+      sender: { sender_name: "Alex Martin", sender_role: "Inside Sales", sender_phone: "06 00 00 00 00" },
+    });
+    expect(p.messages.email.objet).toBe("DELL : Données et Sauvegardes");
+    expect(p.messages.email.corps).toContain("y a-t-il un sujet en cours (extension, renouvellement, incident)");
+    expect(p.messages.email.corps).toContain("Vous pouvez aussi m'appeler directement au 06 00 00 00 00.");
+    expect(p.messages.email.corps).toContain("Alex Martin\nInside Sales\nDell Technologies\nTél. : 06 00 00 00 00");
+    expect(p.messages.relance.corps).toContain("un simple nom me suffit");
   });
 });
