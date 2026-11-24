@@ -21,6 +21,7 @@ export async function PUT(request) {
       sender_name: body.sender_name ?? "",
       sender_role: body.sender_role ?? "",
       sender_company: body.sender_company ?? "",
+      ...("sender_phone" in body ? { sender_phone: String(body.sender_phone || "").slice(0, 30) } : {}),
       icp: body.icp ?? {},
       updated_at: new Date().toISOString(),
     })
