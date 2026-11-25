@@ -64,7 +64,7 @@ function CallTracker({ account, onSaved, onError }) {
               setStatus(s.value);
               const r = s.value === "rappeler" && !recall ? plusDays(2) : recall;
               if (r !== recall) setRecall(r);
-              save({ call_status: s.value, recall_at: r });
+              save({ call_status: s.value, recall_at: r, log_call: true });
             }}>
             {s.label}
           </Button>

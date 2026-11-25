@@ -57,6 +57,11 @@ export async function PATCH(request, { params }) {
 
   const { data, error } = await supabase.from("accounts").update(update).eq("id", id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  // Résultat d'appel noté (log_call) : une ligne d'historique (tentatives, bilan de la semaine).
+  // Les simples modifications de note ou de date de rappel ne sont pas des appels.
+  if (body.log_call && update.call_status && update.call_status !== "a_appeler") {
+    await supabase.from("call_log").insert({ account_id: id, outcome: update.call_status }).then(() => null, () => null);
+  }
   return NextResponse.json({ account: data });
 }
 
