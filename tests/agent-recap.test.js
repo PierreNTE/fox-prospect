@@ -77,8 +77,8 @@ describe("STOP et rebonds dans l'export", () => {
   });
   it("une société en STOP ne part plus dans le fichier", () => {
     const rows = buildExportRows([
-      { id: "1", name: "A", health_status: "active", email: { email: "a@a.fr", confidence: "sûr" } },
-      { id: "2", name: "B", health_status: "active", email_opt_out: true, email: { email: "b@b.fr", confidence: "sûr" } },
+      { id: "1", name: "A", health_status: "active", recipient: { name: "Jean Martin" }, email: { email: "a@a.fr", confidence: "sûr" } },
+      { id: "2", name: "B", health_status: "active", recipient: { name: "Léa Roux" }, email_opt_out: true, email: { email: "b@b.fr", confidence: "sûr" } },
     ]);
     expect(rows.map((r) => r.id)).toEqual(["1"]);
   });

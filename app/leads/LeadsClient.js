@@ -405,6 +405,11 @@ function SalesChatCard({ leadsCount, onUpdated }) {
         <Badge appearance="tint" color="warning">{s.probable ?? 0} probables</Badge>
         <Badge appearance="tint" color="subtle">{s.suppose ?? 0} supposés (validation)</Badge>
         {s.sans_email > 0 && <Badge appearance="outline" title="L'agent les cherche sur le web et dans les contenus Dell ; sinon, à appeler">{s.sans_email} à trouver par l'agent</Badge>}
+        {s.sans_nom > 0 && (
+          <Badge appearance="outline" color="danger" title="Pas encore de nom de destinataire : la recherche continue ; sinon ajoute un contact sur la fiche (ZoomInfo). Ils ne partent pas sans nom.">
+            {s.sans_nom} sans nom (non envoyés)
+          </Badge>
+        )}
         {s.deja_exportes > 0 && (
           <Button as="a" size="small" appearance="subtle" href="/api/leads/export?all=1">Tout re-télécharger ({s.deja_exportes} déjà traités par l'agent)</Button>
         )}
@@ -678,6 +683,7 @@ export default function LeadsClient({ initialLeads = [] }) {
       if (filter === "recall") return recallDue(l.recall_at, today()) && !isFinalStatus(l.call_status);
       if (filter === "nophone") return isOpen(l) && !l.standard && !l.contact?.phone;
       if (filter === "noemail") return isOpen(l) && !l.email;
+      if (filter === "noname") return isOpen(l) && !l.recipient?.name;
       if (filter === "sffix") return !!l.brief?.sf_fix;
       if (filter === "rdv") return l.call_status === "rdv";
       if (filter === "successor") return !!l.successor;
@@ -692,6 +698,7 @@ export default function LeadsClient({ initialLeads = [] }) {
     ["recall", "À rappeler aujourd'hui"],
     ["nophone", "Sans numéro"],
     ["noemail", "Sans email"],
+    ["noname", "Sans nom"],
     ["sffix", "Anomalies à corriger dans Salesforce"],
     ["rdv", "RDV pris"],
     ["successor", "Repris / renommés"],
