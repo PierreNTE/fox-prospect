@@ -11,7 +11,7 @@ import {
   Card, Body1, Caption1, Title2, Button, Badge, Spinner, Input, Select, Textarea,
 } from "@fluentui/react-components";
 import {
-  ArrowLeft24Regular, Phone24Regular, Mail24Regular, Globe24Regular, LinkSquare24Regular,
+  ArrowLeft24Regular, Mail24Regular, Globe24Regular, LinkSquare24Regular,
   PersonAdd24Regular, Delete24Regular, People24Regular, ChevronDown24Regular, ChevronUp24Regular, Search24Regular,
 } from "@fluentui/react-icons";
 import { fetchJson } from "@/lib/fetch-json";
@@ -22,6 +22,7 @@ import IntelCard from "@/components/IntelCard";
 import CallPrepCard from "@/components/CallPrepCard";
 import BriefCard from "@/components/BriefCard";
 import ZoomInfoButton from "@/components/ZoomInfoButton";
+import CallButton from "@/components/CallButton";
 import { whoToCall, pickEmail } from "@/lib/who-to-call";
 
 const BRAND = "#5B53E6";
@@ -92,7 +93,6 @@ function CallTracker({ account, onSaved, onError }) {
 }
 
 /* ── Qui appeler ───────────────────────────────────────────────────────── */
-const tel = (n) => `tel:${String(n || "").replace(/[^\d+]/g, "")}`;
 
 function PersonRow({ p, accountName, primary, onDeleted, onError }) {
   return (
@@ -106,7 +106,7 @@ function PersonRow({ p, accountName, primary, onDeleted, onError }) {
         <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>{p.role || "poste à confirmer"}</Caption1>
       </div>
       <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
-        {p.phone && <Button as="a" size="small" appearance="primary" icon={<Phone24Regular />} href={tel(p.phone)}>{p.phone}</Button>}
+        {p.phone && <CallButton number={p.phone} who={`${p.name} — ${accountName}`} />}
         {p.email && <Button as="a" size="small" icon={<Mail24Regular />} href={`mailto:${p.email}`}>{p.email}</Button>}
         <Button as="a" size="small" appearance="subtle" icon={<LinkSquare24Regular />} target="_blank" rel="noreferrer"
           href={p.linkedin || linkedinSearch(p.name, accountName)}>
@@ -149,7 +149,7 @@ function StandardRow({ account, standard, searchUrl, onSaved, onError }) {
         <Body1 style={{ fontWeight: 700 }}>Standard</Body1>
         {standard ? (
           <>
-            <Button as="a" size="small" appearance="primary" icon={<Phone24Regular />} href={tel(standard.number)}>{standard.number}</Button>
+            <CallButton number={standard.number} who={`Standard — ${account.name}`} />
             <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>{standard.source}</Caption1>
           </>
         ) : (
@@ -370,14 +370,12 @@ export default function AccountClient({ id, initialData = null }) {
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
           {who.people[0]?.phone && (
-            <Button as="a" appearance="primary" icon={<Phone24Regular />} href={tel(who.people[0].phone)}>
-              {who.people[0].name} · {who.people[0].phone}
-            </Button>
+            <CallButton size="medium" number={who.people[0].phone} label={`${who.people[0].name} · ${who.people[0].phone}`}
+              who={`${who.people[0].name} — ${account.name}`} />
           )}
           {standard ? (
-            <Button as="a" appearance={who.people[0]?.phone ? "outline" : "primary"} icon={<Phone24Regular />} href={tel(standard)}>
-              Standard {standard}
-            </Button>
+            <CallButton size="medium" appearance={who.people[0]?.phone ? "outline" : "primary"} number={standard}
+              label={`Standard ${standard}`} who={`Standard — ${account.name}`} />
           ) : (
             <Button as="a" appearance="outline" icon={<Search24Regular />} href={who.phone_search_url} target="_blank" rel="noreferrer">
               Trouver le standard

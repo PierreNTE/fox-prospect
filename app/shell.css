@@ -204,3 +204,6 @@
   .app-bottombar a .ti, .app-bottombar a svg { font-size: 23px; }
   .app-bottombar a.active { color: var(--colorBrandForeground1); }
 }
+
+/* QR code d'un numéro (scanné avec l'iPhone pour appeler) */
+.phone-qr svg { width: 100%; height: 100%; display: block; }

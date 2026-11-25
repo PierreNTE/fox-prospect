@@ -23,6 +23,8 @@ import {
 } from "@fluentui/react-components";
 import { ArrowUpload24Regular, ArrowDownload24Regular, Delete24Regular, Search24Regular, ArrowClockwise24Regular, Phone24Regular } from "@fluentui/react-icons";
 import { fetchJson } from "@/lib/fetch-json";
+import CallButton from "@/components/CallButton";
+import { buildCallQueue, isLeadOpen } from "@/lib/call-session";
 import { dedupeByCompany, parsePastedCompanies } from "@/lib/salesforce-leads";
 import { readLeadsPdf } from "@/lib/salesforce-pdf";
 import { HEALTH_META } from "@/lib/health-meta";
@@ -416,8 +418,7 @@ function MergeButton({ l, onDone }) {
 
 const today = () => new Date().toISOString().slice(0, 10);
 const sfRank = (l) => sfStatusRank(l.sf_lead_status);
-const isOpen = (l) => ["active", "vigilance"].includes(l.health_status) && !/closed/i.test(l.sf_lead_status || "");
-const tel = (n) => `tel:${String(n || "").replace(/[^\d+]/g, "")}`;
+const isOpen = isLeadOpen;
 
 // Qui appeler : toujours une personne si on en a une, et toujours le standard
 // (son numéro, ou la recherche du numéro en un clic).
@@ -450,14 +451,10 @@ function WhoToCall({ l, compact = false }) {
         </Caption1>
       )}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {phone && (
-          <Button as="a" size="small" appearance="primary" icon={<Phone24Regular />} href={tel(phone)}>{phone}</Button>
-        )}
+        {phone && <CallButton number={phone} who={`${c.name} — ${l.name}`} />}
         {l.standard ? (
-          <Button as="a" size="small" appearance={phone ? "outline" : "primary"} icon={<Phone24Regular />} href={tel(l.standard.number)}
-            title={`Standard — ${l.standard.source}`}>
-            Standard {l.standard.number}
-          </Button>
+          <CallButton appearance={phone ? "outline" : "primary"} number={l.standard.number} label={`Standard ${l.standard.number}`}
+            who={`Standard — ${l.name}`} title={`Standard — ${l.standard.source}`} />
         ) : isOpen(l) ? (
           <Button as="a" size="small" appearance="outline" icon={<Search24Regular />} href={l.phone_search_url} target="_blank" rel="noreferrer"
             title="Ouvre la recherche du numéro ; colle-le ensuite sur la fiche">
@@ -638,9 +635,14 @@ export default function LeadsClient({ initialLeads = [] }) {
           </Caption1>
         </div>
         {leads.length > 0 && (
-          <Button as="a" appearance="primary" href="/api/leads/export" icon={<ArrowDownload24Regular />}>
-            Fichier Sales Chat
-          </Button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button as="a" appearance="primary" href="/leads/session" icon={<Phone24Regular />}>
+              Session d&apos;appels ({buildCallQueue(leads, today()).length})
+            </Button>
+            <Button as="a" appearance="outline" href="/api/leads/export" icon={<ArrowDownload24Regular />}>
+              Fichier Sales Chat
+            </Button>
+          </div>
         )}
       </div>
 
