@@ -25,6 +25,7 @@ import {
 import { ArrowUpload24Regular, ArrowDownload24Regular, Delete24Regular, Search24Regular, ArrowClockwise24Regular, Phone24Regular } from "@fluentui/react-icons";
 import { fetchJson } from "@/lib/fetch-json";
 import CallButton from "@/components/CallButton";
+import SentEmailsPanel from "@/components/SentEmailsPanel";
 import { buildCallQueue, isLeadOpen } from "@/lib/call-session";
 import { weekStats, NO_ANSWER_LIMIT } from "@/lib/call-history";
 import { dedupeByCompany, parsePastedCompanies } from "@/lib/salesforce-leads";
@@ -309,7 +310,7 @@ const CONF_COLOR = { "sûr": "#107C10", probable: "#8A6A00", "supposé": "var(--
 function WeekCard({ leads }) {
   const w = useMemo(() => weekStats(leads, today()), [leads]);
   const [copied, setCopied] = useState(false);
-  if (!w.calls) return null;
+  if (!w.calls && !w.emails) return null;
   const fr = (d) => new Date(`${d}T12:00:00`).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
   const verdicts = Object.values(w.by_verdict).sort((a, b) => b.calls - a.calls);
   const text = [
@@ -318,6 +319,7 @@ function WeekCard({ leads }) {
     `- ${w.reached} personnes jointes (${w.reach_rate} %)`,
     `- ${w.rdv} RDV pris (${w.rdv_rate} % des personnes jointes)`,
     `- ${w.no_answer} répondeurs, ${w.not_interested} pas intéressés, ${w.wrong} numéros non attribués`,
+    ...(w.emails ? [`- ${w.emails} emails de prospection envoyés, ${w.email_replies} réponses`] : []),
   ].join("\n");
   const tile = (label, value, sub) => (
     <div style={{ padding: "8px 12px", borderRadius: 8, background: "var(--colorNeutralBackground3)", minWidth: 110 }}>
@@ -343,6 +345,7 @@ function WeekCard({ leads }) {
         {tile("Répondeur", w.no_answer)}
         {tile("Pas intéressé", w.not_interested)}
         {w.wrong > 0 && tile("Faux numéros", w.wrong)}
+        {w.emails > 0 && tile("Emails envoyés", w.emails, w.email_replies ? `${w.email_replies} réponse${w.email_replies > 1 ? "s" : ""}` : null)}
       </div>
       <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>
         {w.by_day.map((d) => `${d.label} ${d.calls}`).join(" · ")}
@@ -364,6 +367,7 @@ function SalesChatCard({ leadsCount, onUpdated }) {
   const [text, setText] = useState("");
   const [copied, setCopied] = useState(false);
   const [recapOpen, setRecapOpen] = useState(false);
+  const [sentOpen, setSentOpen] = useState(false);
   const [recap, setRecap] = useState("");
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState(null);
@@ -398,6 +402,7 @@ function SalesChatCard({ leadsCount, onUpdated }) {
           Fichier de la semaine ({s.rows ?? "…"})
         </Button>
         <Button appearance="outline" onClick={() => setRecapOpen((v) => !v)}>Retour de l'agent</Button>
+        <Button appearance="outline" onClick={() => setSentOpen((v) => !v)}>Suivi des envois</Button>
         <Button appearance="subtle" onClick={showInstructions}>{open ? "Masquer les instructions" : "Instructions"}</Button>
       </div>
       <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
@@ -414,6 +419,7 @@ function SalesChatCard({ leadsCount, onUpdated }) {
           <Button as="a" size="small" appearance="subtle" href="/api/leads/export?all=1">Tout re-télécharger ({s.deja_exportes} déjà traités par l'agent)</Button>
         )}
       </div>
+      {sentOpen && <SentEmailsPanel onUpdated={() => { load(); onUpdated?.(); }} />}
       {recapOpen && (
         <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
           <Caption1>
@@ -551,6 +557,11 @@ function CallBadge({ l }) {
           Rappel {new Date(l.recall_at).toLocaleDateString("fr-FR")}
         </Caption1>
       )}
+      {l.last_email_at && (
+        <Caption1 style={{ display: "block", color: l.email_replied ? "#107C10" : l.email_status === "non_remis" ? "#C50F1F" : "var(--colorNeutralForeground3)" }}>
+          ✉ {l.email_replied ? "a répondu" : l.email_status === "non_remis" ? "non remis" : "envoyé"} le {new Date(l.last_email_at).toLocaleDateString("fr-FR")}
+        </Caption1>
+      )}
       {l.attempts > 0 && (
         <Caption1 style={{ display: "block", color: l.no_answer_streak >= NO_ANSWER_LIMIT ? "#8A6A00" : "var(--colorNeutralForeground3)" }}>
           {l.attempts} appel{l.attempts > 1 ? "s" : ""}
@@ -684,6 +695,7 @@ export default function LeadsClient({ initialLeads = [] }) {
       if (filter === "nophone") return isOpen(l) && !l.standard && !l.contact?.phone;
       if (filter === "noemail") return isOpen(l) && !l.email;
       if (filter === "noname") return isOpen(l) && !l.recipient?.name;
+      if (filter === "replied") return !!l.email_replied;
       if (filter === "sffix") return !!l.brief?.sf_fix;
       if (filter === "rdv") return l.call_status === "rdv";
       if (filter === "successor") return !!l.successor;
@@ -699,6 +711,7 @@ export default function LeadsClient({ initialLeads = [] }) {
     ["nophone", "Sans numéro"],
     ["noemail", "Sans email"],
     ["noname", "Sans nom"],
+    ["replied", "Ont répondu par email"],
     ["sffix", "Anomalies à corriger dans Salesforce"],
     ["rdv", "RDV pris"],
     ["successor", "Repris / renommés"],

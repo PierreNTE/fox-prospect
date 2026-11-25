@@ -36,6 +36,10 @@ describe("file de la session", () => {
   it("garde les leads à appeler aujourd'hui, New d'abord, rappels dus en tête de groupe", () => {
     expect(buildCallQueue(leads, day).map((l) => l.id)).toEqual(["n1", "due", "w1"]);
   });
+  it("met en tête ceux qui ont répondu à l'email", () => {
+    const hot = { ...base, id: "hot", sf_lead_status: "Working", email_replied: true };
+    expect(buildCallQueue([...leads, hot], day).map((l) => l.id)[0]).toBe("hot");
+  });
   it("met en fin de file les leads avec 3 essais sans réponse d'affilée", () => {
     const tired = { ...base, id: "tired", sf_lead_status: "New", no_answer_streak: 3 };
     expect(buildCallQueue([tired, ...leads], day).map((l) => l.id)).toEqual(["n1", "due", "w1", "tired"]);

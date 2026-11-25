@@ -123,7 +123,11 @@ function EmailLine({ l }) {
       <Caption1 style={{ color: "var(--colorNeutralForeground2)", wordBreak: "break-all" }}>
         ✉ {l.recipient?.name ? `${l.recipient.name} · ` : ""}{l.email.email} · {l.email.confidence}
       </Caption1>
-      {exported ? (
+      {l.last_email_at ? (
+        <Caption1 style={{ color: l.email_replied ? "#107C10" : "var(--colorNeutralForeground3)" }}>
+          {l.email_replied ? "a répondu à ton email" : l.email_status === "non_remis" ? "email non remis" : "email envoyé"} le {new Date(l.last_email_at).toLocaleDateString("fr-FR")}
+        </Caption1>
+      ) : exported ? (
         <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>email confié à l&apos;agent Sales Chat le {exported}</Caption1>
       ) : (
         <Button as="a" size="small" appearance="subtle" icon={<Mail24Regular />} href={mailto}>Préparer l&apos;email</Button>
