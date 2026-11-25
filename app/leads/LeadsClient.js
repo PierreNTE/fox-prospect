@@ -29,6 +29,7 @@ import { buildCallQueue, isLeadOpen } from "@/lib/call-session";
 import { weekStats, NO_ANSWER_LIMIT } from "@/lib/call-history";
 import { dedupeByCompany, parsePastedCompanies } from "@/lib/salesforce-leads";
 import { readLeadsPdf } from "@/lib/salesforce-pdf";
+import { readLeadsReport } from "@/lib/salesforce-report";
 import { HEALTH_META } from "@/lib/health-meta";
 import { CALL_STATUS_META, isFinalStatus, recallDue, sfStatusLabel, sfStatusRank, sortLeadsByStatus } from "@/lib/call-status";
 
@@ -51,7 +52,7 @@ function ImportCard({ onImported, onDeleted, startOpen = true, existing = 0 }) {
   const [parsing, setParsing] = useState(false);
   const [ocrStep, setOcrStep] = useState(null); // { page, pages } pendant la lecture OCR
   const [parsed, setParsed] = useState(null); // { companies, total, rows }
-  const [statuses, setStatuses] = useState({ New: true, Working: true, "Closed by Sales": false });
+  const [statuses, setStatuses] = useState({ New: true, Working: true, "Closed by Sales": false, "Rejected by Sales": false });
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(0);
   const [summary, setSummary] = useState(null);
@@ -65,6 +66,17 @@ function ImportCard({ onImported, onDeleted, startOpen = true, existing = 0 }) {
     if (!file) return;
     setError(null); setSummary(null); setDiag(null); setParsing(true); setOcrStep(null);
     try {
+      const isPdf = /\.pdf$/i.test(file.name) || file.type === "application/pdf";
+      if (!isPdf) {
+        // Report Salesforce exporté (.xls = tableau HTML, ou .csv) : lecture directe, sans OCR.
+        const { rows, diagnostic } = await readLeadsReport(file);
+        if (!rows.length) {
+          setDiag(diagnostic);
+          throw new Error("Aucun lead reconnu dans ce fichier : il faut au moins une colonne « Company / Account » (ou Société).");
+        }
+        setParsed({ rows, total: rows.length, companies: dedupeByCompany(rows), report: true });
+        return;
+      }
       const { rows, total, diagnostic, ocr } = await readLeadsPdf(file, { onProgress: setOcrStep });
       if (!rows.length) {
         setDiag(diagnostic);
@@ -103,7 +115,8 @@ function ImportCard({ onImported, onDeleted, startOpen = true, existing = 0 }) {
     const tally = { active: 0, vigilance: 0, fermee: 0, introuvable: 0, erreurs: 0 };
     for (let i = 0; i < selected.length; i += BATCH) {
       if (stopRef.current) break;
-      const leads = selected.slice(i, i + BATCH).map(({ company, status, campaign }) => ({ company, status, campaign }));
+      const leads = selected.slice(i, i + BATCH).map(({ company, status, campaign, sf_lead_id, duns, city, postal }) =>
+        ({ company, status, campaign, sf_lead_id, duns, city, postal }));
       const r = await fetchJson("/api/leads/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -144,18 +157,19 @@ function ImportCard({ onImported, onDeleted, startOpen = true, existing = 0 }) {
 
   return (
     <Card style={{ padding: "20px 20px 22px", borderLeft: `3px solid ${BRAND}` }}>
-      <Body1><strong>Importer un export Salesforce (PDF)</strong></Body1>
+      <Body1><strong>Importer un export Salesforce (report Excel ou PDF)</strong></Body1>
       <Caption1 style={{ display: "block", marginTop: 4 }}>
-        Liste de leads → Printable View → Imprimer en PDF. Chaque société est contrôlée (active, fermée,
-        reprise sous un autre nom), puis la recherche du contact et de l'accroche démarre automatiquement.
-        Seuls le nom, le statut et la campagne sont conservés.
+        Le plus fiable : le report exporté en .xls ou .csv (Company / Account, Lead Tracking ID, Lead Status…).
+        Sinon, la Printable View imprimée en PDF. Chaque société est contrôlée (active, fermée, reprise sous un
+        autre nom), puis la recherche du contact et de l&apos;accroche démarre automatiquement. Seuls la société,
+        le statut, la campagne, l&apos;ID du lead et le DUNS sont conservés.
       </Caption1>
 
-      <input ref={inputRef} type="file" accept="application/pdf" hidden onChange={onFile} />
+      <input ref={inputRef} type="file" accept="application/pdf,.pdf,.xls,.csv,.html,text/csv,application/vnd.ms-excel" hidden onChange={onFile} />
       <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
         <Button appearance="primary" icon={<ArrowUpload24Regular />} disabled={parsing || running}
           onClick={() => inputRef.current?.click()}>
-          {parsing ? "Lecture du PDF…" : "Choisir le PDF"}
+          {parsing ? "Lecture du fichier…" : "Choisir le fichier (.xls, .csv ou PDF)"}
         </Button>
         {parsing && <Spinner size="tiny" />}
         {parsing && ocrStep && (
@@ -228,7 +242,9 @@ function ImportCard({ onImported, onDeleted, startOpen = true, existing = 0 }) {
       {diag && (
         <pre style={{ marginTop: 8, padding: 10, borderRadius: 8, fontSize: 11.5, whiteSpace: "pre-wrap",
           background: "var(--colorNeutralBackground3)" }}>
-          {`Pages : ${diag.pages} · fragments de texte : ${diag.textItems} · en-tête trouvé : ${diag.headerFound ? "oui" : "non"}`}
+          {diag.headers
+            ? `Colonnes du fichier : ${diag.headers.join(" · ") || "aucune"}`
+            : `Pages : ${diag.pages} · fragments de texte : ${diag.textItems} · en-tête trouvé : ${diag.headerFound ? "oui" : "non"}`}
           {diag.columns?.length ? `\nColonnes : ${diag.columns.join(", ")}` : ""}
           {diag.sample?.length ? `\nDébut du texte lu :\n- ${diag.sample.join("\n- ")}` : ""}
         </pre>

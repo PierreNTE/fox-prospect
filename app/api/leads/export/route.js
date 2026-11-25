@@ -18,7 +18,7 @@ export async function GET(request) {
   if (url.searchParams.get("format") === "json") {
     const by = (c) => rows.filter((r) => r.confiance_email === c).length;
     const missing = by("à trouver");
-    const open = leads.filter((l) => ["active", "vigilance"].includes(l.health_status) && !/closed/i.test(l.sf_lead_status || ""));
+    const open = leads.filter((l) => ["active", "vigilance"].includes(l.health_status) && !/closed|rejected/i.test(l.sf_lead_status || ""));
     return NextResponse.json({
       rows: rows.length, sur: by("sûr"), probable: by("probable"), suppose: by("supposé"),
       sans_email: missing,

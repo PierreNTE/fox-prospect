@@ -366,6 +366,12 @@ export default function AccountClient({ id, initialData = null }) {
           {status && <Badge appearance="tint" color={status.color}>{status.label}</Badge>}
           {account.recall_at && <Badge appearance="tint" color="important">Rappel : {new Date(account.recall_at).toLocaleDateString("fr-FR")}</Badge>}
           {account.sf_lead_status && <Badge appearance="outline">Salesforce : {sfStatusLabel(account.sf_lead_status)}</Badge>}
+          {account.sf_lead_id && (
+            <Button size="small" appearance="subtle" title="Copier l'ID du lead pour le retrouver dans Salesforce"
+              onClick={() => navigator.clipboard?.writeText(account.sf_lead_id).catch(() => {})}>
+              Lead {account.sf_lead_id}
+            </Button>
+          )}
           {d.commune && <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>{d.commune}</Caption1>}
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
