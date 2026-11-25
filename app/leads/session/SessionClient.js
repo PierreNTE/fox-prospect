@@ -9,14 +9,22 @@ import Link from "next/link";
 import {
   Card, Button, Title2, Title3, Body1, Caption1, Badge, Textarea, Input, ProgressBar,
 } from "@fluentui/react-components";
-import { ArrowLeft24Regular, ArrowRight24Regular, Copy24Regular, Phone24Regular, Search24Regular } from "@fluentui/react-icons";
+import { ArrowLeft24Regular, ArrowRight24Regular, Copy24Regular, Mail24Regular, Phone24Regular, Search24Regular } from "@fluentui/react-icons";
 import { fetchJson } from "@/lib/fetch-json";
 import { sfStatusLabel, sfStatusRank, CALL_STATUS_META } from "@/lib/call-status";
 import { buildCallQueue, primaryNumber, OUTCOMES, outcomePatch, addBusinessDays, telHref } from "@/lib/call-session";
+import { NO_ANSWER_LIMIT } from "@/lib/call-history";
 import PhoneQr from "@/components/PhoneQr";
 import CallButton, { useIsPhone, copyText } from "@/components/CallButton";
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+// Mise à jour locale du compteur d'appels après un résultat (sans recharger la liste).
+const afterCall = (l, outcome) => ({
+  attempts: (l.attempts || 0) + 1,
+  no_answer_streak: outcome === "pas_joignable" ? (l.no_answer_streak || 0) + 1 : 0,
+  calls: [...(l.calls || []), { outcome, at: new Date().toISOString() }],
+});
 
 function Section({ title, children }) {
   return (
@@ -89,6 +97,27 @@ function NumberBlock({ l, isPhone }) {
   );
 }
 
+// Email du lead : déjà confié à l'agent Sales Chat, ou brouillon Outlook en un clic
+// (pratique juste après un répondeur : « je viens de vous laisser un message »).
+function EmailLine({ l }) {
+  const exported = l.email_exported_at ? new Date(l.email_exported_at).toLocaleDateString("fr-FR") : null;
+  const mailto = l.email_subject
+    ? `mailto:${l.email.email}?subject=${encodeURIComponent(l.email_subject)}&body=${encodeURIComponent(l.email_body || "")}`
+    : `mailto:${l.email.email}`;
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      <Caption1 style={{ color: "var(--colorNeutralForeground2)", wordBreak: "break-all" }}>
+        ✉ {l.email.email} · {l.email.confidence}
+      </Caption1>
+      {exported ? (
+        <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>email confié à l&apos;agent Sales Chat le {exported}</Caption1>
+      ) : (
+        <Button as="a" size="small" appearance="subtle" icon={<Mail24Regular />} href={mailto}>Préparer l&apos;email</Button>
+      )}
+    </div>
+  );
+}
+
 export default function SessionClient({ initialLeads }) {
   const day = today();
   const isPhone = useIsPhone();
@@ -127,10 +156,10 @@ export default function SessionClient({ initialLeads }) {
       // On reste sur la société avec le numéro suivant (recalculé côté serveur).
       const fresh = await fetchJson("/api/leads");
       const next = fresh.ok ? (fresh.data.leads || []).find((x) => x.id === l.id) : null;
-      setById((m) => ({ ...m, [l.id]: next || { ...m[l.id], ...r.data.account, standard: null } }));
+      setById((m) => ({ ...m, [l.id]: next || { ...m[l.id], ...r.data.account, ...afterCall(m[l.id], outcome), standard: null } }));
       return;
     }
-    setById((m) => ({ ...m, [l.id]: { ...m[l.id], ...r.data.account } }));
+    setById((m) => ({ ...m, [l.id]: { ...m[l.id], ...r.data.account, ...afterCall(m[l.id], outcome) } }));
     setIndex((i) => i + 1);
   }
 
@@ -204,6 +233,7 @@ export default function SessionClient({ initialLeads }) {
             )}
             {b.verdict_label && <Badge appearance="tint" color={b.verdict_color || "informative"}>{b.verdict_label}</Badge>}
             {l.recall_at && <Badge appearance="tint" color="important">Rappel prévu</Badge>}
+            {l.attempts > 0 && <Badge appearance="tint" color="informative">{l.attempts + 1}e appel</Badge>}
             {noted && <Badge appearance="filled" color="success">Noté : {OUTCOMES.find((o) => o.value === noted)?.short}</Badge>}
           </div>
           <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>
@@ -211,6 +241,12 @@ export default function SessionClient({ initialLeads }) {
           </Caption1>
           {(b.anomalies || []).length > 0 && (
             <Caption1 style={{ color: "#8A6A00" }}>⚠ {b.anomalies.map((a) => a.label).join(" · ")}</Caption1>
+          )}
+          {(l.no_answer_streak || 0) >= NO_ANSWER_LIMIT && (
+            <Caption1 style={{ color: "#8A6A00" }}>
+              {l.no_answer_streak} essais sans réponse d&apos;affilée : tente l&apos;autre numéro ou demande un autre interlocuteur
+              au standard. La relance par email reste à l&apos;agent Sales Chat.
+            </Caption1>
           )}
           {l.call_note && !notes[l.id] && (
             <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>Dernière note : {l.call_note}</Caption1>
@@ -238,11 +274,7 @@ export default function SessionClient({ initialLeads }) {
           </Section>
         )}
 
-        {l.email && !l.email_opt_out && (
-          <Caption1 style={{ color: "var(--colorNeutralForeground2)", wordBreak: "break-all" }}>
-            ✉ {l.email.email} · {l.email.confidence}
-          </Caption1>
-        )}
+        {l.email && !l.email_opt_out && <EmailLine l={l} />}
 
         <Section title="Note">
           <Textarea value={note} resize="vertical" placeholder="Ce que tu as appris (nom du RI, projet, rappel…)"

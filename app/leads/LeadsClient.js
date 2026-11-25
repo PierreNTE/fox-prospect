@@ -6,6 +6,7 @@ import {
   Card,
   Button,
   Title2,
+  Title3,
   Body1,
   Caption1,
   Badge,
@@ -25,6 +26,7 @@ import { ArrowUpload24Regular, ArrowDownload24Regular, Delete24Regular, Search24
 import { fetchJson } from "@/lib/fetch-json";
 import CallButton from "@/components/CallButton";
 import { buildCallQueue, isLeadOpen } from "@/lib/call-session";
+import { weekStats, NO_ANSWER_LIMIT } from "@/lib/call-history";
 import { dedupeByCompany, parsePastedCompanies } from "@/lib/salesforce-leads";
 import { readLeadsPdf } from "@/lib/salesforce-pdf";
 import { HEALTH_META } from "@/lib/health-meta";
@@ -286,6 +288,58 @@ function ProgressCard({ progress, running, log, onRun, briefs }) {
 
 const CONF_COLOR = { "sûr": "#107C10", probable: "#8A6A00", "supposé": "var(--colorNeutralForeground3)" };
 
+// Bilan de la semaine : appels notés (session ou fiche), joignabilité, RDV,
+// résultats par verdict du brief. « Copier » donne un texte pour le point hebdo.
+function WeekCard({ leads }) {
+  const w = useMemo(() => weekStats(leads, today()), [leads]);
+  const [copied, setCopied] = useState(false);
+  if (!w.calls) return null;
+  const fr = (d) => new Date(`${d}T12:00:00`).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
+  const verdicts = Object.values(w.by_verdict).sort((a, b) => b.calls - a.calls);
+  const text = [
+    `Bilan prospection du ${fr(w.start)} au ${fr(w.end)}`,
+    `- ${w.calls} appels sur ${w.leads_called} sociétés`,
+    `- ${w.reached} personnes jointes (${w.reach_rate} %)`,
+    `- ${w.rdv} RDV pris (${w.rdv_rate} % des personnes jointes)`,
+    `- ${w.no_answer} répondeurs, ${w.not_interested} pas intéressés, ${w.wrong} numéros non attribués`,
+  ].join("\n");
+  const tile = (label, value, sub) => (
+    <div style={{ padding: "8px 12px", borderRadius: 8, background: "var(--colorNeutralBackground3)", minWidth: 110 }}>
+      <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground3)" }}>{label}</Caption1>
+      <Title3>{value}</Title3>
+      {sub && <Caption1 style={{ display: "block", color: "var(--colorNeutralForeground2)" }}>{sub}</Caption1>}
+    </div>
+  );
+  return (
+    <Card style={{ padding: "14px 18px", display: "grid", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Body1 style={{ fontWeight: 700 }}>Bilan de la semaine</Body1>
+        <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>du {fr(w.start)} au {fr(w.end)}</Caption1>
+        <Button size="small" appearance="subtle" style={{ marginLeft: "auto" }}
+          onClick={async () => { try { await navigator.clipboard.writeText(text); setCopied(true); } catch { /* ignoré */ } }}>
+          {copied ? "Copié" : "Copier le bilan"}
+        </Button>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {tile("Appels", w.calls, `${w.leads_called} sociétés`)}
+        {tile("Joints", w.reached, `${w.reach_rate} % des appels`)}
+        {tile("RDV", w.rdv, `${w.rdv_rate} % des joints`)}
+        {tile("Répondeur", w.no_answer)}
+        {tile("Pas intéressé", w.not_interested)}
+        {w.wrong > 0 && tile("Faux numéros", w.wrong)}
+      </div>
+      <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>
+        {w.by_day.map((d) => `${d.label} ${d.calls}`).join(" · ")}
+      </Caption1>
+      {verdicts.length > 1 && (
+        <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>
+          Par verdict du brief : {verdicts.map((v) => `${v.label} ${v.reached}/${v.calls} joints, ${v.rdv} RDV`).join(" · ")}
+        </Caption1>
+      )}
+    </Card>
+  );
+}
+
 // Passage de relais vers l'agent Sales Chat : le fichier de la semaine (un email
 // par lead, message prêt) et les instructions à coller une fois dans l'agent.
 function SalesChatCard({ leadsCount, onUpdated }) {
@@ -476,6 +530,12 @@ function CallBadge({ l }) {
           Rappel {new Date(l.recall_at).toLocaleDateString("fr-FR")}
         </Caption1>
       )}
+      {l.attempts > 0 && (
+        <Caption1 style={{ display: "block", color: l.no_answer_streak >= NO_ANSWER_LIMIT ? "#8A6A00" : "var(--colorNeutralForeground3)" }}>
+          {l.attempts} appel{l.attempts > 1 ? "s" : ""}
+          {l.no_answer_streak >= NO_ANSWER_LIMIT && ` · ${l.no_answer_streak} sans réponse`}
+        </Caption1>
+      )}
     </>
   );
 }
@@ -654,6 +714,7 @@ export default function LeadsClient({ initialLeads = [] }) {
           briefs={{ ready: leads.filter((l) => l.brief).length, anomalies: leads.filter((l) => l.brief?.anomalies?.length).length }} />
       )}
 
+      <WeekCard leads={leads} />
       {leads.length > 0 && <SalesChatCard leadsCount={leads.length} onUpdated={reload} />}
 
       <Card style={{ padding: "16px 16px 20px" }}>

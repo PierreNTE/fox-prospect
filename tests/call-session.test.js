@@ -36,6 +36,10 @@ describe("file de la session", () => {
   it("garde les leads à appeler aujourd'hui, New d'abord, rappels dus en tête de groupe", () => {
     expect(buildCallQueue(leads, day).map((l) => l.id)).toEqual(["n1", "due", "w1"]);
   });
+  it("met en fin de file les leads avec 3 essais sans réponse d'affilée", () => {
+    const tired = { ...base, id: "tired", sf_lead_status: "New", no_answer_streak: 3 };
+    expect(buildCallQueue([tired, ...leads], day).map((l) => l.id)).toEqual(["n1", "due", "w1", "tired"]);
+  });
 });
 
 describe("numéro à composer", () => {
@@ -49,13 +53,13 @@ describe("numéro à composer", () => {
 describe("résultat d'appel", () => {
   const day = "2026-01-08";
   it("répondeur : rappel à J+2 ouvrés", () => {
-    expect(outcomePatch("pas_joignable", { day, note: "x" })).toEqual({ call_status: "pas_joignable", recall_at: "2026-01-12", call_note: "x" });
+    expect(outcomePatch("pas_joignable", { day, note: "x" })).toEqual({ call_status: "pas_joignable", log_call: true, recall_at: "2026-01-12", call_note: "x" });
   });
   it("à rappeler : date choisie ou lendemain ouvré", () => {
     expect(outcomePatch("rappeler", { day, recallAt: "2026-01-15" }).recall_at).toBe("2026-01-15");
     expect(outcomePatch("rappeler", { day: "2026-01-09" }).recall_at).toBe("2026-01-12");
   });
   it("RDV : plus de rappel", () => {
-    expect(outcomePatch("rdv", { day })).toEqual({ call_status: "rdv", recall_at: null });
+    expect(outcomePatch("rdv", { day })).toEqual({ call_status: "rdv", log_call: true, recall_at: null });
   });
 });
