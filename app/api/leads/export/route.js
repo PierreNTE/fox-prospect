@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/supabase";
 import { listSalesforceLeads } from "@/lib/leads-import";
-import { buildExportRows, toCsv } from "@/lib/sales-chat";
+import { buildExportRows, exportCandidates, recipientOf, toCsv } from "@/lib/sales-chat";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +22,8 @@ export async function GET(request) {
     return NextResponse.json({
       rows: rows.length, sur: by("sûr"), probable: by("probable"), suppose: by("supposé"),
       sans_email: missing,
+      // Leads qui ne partent pas faute de nom : à compléter sur la fiche (ZoomInfo…).
+      sans_nom: exportCandidates(leads, { all: url.searchParams.get("all") === "1" }).filter((l) => !recipientOf(l)?.name).length,
       deja_exportes: open.filter((l) => l.email_exported_at).length,
     });
   }

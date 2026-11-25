@@ -14,7 +14,10 @@ import unicodedata
 import urllib.parse
 import urllib.request
 
+from functools import lru_cache
+
 from discover_free import searx_search, company_core, mentions_company
+from email_quality import assess_email, email_rank
 
 # Annuaire de l'administration (service-public.fr, open data, sans clé) :
 # standard, email et site officiels des mairies, collectivités, hôpitaux,
@@ -78,36 +81,50 @@ def _tokens(company):
     return [t for t in (_norm(x) for x in company_core(company)) if len(t) >= 3]
 
 
-def email_fits(email, company):
-    """L'adresse appartient-elle plausiblement à la société ? (pur, testé)"""
+def email_fits(email, company, names=None, domains=None):
+    """L'adresse appartient-elle plausiblement à la société ? (pur, testé — règles dans email_quality.py)"""
     e = (email or "").lower().strip(".")
-    local, _, domain = e.partition("@")
-    if not local or not domain or any(x in domain for x in NOT_COMPANY):
+    _, _, domain = e.partition("@")
+    if not domain or any(x in domain for x in NOT_COMPANY):
         return False
-    toks = _tokens(company)
-    if domain in FREE_MAIL:
-        # TPE : garage.dupont@orange.fr — le nom doit être dans la partie locale.
-        return any(t in _norm(local) for t in toks)
-    return any(t in _norm(domain) for t in toks)
+    return assess_email(e, names or [company], domains or [])["ok"]
 
 
-def pick_email(results, company):
-    """Email le plus cité pour la société dans les extraits (pur, testé). (email, nb) ou (None, 0)."""
-    votes = {}
+def _best(votes, quality):
+    if not votes:
+        return None, 0
+    best = sorted(votes, key=lambda e: email_rank(e, quality[e], votes[e]))[0]
+    return best, votes[best]
+
+
+def pick_email(results, company, names=None, domains=None):
+    """Meilleur email de la société dans les extraits (pur, testé). (email, nb) ou (None, 0)."""
+    names = [n for n in (names or [company]) if n]
+    votes, quality = {}, {}
     for res in results:
         text = f"{res.get('title') or ''} {res.get('content') or ''}"
         if not mentions_company(text, company):
             continue
         for m in {x.lower().strip(".") for x in EMAIL_RE.findall(text)}:
-            if email_fits(m, company):
+            if any(x in m.partition("@")[2] for x in NOT_COMPANY):
+                continue
+            q = assess_email(m, names, domains or [])
+            if q["ok"]:
                 votes[m] = votes.get(m, 0) + 1
-    if not votes:
-        return None, 0
-    best = sorted(votes, key=lambda e: (-votes[e], e.split("@")[1] in FREE_MAIL))[0]
-    return best, votes[best]
+                quality[m] = q
+    return _best(votes, quality)
+
+
+@lru_cache(maxsize=256)
+def _annuaire_records_cached(siren):
+    return tuple(_annuaire_records_raw(siren))
 
 
 def _annuaire_records(siren):
+    return list(_annuaire_records_cached(str(siren or "")))
+
+
+def _annuaire_records_raw(siren):
     """Fiches de l'annuaire dont le SIRET commence par le SIREN (plusieurs syntaxes tentées)."""
     if not re.fullmatch(r"\d{9}", str(siren or "")):
         return []
@@ -131,6 +148,7 @@ def annuaire_public(siren):
         blob = json.dumps(rec, ensure_ascii=False)
         phones = [n for n in (normalize_phone(m.group(0)) for m in PHONE_RE.finditer(blob)) if n]
         emails = [e.lower() for e in EMAIL_RE.findall(blob) if not e.lower().endswith("service-public.fr")]
+        emails = [e for e in emails if assess_email(e, official=True)["ok"]]  # pas de rgpd@, webmaster@…
         sites = re.findall(r"https?://[^\s\"\\,]+", str(rec.get("site_internet") or ""))
         if phones or emails:
             fixe = [p for p in phones if p[:2] not in ("06", "07")]
@@ -165,29 +183,37 @@ def find_email(company, commune, siren=None, alt=None, public=False, domain=None
         queries += [f'"{core}" {commune or ""} email contact'.strip(), f'"{core}" {commune or ""} "@"'.strip(), f'"{core}" "contact@"']
     if siren:
         queries.append(f'"{siren}" email')
+    all_names = [n for n in (company, alt) if n]
     results = []
     for q in queries[:8]:
         results += searx_search(q, max_results=15)
-        email, n = pick_email(results, company) if not domain else _pick_on_domain(results, company, domain)
+        email, n = (pick_email(results, company, all_names) if not domain
+                    else _pick_on_domain(results, company, domain, all_names))
+        if not email and alt and not domain:
+            email, n = pick_email(results, alt, all_names)
         if email:
             phone, _ = pick_phone(results, company, commune)
             return email, n, phone, "recherche web"
     return None, 0, None, None
 
 
-def _pick_on_domain(results, company, domain):
-    """Avec un domaine connu : toute adresse de ce domaine compte, même si l'extrait ne cite pas la société."""
-    votes = {}
+def _pick_on_domain(results, company, domain, names=None):
+    """Avec un domaine connu : toute adresse de ce domaine compte, même si l'extrait ne cite pas la société.
+    Une adresse d'un autre domaine n'est gardée que si ce domaine porte exactement le nom de la société."""
+    names = [n for n in (names or [company]) if n]
+    votes, quality = {}, {}
     for res in results:
         text = f"{res.get('title') or ''} {res.get('content') or ''}"
         for m in {x.lower().strip(".") for x in EMAIL_RE.findall(text)}:
-            if m.endswith("@" + domain) or (mentions_company(text, company) and email_fits(m, company)):
+            if not (m.endswith("@" + domain) or mentions_company(text, company)):
+                continue
+            if any(x in m.partition("@")[2] for x in NOT_COMPANY):
+                continue
+            q = assess_email(m, names, [domain])
+            if q["ok"]:
                 votes[m] = votes.get(m, 0) + 1
-    if not votes:
-        return None, 0
-    generic = re.compile(r"^(contact|info|accueil|direction|secretariat|dsi|informatique|it|support|admin)\b")
-    best = sorted(votes, key=lambda e: (-votes[e], not generic.match(e.split("@")[0])))[0]
-    return best, votes[best]
+                quality[m] = q
+    return _best(votes, quality)
 
 
 def find_standard(company, commune, siren=None, alt=None, public=False, etab_commune=None):
@@ -244,6 +270,11 @@ if __name__ == "__main__":  # auto-test : python phone_finder.py
         {"title": "Alpha Motors", "content": "Alpha Motors — contact@alpha-motors.fr — 02 41 00 00 01"},
     ]
     assert pick_email(mails, "ALPHA MOTORS SAS") == ("contact@alpha-motors.fr", 2)
+    bad = [{"title": "Alpha Motors", "content": "Alpha Motors recrute : recrutement@alpha-motors.fr, contact@alpha-motors.fr"},
+           {"title": "Alpha Motors", "content": "Alpha Motors recrutement@alpha-motors.fr"}]
+    assert pick_email(bad, "ALPHA MOTORS SAS") == ("contact@alpha-motors.fr", 1)
+    other = [{"title": "Alpha Motors", "content": "Alpha Motors, partenaire : contact@ecole-beta.fr"}]
+    assert _pick_on_domain(other, "ALPHA MOTORS SAS", "alpha-motors.fr") == (None, 0)
     dom = [{"title": "Annuaire", "content": "Écrire à j.martin@alpha-motors.fr ou contact@alpha-motors.fr"},
            {"title": "PDF", "content": "contact@alpha-motors.fr"}]
     assert _pick_on_domain(dom, "ALPHA MOTORS SAS", "alpha-motors.fr") == ("contact@alpha-motors.fr", 2)

@@ -26,7 +26,8 @@ from datetime import datetime, timezone, timedelta
 from discover_free import discover_company
 from waterfall import enrich_email
 from site_finder import find_official_site
-from phone_finder import find_standard, find_email
+from phone_finder import find_standard, find_email, _annuaire_records
+from person_finder import find_person
 
 SB_URL = os.environ.get("SUPABASE_URL")
 SB_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
@@ -233,29 +234,71 @@ def process_find_phone(job):
     print(f"✓ job {job_id} [find_phone] {'numéro trouvé' if number else 'aucun numéro sûr'}")
 
 
+def _has_named_contact(account_id):
+    rows = sb(f"account_contacts?account_id=eq.{account_id}&last_name=neq.&select=id&limit=1")
+    return bool(rows)
+
+
+def _find_name(account_id, params):
+    """Nom de destinataire (annuaire public, holding, web) → account_contacts. Rien n'est journalisé."""
+    if _has_named_contact(account_id):
+        return False
+    records = _annuaire_records(params.get("siren")) if params.get("public") and params.get("siren") else None
+    p = find_person(params.get("company") or "", params.get("commune") or "", annuaire_records=records,
+                    groupe_siren=params.get("groupe_siren"), association=bool(params.get("association")),
+                    alt=params.get("alt"))
+    if not p:
+        return False
+    web = p["source"].startswith("recherche web")
+    sb("account_contacts", method="POST", body={
+        "account_id": account_id, "first_name": p["first"], "last_name": p["last"], "role": p["role"][:120],
+        "source": p["source"], "reliability": "non_verifie", "role_confidence": "incertain" if web else "probable",
+    })
+    return True
+
+
 def process_find_email(job):
-    """Job find_email : email de la société lu dans les extraits de recherche → écrit s'il n'y en a pas."""
+    """Job find_email : email de la société + nom du destinataire s'il manque.
+    email_replace : l'email enregistré a été écarté par le contrôle qualité → remplacé (ou effacé)."""
     job_id, params = job["id"], job.get("params") or {}
     account_id = params.get("account_id")
     update_job(job_id, status="running", started_at=now_iso(), progress=10)
-    rows = sb(f"accounts?id=eq.{account_id}&select=found_email,standard_phone,phones:web_intel->phones") if account_id else []
-    if not rows or rows[0].get("found_email"):
-        update_job(job_id, status="done", progress=100, finished_at=now_iso(), stats={"found": 0, "skip": "absent ou déjà un email"})
-        print(f"✓ job {job_id} [find_email] rien à faire")
+    rows = sb(f"accounts?id=eq.{account_id}&select=found_email,found_email_source,standard_phone,phones:web_intel->phones") if account_id else []
+    if not rows:
+        update_job(job_id, status="done", progress=100, finished_at=now_iso(), stats={"found": 0, "skip": "compte absent"})
         return
-    email, sources, phone, origin = find_email(params.get("company") or "", params.get("commune") or "",
-                                               siren=params.get("siren"), alt=params.get("alt"),
-                                               public=bool(params.get("public")), domain=params.get("domain"))
-    if email:
-        label = ("annuaire service-public (3 sources)" if origin == "annuaire service-public"
-                 else f"recherche web ({sources} source{'s' if sources > 1 else ''})")
-        sb(f"accounts?id=eq.{account_id}&found_email=is.null", method="PATCH",
-           body={"found_email": email, "found_email_source": label})
-    if phone and not rows[0].get("standard_phone") and not rows[0].get("phones"):
-        sb(f"accounts?id=eq.{account_id}&standard_phone=is.null", method="PATCH",
-           body={"standard_phone": phone, "standard_source": "recherche web (avec l'email), à vérifier"})
-    update_job(job_id, status="done", progress=100, finished_at=now_iso(), stats={"found": 1 if email else 0, "sources": sources})
-    print(f"✓ job {job_id} [find_email] {'email trouvé' if email else 'aucun email sûr'}")
+    cur = rows[0]
+    bad = (params.get("bad_email") or "").lower()
+    replace = bool(params.get("email_replace")) and bad and (cur.get("found_email") or "").lower() == bad
+    email = phone = None
+    sources = 0
+    if not cur.get("found_email") or replace:
+        email, sources, phone, origin = find_email(params.get("company") or "", params.get("commune") or "",
+                                                   siren=params.get("siren"), alt=params.get("alt"),
+                                                   public=bool(params.get("public")), domain=params.get("domain"))
+        if email and email.lower() == bad:
+            email = None
+        flt = f"found_email=eq.{urllib.parse.quote(bad)}" if replace else "found_email=is.null"
+        if email:
+            label = ("annuaire service-public (3 sources)" if origin == "annuaire service-public"
+                     else f"recherche web ({sources} source{'s' if sources > 1 else ''})")
+            sb(f"accounts?id=eq.{account_id}&{flt}", method="PATCH", body={"found_email": email, "found_email_source": label})
+        elif replace:
+            # Adresse écartée (autre société, recrutement, filiale étrangère…) et rien de mieux : on l'efface.
+            sb(f"accounts?id=eq.{account_id}&{flt}", method="PATCH", body={"found_email": None, "found_email_source": None})
+        if phone and not cur.get("standard_phone") and not cur.get("phones"):
+            sb(f"accounts?id=eq.{account_id}&standard_phone=is.null", method="PATCH",
+               body={"standard_phone": phone, "standard_source": "recherche web (avec l'email), à vérifier"})
+    named = False
+    if params.get("need_name"):
+        try:
+            named = _find_name(account_id, params)
+        except Exception as e:  # un échec de la recherche de nom ne bloque pas l'email
+            print(f"  recherche de nom impossible : {type(e).__name__}")
+    update_job(job_id, status="done", progress=100, finished_at=now_iso(),
+               stats={"found": 1 if email else 0, "sources": sources, "replaced": bool(replace), "name": named})
+    print(f"✓ job {job_id} [find_email] {'email trouvé' if email else 'pas de nouvel email'}"
+          f"{' · nom trouvé' if named else ''}{' · ancien email écarté' if replace else ''}")
 
 
 def process_job(job):

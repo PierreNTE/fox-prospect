@@ -121,7 +121,7 @@ function EmailLine({ l }) {
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
       <Caption1 style={{ color: "var(--colorNeutralForeground2)", wordBreak: "break-all" }}>
-        ✉ {l.email.email} · {l.email.confidence}
+        ✉ {l.recipient?.name ? `${l.recipient.name} · ` : ""}{l.email.email} · {l.email.confidence}
       </Caption1>
       {exported ? (
         <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>email confié à l&apos;agent Sales Chat le {exported}</Caption1>
