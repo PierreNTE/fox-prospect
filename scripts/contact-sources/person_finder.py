@@ -38,6 +38,7 @@ NOT_A_NAME = {
     "invest", "investissement", "investissements", "finance", "financiere", "financière", "gestion", "capital", "partners",
     "participations", "consulting", "industrie", "industries", "technologies", "solutions", "international", "europe",
     "développement", "developpement", "immobilier", "patrimoine",
+    "pvt", "ltd", "llc", "inc", "gmbh", "limited", "corp", "corporation", "plc", "bv", "srl", "spa", "ag",
 }
 
 _W = r"[A-ZÉÈÊÀÂÎÔÛÇ][a-zéèêëàâîïôûüç]+"
@@ -206,6 +207,8 @@ if __name__ == "__main__":  # auto-test : python person_finder.py
     assert pick_person(res[3:], "ALPHA MOTORS SAS") is None
     pm = [{"title": "Alpha Motors", "content": "Alpha Motors, Président : Ste Beta Holding. Alpha Motors à Angers."}]
     assert pick_person(pm, "ALPHA MOTORS SAS") is None
+    ltd = [{"title": "Alpha Motors", "content": "Alpha Motors, DSI : Infotech Pvt Ltd"}]
+    assert pick_person(ltd, "ALPHA MOTORS SAS") is None
     noisy = [{"title": "Alpha Motors", "content": "Alpha Motors : contactez notre équipe, gérant du site. Paul Martin (Président) Alpha Motors"}]
     p = pick_person(noisy, "ALPHA MOTORS SAS")
     assert (p["first"], p["last"], p["role"]) == ("Paul", "Martin", "Président"), p
