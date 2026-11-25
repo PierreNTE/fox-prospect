@@ -46,5 +46,8 @@ describe("bilan de la semaine", () => {
     expect(w.rdv_rate).toBe(50);
     expect(w.by_verdict.appeler).toEqual({ label: "Appeler", calls: 2, reached: 1, rdv: 1 });
     expect(w.by_day.map((d) => d.calls)).toEqual([1, 2, 0, 0, 0]);
+    const we = weekStats([{ emails_sent: [{ at: "2026-01-06T10:00:00Z", status: "reponse" }, { at: "2026-01-07T10:00:00Z", status: "envoye" },
+      { at: "2025-12-29T10:00:00Z", status: "envoye" }] }], "2026-01-08", { dayOf });
+    expect([we.emails, we.email_replies]).toEqual([2, 1]);
   });
 });

@@ -139,10 +139,14 @@ describe("export Sales Chat", () => {
       lead({ id: "5", email_exported_at: "2026-10-01T08:00:00Z" }),
       lead({ id: "6", health_status: "fermee" }),
       lead({ id: "7", recipient: null }), // sans nom : ne part pas
+      lead({ id: "8", last_email_at: "2026-11-21T08:00:00Z" }), // déjà écrit il y a 3 jours
+      lead({ id: "9", email_replied: true }), // a répondu : à reprendre soi-même
     ], { now, baseUrl: "https://app.test" });
     expect(rows.map((r) => r.id)).toEqual(["1", "3", "5"]);
     expect(rows[0]).toMatchObject({ email_generique: "oui", destinataire: "Jean Martin", poste: "Gérant", fiche: "https://app.test/accounts/1" });
     expect(rows[1]).toMatchObject({ email: "", confiance_email: "à trouver" });
+    const all = buildExportRows([lead({ id: "8", last_email_at: "2026-11-21T08:00:00Z" })], { now, all: true });
+    expect(all).toEqual([]); // même « tout re-télécharger » ne renvoie pas un email écrit il y a moins de 25 jours
   });
   it("CSV lisible par Excel (BOM, ;, guillemets échappés)", () => {
     const csv = toCsv([{ societe: 'ALPHA "SAS"', email: "a@b.fr" }], [["societe", "Société"], ["email", "Email"]]);
