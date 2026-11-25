@@ -13,6 +13,7 @@ Renvoie {"first", "last", "role", "source"} ou None. Les noms ne sont jamais
 """
 import json
 import re
+import unicodedata
 import urllib.parse
 import urllib.request
 
@@ -32,6 +33,11 @@ NOT_A_NAME = {
     "president", "président", "présidente", "france", "paris", "lyon", "general", "général", "services", "service",
     "association", "commune", "communauté", "communaute", "mairie", "conseil", "monsieur", "madame", "voir", "plus",
     "notre", "votre", "équipe", "equipe", "page", "site", "linkedin", "facebook", "annuaire", "entreprise", "sas", "sarl",
+    # Formes et mots de société : un président « personne morale » n'est pas une personne.
+    "ste", "sté", "ets", "sci", "sa", "sasu", "eurl", "snc", "selarl", "holding", "holdings", "group", "cie", "compagnie",
+    "invest", "investissement", "investissements", "finance", "financiere", "financière", "gestion", "capital", "partners",
+    "participations", "consulting", "industrie", "industries", "technologies", "solutions", "international", "europe",
+    "développement", "developpement", "immobilier", "patrimoine",
 }
 
 _W = r"[A-ZÉÈÊÀÂÎÔÛÇ][a-zéèêëàâîïôûüç]+"
@@ -58,8 +64,9 @@ def _valid_name(first, last, company):
     words = [w.lower() for w in f"{first} {last}".replace("-", " ").split()]
     if any(w in NOT_A_NAME for w in words) or len(first) < 2 or len(last) < 2:
         return False
-    core = set(company_core(company))
-    return not any(w in core for w in words)
+    core = {t.lower() for t in company_core(company)}  # company_core renvoie des majuscules sans accents
+    plain = [unicodedata.normalize("NFD", w).encode("ascii", "ignore").decode() for w in words]
+    return not any(w in core for w in plain)
 
 
 def _role_rank(role):
@@ -197,6 +204,8 @@ if __name__ == "__main__":  # auto-test : python person_finder.py
     p = pick_person(res, "ALPHA MOTORS SAS")
     assert (p["first"], p["last"]) == ("Jean", "Dupont") and p["votes"] == 2, p
     assert pick_person(res[3:], "ALPHA MOTORS SAS") is None
+    pm = [{"title": "Alpha Motors", "content": "Alpha Motors, Président : Ste Beta Holding. Alpha Motors à Angers."}]
+    assert pick_person(pm, "ALPHA MOTORS SAS") is None
     noisy = [{"title": "Alpha Motors", "content": "Alpha Motors : contactez notre équipe, gérant du site. Paul Martin (Président) Alpha Motors"}]
     p = pick_person(noisy, "ALPHA MOTORS SAS")
     assert (p["first"], p["last"], p["role"]) == ("Paul", "Martin", "Président"), p
