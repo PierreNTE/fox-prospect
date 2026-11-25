@@ -97,6 +97,20 @@ function NumberBlock({ l, isPhone }) {
   );
 }
 
+// ID du lead Salesforce : copié pour le retrouver en un coup dans Salesforce.
+function LeadId({ id }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Caption1 style={{ color: "var(--colorNeutralForeground3)" }}>
+      Lead Salesforce {id}{" "}
+      <Button size="small" appearance="transparent" icon={<Copy24Regular />} onClick={async () => setCopied(await copyText(id))}
+        aria-label="Copier l'ID du lead">
+        {copied ? "Copié" : ""}
+      </Button>
+    </Caption1>
+  );
+}
+
 // Email du lead : déjà confié à l'agent Sales Chat, ou brouillon Outlook en un clic
 // (pratique juste après un répondeur : « je viens de vous laisser un message »).
 function EmailLine({ l }) {
@@ -239,6 +253,7 @@ export default function SessionClient({ initialLeads }) {
           <Caption1 style={{ color: "var(--colorNeutralForeground2)" }}>
             {[l.etab_commune || l.commune, b.reason].filter(Boolean).join(" · ")}
           </Caption1>
+          {l.sf_lead_id && <LeadId id={l.sf_lead_id} />}
           {(b.anomalies || []).length > 0 && (
             <Caption1 style={{ color: "#8A6A00" }}>⚠ {b.anomalies.map((a) => a.label).join(" · ")}</Caption1>
           )}
